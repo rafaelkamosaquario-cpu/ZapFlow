@@ -15,14 +15,93 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEFAULT_DELAY_MS = Number(process.env.DEFAULT_DELAY_MS || 1500);
+const DEFAULT_DELAY_MS = Number(process.env.DEFAULT_DELAY_MS || 3000);
 
-// Diretório de dados (para persistir os agendamentos). Em produção (ex.: Railway)
-// recomenda-se apontar para um volume para sobreviver a reinícios.
+// Diretório de dados (para persistir agendamentos, métricas e modelos). Em
+// produção (ex.: Railway) recomenda-se apontar para um volume.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const JOBS_FILE = path.join(DATA_DIR, "jobs.json");
+const METRICS_FILE = path.join(DATA_DIR, "metrics.json");
+const TEMPLATES_FILE = path.join(DATA_DIR, "templates.json");
+
+// --- Autenticação simples (opcional, ativada via .env) ---
+const APP_USER = process.env.APP_USER || "";
+const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const AUTH_ENABLED = Boolean(APP_USER && APP_PASSWORD);
+const SESSION_HOURS = 8;
+const AUTH_SECRET = crypto.createHash("sha256").update("zapflow:" + APP_PASSWORD).digest();
+
+function makeToken() {
+  const exp = Date.now() + SESSION_HOURS * 3600 * 1000;
+  const sig = crypto.createHmac("sha256", AUTH_SECRET).update(String(exp)).digest("hex");
+  return Buffer.from(`${exp}.${sig}`).toString("base64url");
+}
+function validToken(token) {
+  try {
+    const [exp, sig] = Buffer.from(token, "base64url").toString().split(".");
+    if (!exp || !sig) return false;
+    const expect = crypto.createHmac("sha256", AUTH_SECRET).update(exp).digest("hex");
+    return sig === expect && Number(exp) > Date.now();
+  } catch {
+    return false;
+  }
+}
+function parseCookies(req) {
+  const out = {};
+  (req.headers.cookie || "").split(";").forEach((c) => {
+    const i = c.indexOf("=");
+    if (i > -1) out[c.slice(0, i).trim()] = decodeURIComponent(c.slice(i + 1).trim());
+  });
+  return out;
+}
+function isAuthed(req) {
+  if (!AUTH_ENABLED) return true;
+  return validToken(parseCookies(req).zapflow_session || "");
+}
 
 app.use(express.json({ limit: "50mb" }));
+
+// Middleware de autenticação (libera login, webhook e os assets da tela de login)
+const PUBLIC_PATHS = new Set([
+  "/login", "/login.html", "/login.js",
+  "/style.css", "/zappy.svg", "/icon.svg",
+  "/manifest.webmanifest", "/favicon.ico",
+]);
+app.use((req, res, next) => {
+  if (!AUTH_ENABLED) return next();
+  const p = req.path;
+  if (PUBLIC_PATHS.has(p) || p === "/api/login" || p === "/api/logout" || p === "/api/webhook") {
+    return next();
+  }
+  if (isAuthed(req)) return next();
+  if (p.startsWith("/api/")) return res.status(401).json({ error: "Não autenticado." });
+  return res.redirect("/login");
+});
+
+app.get("/login", (req, res) => {
+  if (isAuthed(req)) return res.redirect("/");
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
+
+app.post("/api/login", (req, res) => {
+  if (!AUTH_ENABLED) return res.json({ ok: true });
+  const { user, password } = req.body || {};
+  if (user === APP_USER && password === APP_PASSWORD) {
+    res.cookie("zapflow_session", makeToken(), {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: SESSION_HOURS * 3600 * 1000,
+    });
+    return res.json({ ok: true });
+  }
+  res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
+});
+
+app.post("/api/logout", (req, res) => {
+  res.clearCookie("zapflow_session");
+  res.json({ ok: true });
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // Uploads ficam em memória (não gravamos arquivos sensíveis em disco)
@@ -220,6 +299,7 @@ async function runJob(job) {
   job.finishedAt = Date.now();
   trimFinishedJob(job);
   saveJobs();
+  recordCampaign(success, failed);
   console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
 }
 
@@ -254,6 +334,84 @@ jobs.forEach((j) => {
 });
 saveJobs();
 setInterval(schedulerTick, 15000);
+
+// ---------------------------------------------------------------------------
+// Métricas (data/metrics.json)
+// ---------------------------------------------------------------------------
+let metrics = { sends: [], responses: [], campaigns: 0 };
+
+function loadMetrics() {
+  try {
+    if (fs.existsSync(METRICS_FILE)) metrics = JSON.parse(fs.readFileSync(METRICS_FILE, "utf8"));
+  } catch {
+    metrics = { sends: [], responses: [], campaigns: 0 };
+  }
+}
+function saveMetrics() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics));
+  } catch (err) {
+    console.error("Não foi possível salvar as métricas:", err.message);
+  }
+}
+function recordCampaign(sent, failed, ts = Date.now()) {
+  metrics.sends.push({ ts, sent, failed });
+  metrics.campaigns = (metrics.campaigns || 0) + 1;
+  saveMetrics();
+}
+function recordResponse(phone, ts = Date.now(), content = "") {
+  metrics.responses.push({
+    phone: String(phone || "").replace(/\D/g, ""),
+    ts,
+    content: String(content || "").slice(0, 200),
+  });
+  saveMetrics();
+}
+function summarizeMetrics(from) {
+  const sends = metrics.sends.filter((s) => s.ts >= from);
+  const responses = metrics.responses.filter((r) => r.ts >= from);
+  const totalSent = sends.reduce((a, s) => a + (s.sent || 0), 0);
+  const repliedNumbers = new Set(responses.map((r) => r.phone));
+  const replied = repliedNumbers.size;
+  const semRetorno = Math.max(totalSent - replied, 0);
+  const taxa = totalSent ? Math.round((replied / totalSent) * 1000) / 10 : 0;
+
+  const hours = {};
+  responses.forEach((r) => { const h = new Date(r.ts).getHours(); hours[h] = (hours[h] || 0) + 1; });
+  let melhorHora = null, max = 0;
+  for (const h in hours) { if (hours[h] > max) { max = hours[h]; melhorHora = Number(h); } }
+
+  const week = [0, 0, 0, 0, 0, 0, 0]; // dom..sáb (mensagens enviadas)
+  sends.forEach((s) => { week[new Date(s.ts).getDay()] += (s.sent || 0); });
+
+  return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week };
+}
+
+loadMetrics();
+
+// ---------------------------------------------------------------------------
+// Modelos de mensagem (data/templates.json)
+// ---------------------------------------------------------------------------
+let templates = [];
+const MAX_TEMPLATES = 10;
+
+function loadTemplates() {
+  try {
+    if (fs.existsSync(TEMPLATES_FILE)) templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8"));
+  } catch {
+    templates = [];
+  }
+}
+function saveTemplates() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar os modelos:", err.message);
+  }
+}
+loadTemplates();
 
 // ---------------------------------------------------------------------------
 // Rotas
@@ -390,6 +548,7 @@ app.post("/api/send", async (req, res) => {
   job.finishedAt = Date.now();
   job.result = { success, failed, total: contacts.length };
   saveJobs();
+  recordCampaign(success, failed);
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
@@ -441,11 +600,19 @@ app.get("/api/schedules", (req, res) => {
   res.json({ jobs: list });
 });
 
-// Detalhe de um agendamento (inclui o log de envios)
+// Detalhe de um agendamento (inclui o log de envios + quem respondeu)
 app.get("/api/schedules/:id", (req, res) => {
   const job = jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
-  res.json({ job: { ...publicJob(job), logs: job.logs || [] } });
+  const since = job.startedAt || job.createdAt || 0;
+  const repliedSet = new Set(
+    metrics.responses.filter((r) => r.ts >= since).map((r) => r.phone)
+  );
+  const logs = (job.logs || []).map((l) => ({
+    ...l,
+    replied: repliedSet.has(String(l.phone || "").replace(/\D/g, "")),
+  }));
+  res.json({ job: { ...publicJob(job), logs } });
 });
 
 // Limpa o histórico (remove os já finalizados; mantém pendentes/em andamento)
@@ -468,14 +635,73 @@ app.delete("/api/schedules/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-// Indica se há credenciais configuradas no servidor (.env)
+// --- Métricas ---
+app.get("/api/metrics", (req, res) => {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  res.json({
+    hoje: summarizeMetrics(startToday),
+    mes: summarizeMetrics(startMonth),
+  });
+});
+
+// --- Modelos de mensagem ---
+app.get("/api/templates", (req, res) => res.json({ templates }));
+
+app.post("/api/templates", (req, res) => {
+  const { name, message, imageUrl } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Dê um nome ao modelo." });
+  if (!message && !imageUrl) return res.status(400).json({ error: "O modelo precisa de texto ou imagem." });
+  if (templates.length >= MAX_TEMPLATES) {
+    return res.status(400).json({ error: `Limite de ${MAX_TEMPLATES} modelos atingido. Exclua algum para salvar outro.` });
+  }
+  const template = {
+    id: crypto.randomUUID(),
+    name: name.trim().slice(0, 40),
+    message: (message || "").slice(0, 5000),
+    imageUrl: (imageUrl || "").slice(0, 1000),
+  };
+  templates.push(template);
+  saveTemplates();
+  res.json({ ok: true, template });
+});
+
+app.delete("/api/templates/:id", (req, res) => {
+  const before = templates.length;
+  templates = templates.filter((t) => t.id !== req.params.id);
+  saveTemplates();
+  res.json({ ok: before !== templates.length });
+});
+
+// --- Webhook da Z-API (respostas recebidas) ---
+app.post("/api/webhook", (req, res) => {
+  try {
+    const b = req.body || {};
+    const phone = b.phone || b.participantPhone || b.connectedPhone;
+    const fromMe = b.fromMe === true;
+    // Conta apenas mensagens RECEBIDAS (resposta do contato, não enviadas por nós)
+    if (phone && !fromMe) {
+      const content = b.text?.message || b.message || b.body || b.caption || "";
+      recordResponse(phone, Date.now(), content);
+    }
+  } catch (err) {
+    console.error("Erro no webhook:", err.message);
+  }
+  res.json({ ok: true });
+});
+
+// Configurações públicas para o frontend
 app.get("/api/config", (req, res) => {
   res.json({
+    appName: "ZapFlow",
     hasEnvCredentials: Boolean(process.env.ZAPI_INSTANCE_ID && process.env.ZAPI_INSTANCE_TOKEN),
-    defaultDelayMs: DEFAULT_DELAY_MS,
+    defaultDelaySeconds: Math.max(1, Math.round(DEFAULT_DELAY_MS / 1000)) || 3,
+    authEnabled: AUTH_ENABLED,
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`\n  Frota-bot rodando em: http://localhost:${PORT}\n`);
+  console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
+    (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)") + "\n");
 });

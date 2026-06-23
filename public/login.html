@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZapFlow · Entrar</title>
+  <link rel="icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="login-body">
+  <div class="login-box">
+    <img src="/zappy.svg" alt="Zappy" class="login-mascot" />
+    <h1 class="login-title">Zap<span>Flow</span></h1>
+    <p class="login-sub">Entre para acessar seus disparos</p>
+
+    <form id="loginForm" class="login-form">
+      <label>Usuário
+        <input type="text" id="user" autocomplete="username" required />
+      </label>
+      <label>Senha
+        <input type="password" id="password" autocomplete="current-password" required />
+      </label>
+      <button class="btn primary" type="submit" id="loginBtn">Entrar</button>
+      <p id="loginError" class="login-error"></p>
+    </form>
+  </div>
+  <script src="/login.js"></script>
+</body>
+</html>

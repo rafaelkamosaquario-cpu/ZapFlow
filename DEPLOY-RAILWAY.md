@@ -28,6 +28,8 @@ No projeto, abra a aba **Variables** e adicione:
 | `ZAPI_INSTANCE_TOKEN` | Token da sua instância |
 | `ZAPI_CLIENT_TOKEN` | Client-Token (aba Segurança da Z-API) |
 | `DATA_DIR` | `/data` |
+| `APP_USER` | *(opcional)* usuário do login |
+| `APP_PASSWORD` | *(opcional)* senha do login |
 
 > Preencher essas variáveis é opcional (dá pra digitar na tela também), mas
 > deixa o app pronto pra usar sem precisar colar as credenciais toda vez.
@@ -38,15 +40,23 @@ No projeto, abra a aba **Variables** e adicione:
 3. O Railway cria um endereço tipo `https://frota-bot-production.up.railway.app`.
 4. **Esse é o link que você abre no celular!** 📱
 
-### 4. (Recomendado) Volume para não perder os agendamentos
-Os agendamentos são salvos em arquivo. Sem um volume, eles **somem a cada novo
-deploy**. Para mantê-los:
+### 4. (Recomendado) Volume para não perder os dados
+Os agendamentos, **métricas** e **modelos** são salvos em arquivos (`jobs.json`,
+`metrics.json`, `templates.json`). Sem um volume, eles **somem a cada novo deploy**.
+Para mantê-los:
 
 1. No projeto, clique em **+ New** → **Volume** (ou em Settings → Volumes).
 2. Defina o **Mount Path** como `/data`.
 3. Confirme que a variável `DATA_DIR` está como `/data` (passo 2).
 
-Pronto — agora os disparos agendados sobrevivem a reinícios.
+Pronto — agora os disparos agendados, o histórico e as métricas sobrevivem a reinícios.
+
+### 5. (Opcional) Webhook de respostas
+Para o dashboard de métricas contar **quem respondeu**, configure o webhook na Z-API:
+
+1. No painel da Z-API → sua instância → **Webhooks** → **Ao receber**.
+2. Cole: `https://SEU-APP.up.railway.app/api/webhook`
+3. Salve. As respostas passam a aparecer no histórico (✅ respondeu) e nas métricas.
 
 ---
 

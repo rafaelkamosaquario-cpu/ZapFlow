@@ -297,6 +297,21 @@ function addMessageBlock() {
     renumberMessages();
   });
 
+  // Botão "+ nome" — insere {{nome}} na posição do cursor
+  $(".m-insert-name", block).addEventListener("click", () => {
+    const ta = $(".m-message", block);
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    ta.value = ta.value.slice(0, start) + "{{nome}}" + ta.value.slice(end);
+    ta.focus();
+    const pos = start + "{{nome}}".length;
+    ta.setSelectionRange(pos, pos);
+  });
+
+  // Modelos
+  $(".m-save-template", block).addEventListener("click", () => openSaveTemplate(block));
+  $(".m-load-template", block).addEventListener("click", () => openTemplates(block));
+
   // Botão disparar
   $(".m-send", block).addEventListener("click", () => handleSend(block));
   // Botão limpar
@@ -308,6 +323,20 @@ function addMessageBlock() {
 }
 
 $("#btnAddMessage").addEventListener("click", addMessageBlock);
+
+// ---------------------------------------------------------------------------
+// Intervalo entre envios (segundos) + aviso + localStorage
+// ---------------------------------------------------------------------------
+function getDelayMs() {
+  const s = Math.min(60, Math.max(1, Number($("#delaySeconds").value) || 3));
+  return s * 1000;
+}
+function checkDelayWarning() {
+  const s = Number($("#delaySeconds").value);
+  $("#delayWarning").classList.toggle("hidden", !(s < 2));
+  localStorage.setItem("zapflow_delay", $("#delaySeconds").value);
+}
+$("#delaySeconds").addEventListener("input", checkDelayWarning);
 
 function updateSendButtons() {
   $$(".m-send", container).forEach((b) => { b.disabled = contacts.length === 0; });
@@ -383,7 +412,7 @@ async function sendNowBlock(block, message, image) {
         ...getCredentials(),
         contacts,
         message,
-        delayMs: Number($("#delayMs").value) || 0,
+        delayMs: getDelayMs(),
         ...image,
       }),
     });
@@ -442,7 +471,7 @@ async function scheduleBlock(block, message, image) {
         ...getCredentials(),
         contacts,
         message,
-        delayMs: Number($("#delayMs").value) || 0,
+        delayMs: getDelayMs(),
         scheduledAt,
         ...image,
       }),
@@ -592,7 +621,8 @@ async function toggleDetail(link) {
     box.innerHTML = logs.map((l) => {
       const nome = l.name ? escapeHtml(l.name) + " — " : "";
       const status = l.ok ? '<span class="d-ok">✅</span>' : `<span class="d-err">❌ ${escapeHtml(l.error || "")}</span>`;
-      return `<div class="d-line">${status} ${nome}${escapeHtml(l.phone || "")}</div>`;
+      const replied = l.replied ? ' <span class="d-replied">↩ respondeu</span>' : "";
+      return `<div class="d-line">${status} ${nome}${escapeHtml(l.phone || "")}${replied}</div>`;
     }).join("");
   } catch {
     box.innerHTML = "<small>Não foi possível carregar os detalhes.</small>";
@@ -607,6 +637,160 @@ $("#btnClearHistory").addEventListener("click", async () => {
 });
 
 setInterval(loadSchedules, 10000);
+
+// ---------------------------------------------------------------------------
+// Modais (genérico)
+// ---------------------------------------------------------------------------
+function openModal(id) { $("#" + id).classList.remove("hidden"); }
+function closeModal(id) { $("#" + id).classList.add("hidden"); }
+document.querySelectorAll(".modal-close").forEach((b) => {
+  b.addEventListener("click", () => closeModal(b.dataset.close));
+});
+document.querySelectorAll(".modal").forEach((m) => {
+  m.addEventListener("click", (e) => { if (e.target === m) m.classList.add("hidden"); });
+});
+
+// ---------------------------------------------------------------------------
+// Modelos de mensagem
+// ---------------------------------------------------------------------------
+let templateTargetBlock = null;
+
+function openSaveTemplate(block) {
+  const { message, image } = readBlock(block);
+  if (!message && !image.imageUrl) {
+    alert("Escreva um texto (e/ou informe a imagem por URL) para salvar como modelo.\n" +
+          "Obs.: fotos da galeria não são salvas no modelo, apenas URLs.");
+    return;
+  }
+  templateTargetBlock = block;
+  $("#templateName").value = "";
+  $("#saveTemplateError").textContent = "";
+  openModal("saveTemplateModal");
+  $("#templateName").focus();
+}
+
+$("#confirmSaveTemplate").addEventListener("click", async () => {
+  if (!templateTargetBlock) return;
+  const { message, image } = readBlock(templateTargetBlock);
+  const name = $("#templateName").value.trim();
+  if (!name) { $("#saveTemplateError").textContent = "Dê um nome ao modelo."; return; }
+  try {
+    const res = await fetch("/api/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, message, imageUrl: image.imageUrl || "" }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
+    closeModal("saveTemplateModal");
+  } catch (err) {
+    $("#saveTemplateError").textContent = err.message;
+  }
+});
+
+async function openTemplates(block) {
+  templateTargetBlock = block;
+  openModal("templatesModal");
+  const list = $("#templatesList");
+  list.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const res = await fetch("/api/templates");
+    const data = await res.json();
+    renderTemplates(data.templates || []);
+  } catch {
+    list.innerHTML = "<p class='hint'>Não foi possível carregar os modelos.</p>";
+  }
+}
+
+function renderTemplates(list) {
+  const wrap = $("#templatesList");
+  $("#templatesEmpty").classList.toggle("hidden", list.length > 0);
+  $("#templatesCount").textContent = `${list.length}/10 modelos salvos.`;
+  wrap.innerHTML = "";
+  list.forEach((t) => {
+    const div = document.createElement("div");
+    div.className = "template-item";
+    const preview = (t.message || (t.imageUrl ? "[imagem]" : "")).slice(0, 80);
+    div.innerHTML = `
+      <div class="t-name">${escapeHtml(t.name)}</div>
+      <div class="t-preview">${escapeHtml(preview)}${t.imageUrl ? " · 🖼️" : ""}</div>
+      <div class="t-actions">
+        <button class="btn primary t-load" data-id="${t.id}">Usar</button>
+        <button class="btn ghost t-del" data-id="${t.id}">Excluir</button>
+      </div>`;
+    wrap.appendChild(div);
+    div.querySelector(".t-load").addEventListener("click", () => loadTemplateInto(t));
+    div.querySelector(".t-del").addEventListener("click", () => deleteTemplate(t.id));
+  });
+}
+
+function loadTemplateInto(t) {
+  const block = templateTargetBlock;
+  if (!block) return;
+  $(".m-message", block).value = t.message || "";
+  if (t.imageUrl) {
+    // ativa a aba URL e preenche
+    $(".img-tabs .tab[data-tab='url']", block).click();
+    $(".m-imageUrl", block).value = t.imageUrl;
+  }
+  closeModal("templatesModal");
+}
+
+async function deleteTemplate(id) {
+  if (!confirm("Excluir este modelo?")) return;
+  await fetch("/api/templates/" + id, { method: "DELETE" });
+  const res = await fetch("/api/templates");
+  const data = await res.json();
+  renderTemplates(data.templates || []);
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard de métricas
+// ---------------------------------------------------------------------------
+$("#btnMetrics").addEventListener("click", openMetrics);
+
+async function openMetrics() {
+  openModal("metricsModal");
+  $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Carregando...</p>";
+  $("#panelMes .metric-content").innerHTML = "";
+  try {
+    const res = await fetch("/api/metrics");
+    const data = await res.json();
+    renderMetricPanel("#panelHoje", data.hoje);
+    renderMetricPanel("#panelMes", data.mes);
+  } catch {
+    $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Erro ao carregar métricas.</p>";
+  }
+}
+
+function renderMetricPanel(sel, m) {
+  const rateColor = m.taxa >= 30 ? "var(--primary)" : m.taxa >= 10 ? "#eab308" : "var(--danger)";
+  const hora = m.melhorHora === null ? "—" : String(m.melhorHora).padStart(2, "0") + "h";
+  const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const maxWeek = Math.max(1, ...m.week);
+  const chart = m.week.map((v, i) =>
+    `<div class="week-col">
+       <div class="week-bar" style="height:${Math.round((v / maxWeek) * 100)}%" title="${v} mensagem(ns)"></div>
+       <span class="week-label">${dias[i]}</span>
+     </div>`).join("");
+
+  $(sel + " .metric-content").innerHTML = `
+    <div class="metric-row"><span>Mensagens enviadas</span><b>${m.totalSent}</b></div>
+    <div class="metric-row"><span>Com retorno</span><b style="color:var(--primary)">${m.replied}</b></div>
+    <div class="metric-row"><span>Sem retorno</span><b>${m.semRetorno}</b></div>
+    <div class="metric-row"><span>Campanhas</span><b>${m.campanhas}</b></div>
+    <div class="metric-row"><span>Melhor horário de retorno</span><b>${hora}</b></div>
+    <div style="margin-top:10px;font-size:13px">Taxa de resposta: <b style="color:${rateColor}">${m.taxa}%</b></div>
+    <div class="metric-rate-bar"><div class="metric-rate-fill" style="width:${Math.min(m.taxa, 100)}%;background:${rateColor}"></div></div>
+    <div class="week-chart">${chart}</div>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:4px">Mensagens por dia da semana</div>`;
+}
+
+// Logout
+$("#btnLogout").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  window.location.href = "/login";
+});
 
 // ---------------------------------------------------------------------------
 // Util
@@ -627,10 +811,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   addMessageBlock(); // começa com 1 mensagem
   loadSchedules();
 
+  // Intervalo: restaura preferência salva ou usa o padrão do servidor
+  const savedDelay = localStorage.getItem("zapflow_delay");
+  if (savedDelay) $("#delaySeconds").value = savedDelay;
+
   try {
     const res = await fetch("/api/config");
     const cfg = await res.json();
-    if (cfg.defaultDelayMs) $("#delayMs").value = cfg.defaultDelayMs;
+    if (!savedDelay && cfg.defaultDelaySeconds) $("#delaySeconds").value = cfg.defaultDelaySeconds;
+    if (cfg.authEnabled) $("#btnLogout").classList.remove("hidden");
+    checkDelayWarning();
     if (cfg.hasEnvCredentials) {
       $("#connStatus").textContent = "ℹ️ Credenciais detectadas no servidor (.env).";
       $("#connStatus").className = "status ok";

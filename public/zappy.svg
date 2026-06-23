@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Zappy">
+  <defs>
+    <linearGradient id="zbody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ee27a"/>
+      <stop offset="1" stop-color="#128C7E"/>
+    </linearGradient>
+  </defs>
+  <!-- antena -->
+  <line x1="60" y1="20" x2="60" y2="34" stroke="#0d1117" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="60" cy="16" r="6" fill="#25D366"/>
+  <!-- cabeça/corpo -->
+  <rect x="22" y="34" width="76" height="60" rx="18" fill="url(#zbody)"/>
+  <!-- olhos -->
+  <circle cx="45" cy="60" r="9" fill="#0d1117"/>
+  <circle cx="75" cy="60" r="9" fill="#0d1117"/>
+  <circle cx="47.5" cy="57.5" r="3" fill="#ffffff"/>
+  <circle cx="77.5" cy="57.5" r="3" fill="#ffffff"/>
+  <!-- sorriso -->
+  <path d="M44 76 q16 14 32 0" fill="none" stroke="#0d1117" stroke-width="4" stroke-linecap="round"/>
+  <!-- orelhinhas/luzes -->
+  <rect x="16" y="52" width="8" height="20" rx="4" fill="#128C7E"/>
+  <rect x="96" y="52" width="8" height="20" rx="4" fill="#128C7E"/>
+  <!-- balão de fala -->
+  <g>
+    <rect x="78" y="86" width="34" height="24" rx="8" fill="#ffffff"/>
+    <path d="M86 110 l-2 9 l11 -9 z" fill="#ffffff"/>
+    <circle cx="88" cy="98" r="2.5" fill="#25D366"/>
+    <circle cx="95" cy="98" r="2.5" fill="#25D366"/>
+    <circle cx="102" cy="98" r="2.5" fill="#25D366"/>
+  </g>
+</svg>

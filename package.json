@@ -1,7 +1,7 @@
 {
-  "name": "frota-bot",
-  "version": "1.0.0",
-  "description": "Disparador de mensagens de texto e imagem via Z-API com lista de contatos em Excel",
+  "name": "zapflow",
+  "version": "2.0.0",
+  "description": "ZapFlow — disparador de mensagens de texto e imagem via Z-API com contatos do Excel, agendamento, modelos e métricas",
   "main": "server.js",
   "type": "module",
   "scripts": {

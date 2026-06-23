@@ -3,18 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Frota-bot · Disparo de Mensagens (Z-API)</title>
+  <meta name="theme-color" content="#25D366" />
+  <title>ZapFlow · Disparo de Mensagens (Z-API)</title>
+  <link rel="icon" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">📤</span>
+      <img src="zappy.svg" alt="Zappy" class="logo-img" />
       <div>
-        <h1>Frota-bot</h1>
+        <h1>Zap<span class="brand-accent">Flow</span></h1>
         <p>Disparo de mensagens de texto e imagem via Z-API</p>
       </div>
     </div>
+    <nav class="topnav">
+      <button class="navbtn" id="btnMetrics" type="button">📊 Métricas</button>
+      <button class="navbtn hidden" id="btnLogout" type="button">Sair</button>
+    </nav>
   </header>
 
   <main class="container">
@@ -85,11 +93,15 @@
         horário — você pode disparar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
 
       <div class="row">
-        <label class="inline">Intervalo entre envios (ms)
-          <input type="number" id="delayMs" value="1500" min="0" step="100" style="width:120px" />
+        <label class="inline">Aguardar entre cada mensagem
+          <span class="delay-field">
+            <input type="number" id="delaySeconds" value="3" min="1" max="60" step="1" style="width:80px" />
+            <span>segundos</span>
+          </span>
         </label>
         <span class="hint" style="margin:0">Pausa entre cada contato (vale para todas as mensagens).</span>
       </div>
+      <small id="delayWarning" class="delay-warning hidden">⚠️ Intervalos muito curtos aumentam risco de bloqueio do número.</small>
 
       <div id="messagesContainer"></div>
 
@@ -104,10 +116,12 @@
           <button class="btn-remove" type="button">✕ Remover</button>
         </div>
 
-        <label>Texto da mensagem
-          <textarea class="m-message" rows="4" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
-        </label>
-        <p class="hint">Use <code>{{nome}}</code> para inserir o nome do contato.</p>
+        <div class="msg-toolbar">
+          <label style="margin:0">Texto da mensagem</label>
+          <button class="chip-btn m-insert-name" type="button" title="Inserir nome do contato">+ nome</button>
+        </div>
+        <textarea class="m-message" rows="4" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
+        <p class="hint">Use o botão <b>+ nome</b> (ou digite <code>{{nome}}</code>) para inserir o nome do contato.</p>
 
         <label>Imagem (opcional)</label>
         <div class="tabs img-tabs">
@@ -140,6 +154,11 @@
           <p class="hint">O servidor dispara automaticamente no horário marcado (precisa estar no ar).</p>
         </div>
 
+        <div class="row template-row">
+          <button class="btn ghost m-save-template" type="button">💾 Salvar como modelo</button>
+          <button class="btn ghost m-load-template" type="button">📑 Meus Modelos</button>
+        </div>
+
         <div class="row">
           <button class="btn primary m-send" type="button" disabled>🚀 Disparar</button>
           <button class="btn ghost m-clear" type="button">🧹 Limpar</button>
@@ -165,6 +184,53 @@
       <div id="schedulesList" class="schedules"></div>
     </section>
   </main>
+
+  <!-- Modal: Métricas -->
+  <div class="modal hidden" id="metricsModal">
+    <div class="modal-box modal-wide">
+      <div class="modal-head">
+        <h3>📊 Dashboard de métricas</h3>
+        <button class="modal-close" data-close="metricsModal" type="button">✕</button>
+      </div>
+      <div class="metrics-panels">
+        <div class="metric-panel" id="panelHoje"><h4>Hoje</h4><div class="metric-content"></div></div>
+        <div class="metric-panel" id="panelMes"><h4>Este mês</h4><div class="metric-content"></div></div>
+      </div>
+      <p class="hint">💡 As respostas (retorno) só aparecem se o <b>webhook</b> da Z-API estiver configurado
+        — veja o README.</p>
+    </div>
+  </div>
+
+  <!-- Modal: Meus Modelos -->
+  <div class="modal hidden" id="templatesModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>📑 Meus Modelos</h3>
+        <button class="modal-close" data-close="templatesModal" type="button">✕</button>
+      </div>
+      <p class="hint" id="templatesCount"></p>
+      <div id="templatesList" class="templates-list"></div>
+      <div id="templatesEmpty" class="hint">Você ainda não salvou nenhum modelo.</div>
+    </div>
+  </div>
+
+  <!-- Modal: Salvar modelo -->
+  <div class="modal hidden" id="saveTemplateModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>💾 Salvar como modelo</h3>
+        <button class="modal-close" data-close="saveTemplateModal" type="button">✕</button>
+      </div>
+      <label>Nome do modelo
+        <input type="text" id="templateName" placeholder="Ex.: Promoção de sexta" maxlength="40" />
+      </label>
+      <p class="hint">Salva o texto e a URL da imagem (fotos da galeria não são salvas no modelo).</p>
+      <div class="row">
+        <button class="btn primary" id="confirmSaveTemplate" type="button">Salvar</button>
+        <span id="saveTemplateError" class="status err"></span>
+      </div>
+    </div>
+  </div>
 
   <footer class="footer">
     <small>Use com responsabilidade e respeite as regras do WhatsApp e a LGPD.</small>
