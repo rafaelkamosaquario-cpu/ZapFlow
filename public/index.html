@@ -61,61 +61,77 @@
       </div>
     </section>
 
-    <!-- Passo 3: Mensagem -->
+    <!-- Passo 3: Mensagens (até 5, cada uma independente) -->
     <section class="card">
-      <h2><span class="step">3</span> Mensagem</h2>
-      <label>Texto da mensagem
-        <textarea id="message" rows="5" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
-      </label>
-      <p class="hint">Use <code>{{nome}}</code> para inserir o nome do contato automaticamente.</p>
-
-      <label>Imagem (opcional)</label>
-      <div class="tabs">
-        <button class="tab active" data-tab="url">URL da imagem</button>
-        <button class="tab" data-tab="upload">Enviar arquivo</button>
-        <button class="tab" data-tab="none">Sem imagem</button>
-      </div>
-      <div class="tab-content" data-tab="url">
-        <input type="text" id="imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
-      </div>
-      <div class="tab-content hidden" data-tab="upload">
-        <input type="file" id="imageFile" accept="image/*" />
-        <img id="imagePreview" class="preview hidden" alt="prévia" />
-      </div>
-      <div class="tab-content hidden" data-tab="none">
-        <p class="hint">Será enviado apenas o texto.</p>
-      </div>
-    </section>
-
-    <!-- Passo 4: Disparo -->
-    <section class="card">
-      <h2><span class="step">4</span> Disparar</h2>
-
-      <label>Quando enviar?</label>
-      <div class="tabs">
-        <button class="tab active" data-when="now">▶️ Enviar agora</button>
-        <button class="tab" data-when="schedule">📅 Agendar</button>
-      </div>
-      <div class="when-content hidden" data-when="schedule">
-        <label class="inline">Data e horário do envio
-          <input type="datetime-local" id="scheduledAt" />
-        </label>
-        <p class="hint">O envio será disparado automaticamente pelo servidor na data/horário escolhido
-          (use o fuso do seu aparelho). O servidor precisa estar no ar nesse momento.</p>
-      </div>
+      <h2><span class="step">3</span> Mensagens</h2>
+      <p class="hint">Crie até <b>5 mensagens</b>. Cada uma tem seu próprio texto, imagem e
+        horário — você pode disparar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
 
       <div class="row">
         <label class="inline">Intervalo entre envios (ms)
           <input type="number" id="delayMs" value="1500" min="0" step="100" style="width:120px" />
         </label>
-        <button class="btn primary" id="btnSend" disabled>🚀 Disparar mensagens</button>
+        <span class="hint" style="margin:0">Pausa entre cada contato (vale para todas as mensagens).</span>
       </div>
-      <div class="progress-wrap hidden" id="progressWrap">
-        <div class="progress"><div class="progress-bar" id="progressBar"></div></div>
-        <p id="progressText"></p>
-      </div>
-      <div id="log" class="log hidden"></div>
+
+      <div id="messagesContainer"></div>
+
+      <button class="btn secondary" id="btnAddMessage" type="button">➕ Adicionar mensagem</button>
     </section>
+
+    <!-- Template de um bloco de mensagem -->
+    <template id="msgTemplate">
+      <div class="msg-block">
+        <div class="msg-header">
+          <h3>Mensagem <span class="msg-num"></span></h3>
+          <button class="btn-remove" type="button">✕ Remover</button>
+        </div>
+
+        <label>Texto da mensagem
+          <textarea class="m-message" rows="4" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
+        </label>
+        <p class="hint">Use <code>{{nome}}</code> para inserir o nome do contato.</p>
+
+        <label>Imagem (opcional)</label>
+        <div class="tabs img-tabs">
+          <button class="tab active" data-tab="url" type="button">URL da imagem</button>
+          <button class="tab" data-tab="upload" type="button">Enviar arquivo</button>
+          <button class="tab" data-tab="none" type="button">Sem imagem</button>
+        </div>
+        <div class="tab-content" data-tab="url">
+          <input type="text" class="m-imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
+        </div>
+        <div class="tab-content hidden" data-tab="upload">
+          <input type="file" class="m-imageFile" accept="image/*" />
+          <img class="preview m-preview hidden" alt="prévia" />
+        </div>
+        <div class="tab-content hidden" data-tab="none">
+          <p class="hint">Será enviado apenas o texto.</p>
+        </div>
+
+        <label>Quando enviar?</label>
+        <div class="tabs when-tabs">
+          <button class="tab active" data-when="now" type="button">▶️ Enviar agora</button>
+          <button class="tab" data-when="schedule" type="button">📅 Agendar</button>
+        </div>
+        <div class="when-content hidden" data-when="schedule">
+          <label class="inline">Data e horário do envio
+            <input type="datetime-local" class="m-scheduledAt" />
+          </label>
+          <p class="hint">O servidor dispara automaticamente no horário marcado (precisa estar no ar).</p>
+        </div>
+
+        <div class="row">
+          <button class="btn primary m-send" type="button" disabled>🚀 Disparar</button>
+          <span class="m-status status"></span>
+        </div>
+        <div class="progress-wrap hidden m-progressWrap">
+          <div class="progress"><div class="progress-bar m-progressBar"></div></div>
+          <p class="m-progressText"></p>
+        </div>
+        <div class="log hidden m-log"></div>
+      </div>
+    </template>
 
     <!-- Agendamentos -->
     <section class="card">

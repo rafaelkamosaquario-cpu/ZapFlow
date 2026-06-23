@@ -14,6 +14,8 @@ Aplicativo web para **disparar mensagens de texto e imagem pelo WhatsApp** usand
 - ⏱️ Intervalo configurável entre os envios (reduz risco de bloqueio)
 - 📈 Acompanhamento do progresso em tempo real, com relatório de sucesso/falha
 - 📅 **Agendamento** de disparos com data e horário (o servidor envia sozinho na hora marcada)
+- ✉️ Até **5 mensagens independentes**, cada uma com seu texto, imagem e horário
+  (ex.: disparar a 1ª agora e agendar a 2ª para mais tarde)
 - 📱 Interface responsiva — funciona no **celular** (veja o deploy no Railway)
 
 ## 🚀 Como rodar
