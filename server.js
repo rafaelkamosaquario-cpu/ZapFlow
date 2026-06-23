@@ -22,13 +22,13 @@ const DEFAULT_DELAY_MS = Number(process.env.DEFAULT_DELAY_MS || 1500);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const JOBS_FILE = path.join(DATA_DIR, "jobs.json");
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // Uploads ficam em memória (não gravamos arquivos sensíveis em disco)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

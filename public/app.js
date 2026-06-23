@@ -1,7 +1,10 @@
 // ---------------------------------------------------------------------------
 // Estado global
 // ---------------------------------------------------------------------------
-let contacts = [];          // contatos válidos carregados da planilha
+let importedContacts = [];  // válidos vindos do Excel
+let importedInvalid = [];   // inválidos do Excel (apenas para exibir)
+let manualContacts = [];    // adicionados manualmente
+let contacts = [];          // combinação dos válidos (é o que será enviado)
 const MAX_MESSAGES = 5;
 
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
@@ -83,39 +86,117 @@ async function handleFile(file) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erro ao ler a planilha.");
 
-    contacts = data.valid;
+    importedContacts = data.valid;
+    importedInvalid = data.invalid;
     $("#fileName").textContent = file.name;
-    renderContacts(data);
-    updateSendButtons();
+    rebuildContacts();
   } catch (err) {
     $("#fileName").textContent = "";
     alert("Erro: " + err.message);
   }
 }
 
-function renderContacts(data) {
+/** Normaliza um telefone no navegador (espelha a lógica do servidor). */
+function normalizePhone(raw) {
+  if (!raw) return null;
+  let d = String(raw).replace(/\D/g, "").replace(/^0+/, "");
+  if (!d) return null;
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = "55" + d;
+  if (d.length < 12 || d.length > 13) return null;
+  return d;
+}
+
+// Adição manual de contatos
+$("#btnAddContact").addEventListener("click", addManualContact);
+$("#manualPhone").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") addManualContact();
+});
+
+function addManualContact() {
+  const nameEl = $("#manualName");
+  const phoneEl = $("#manualPhone");
+  const err = $("#manualError");
+  const phone = normalizePhone(phoneEl.value);
+  if (!phone) {
+    err.textContent = "⚠️ Telefone inválido. Inclua o DDD (ex.: 11 99999-8888).";
+    return;
+  }
+  if (contacts.some((c) => c.phone === phone)) {
+    err.textContent = "⚠️ Esse número já está na lista.";
+    return;
+  }
+  err.textContent = "";
+  manualContacts.push({ phone, name: nameEl.value.trim(), rawPhone: phoneEl.value.trim(), manual: true });
+  nameEl.value = "";
+  phoneEl.value = "";
+  nameEl.focus();
+  rebuildContacts();
+}
+
+/** Recombina importados + manuais e atualiza a tabela. */
+function rebuildContacts() {
+  contacts = [...importedContacts, ...manualContacts];
+  renderContacts();
+  updateSendButtons();
+}
+
+function renderContacts() {
   const summary = $("#contactsSummary");
+  const validCount = contacts.length;
+  const invalidCount = importedInvalid.length;
+  const total = validCount + invalidCount;
+
+  if (total === 0) {
+    summary.classList.add("hidden");
+    $("#tableWrap").classList.add("hidden");
+    return;
+  }
+
   summary.classList.remove("hidden");
   summary.innerHTML =
-    `Total: <b>${data.total}</b> &nbsp;·&nbsp; ` +
-    `Válidos: <b class="ok">${data.valid.length}</b> &nbsp;·&nbsp; ` +
-    `Inválidos: <b class="err">${data.invalid.length}</b>`;
+    `Total: <b>${total}</b> &nbsp;·&nbsp; ` +
+    `Válidos: <b class="ok">${validCount}</b> &nbsp;·&nbsp; ` +
+    `Inválidos: <b class="err">${invalidCount}</b>`;
 
   const tbody = $("#contactsTable tbody");
   tbody.innerHTML = "";
-  const all = [...data.valid, ...data.invalid];
-  all.slice(0, 500).forEach((c, i) => {
+  let i = 0;
+
+  contacts.forEach((c) => {
+    i++;
     const tr = document.createElement("tr");
+    const remove = c.manual
+      ? `<button class="row-remove" data-phone="${c.phone}" title="Remover">✕</button>` : "";
+    const tag = c.manual ? ' <span class="badge manual">manual</span>' : "";
     tr.innerHTML = `
-      <td>${i + 1}</td>
+      <td>${i}</td>
       <td>${escapeHtml(c.name || "-")}</td>
-      <td class="${c.phone ? "" : "invalid"}">${escapeHtml(c.phone || c.rawPhone || "-")}</td>
-      <td>${c.phone
-        ? '<span class="badge ok">válido</span>'
-        : '<span class="badge err">inválido</span>'}</td>`;
+      <td>${escapeHtml(c.phone)}${tag}</td>
+      <td><span class="badge ok">válido</span></td>
+      <td>${remove}</td>`;
     tbody.appendChild(tr);
   });
+
+  importedInvalid.forEach((c) => {
+    i++;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i}</td>
+      <td>${escapeHtml(c.name || "-")}</td>
+      <td class="invalid">${escapeHtml(c.rawPhone || "-")}</td>
+      <td><span class="badge err">inválido</span></td>
+      <td></td>`;
+    tbody.appendChild(tr);
+  });
+
   $("#tableWrap").classList.remove("hidden");
+
+  tbody.querySelectorAll(".row-remove").forEach((b) => {
+    b.addEventListener("click", () => {
+      manualContacts = manualContacts.filter((c) => c.phone !== b.dataset.phone);
+      rebuildContacts();
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +237,7 @@ function addMessageBlock() {
       });
     });
   });
-  block._imageTab = "url";
+  block._imageTab = "upload";
 
   // Upload de imagem -> base64
   $(".m-imageFile", block).addEventListener("change", (e) => {

@@ -43,19 +43,30 @@
 
     <!-- Passo 2: Lista de contatos -->
     <section class="card">
-      <h2><span class="step">2</span> Lista de contatos (Excel)</h2>
-      <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code>. A planilha deve ter uma coluna
-        de telefone (aceita <em>Telefone</em>, <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e,
-        opcionalmente, uma coluna <em>Nome</em>.</p>
+      <h2><span class="step">2</span> Lista de contatos</h2>
+      <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code> <b>ou</b> adicione contatos
+        manualmente abaixo. A planilha deve ter uma coluna de telefone (aceita <em>Telefone</em>,
+        <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden />
         <p>📎 Clique ou arraste sua planilha aqui</p>
         <small id="fileName"></small>
       </div>
+
+      <div class="manual-add">
+        <p class="manual-title">✍️ Ou adicione manualmente:</p>
+        <div class="manual-row">
+          <input type="text" id="manualName" placeholder="Nome (opcional)" />
+          <input type="tel" id="manualPhone" placeholder="Telefone (ex.: 11 99999-8888)" inputmode="numeric" />
+          <button class="btn secondary" id="btnAddContact" type="button">➕ Adicionar</button>
+        </div>
+        <small id="manualError" class="manual-error"></small>
+      </div>
+
       <div id="contactsSummary" class="summary hidden"></div>
       <div class="table-wrap hidden" id="tableWrap">
         <table id="contactsTable">
-          <thead><tr><th>#</th><th>Nome</th><th>Número (normalizado)</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Nome</th><th>Número (normalizado)</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -94,16 +105,18 @@
 
         <label>Imagem (opcional)</label>
         <div class="tabs img-tabs">
-          <button class="tab active" data-tab="url" type="button">URL da imagem</button>
-          <button class="tab" data-tab="upload" type="button">Enviar arquivo</button>
+          <button class="tab active" data-tab="upload" type="button">📷 Galeria / Foto</button>
+          <button class="tab" data-tab="url" type="button">🔗 URL</button>
           <button class="tab" data-tab="none" type="button">Sem imagem</button>
         </div>
-        <div class="tab-content" data-tab="url">
-          <input type="text" class="m-imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
-        </div>
-        <div class="tab-content hidden" data-tab="upload">
+        <div class="tab-content" data-tab="upload">
           <input type="file" class="m-imageFile" accept="image/*" />
+          <p class="hint">Toque para escolher uma foto da sua galeria ou tirar uma na hora.</p>
           <img class="preview m-preview hidden" alt="prévia" />
+        </div>
+        <div class="tab-content hidden" data-tab="url">
+          <input type="text" class="m-imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
+          <p class="hint">Cole o link de uma imagem que já está na internet (não serve para fotos da galeria).</p>
         </div>
         <div class="tab-content hidden" data-tab="none">
           <p class="hint">Será enviado apenas o texto.</p>
