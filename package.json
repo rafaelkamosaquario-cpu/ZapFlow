@@ -1,0 +1,27 @@
+{
+  "name": "frota-bot",
+  "version": "1.0.0",
+  "description": "Disparador de mensagens de texto e imagem via Z-API com lista de contatos em Excel",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "z-api",
+    "whatsapp",
+    "excel",
+    "disparo",
+    "mensagens"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}
