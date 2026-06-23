@@ -41,11 +41,16 @@ $("#connHeader").addEventListener("click", () => {
   setConnCollapsed(!$("#connBody").classList.contains("hidden"));
 });
 
-$("#btnTest").addEventListener("click", async (e) => {
-  e.stopPropagation();
+function setConnBadge(text, cls) {
+  $("#connBadge").textContent = text;
+  $("#connBadge").className = "head-badge " + (cls || "");
+}
+
+async function runConnectionTest({ collapseOnSuccess = true } = {}) {
   const status = $("#connStatus");
   status.textContent = "Testando...";
   status.className = "status";
+  setConnBadge("⏳ Verificando...", "");
   try {
     const res = await fetch("/api/test-connection", {
       method: "POST",
@@ -58,24 +63,28 @@ $("#btnTest").addEventListener("click", async (e) => {
       if (connected === false) {
         status.textContent = "⚠️ Instância encontrada, mas o WhatsApp não está conectado (leia o QR Code).";
         status.className = "status err";
-        $("#connBadge").textContent = "⚠️ Sem WhatsApp";
-        $("#connBadge").className = "head-badge err";
+        setConnBadge("⚠️ Sem WhatsApp", "err");
       } else {
         status.textContent = "✅ Conexão OK!";
         status.className = "status ok";
-        $("#connBadge").textContent = "✅ Conectado";
-        $("#connBadge").className = "head-badge ok";
-        setTimeout(() => setConnCollapsed(true), 800); // minimiza após conectar
+        setConnBadge("🟢 Conectado", "ok");
+        if (collapseOnSuccess) setTimeout(() => setConnCollapsed(true), 800);
       }
     } else {
       status.textContent = "❌ " + (data.error || "Falha na conexão.");
       status.className = "status err";
-      $("#connBadge").textContent = "";
+      setConnBadge("❌ Erro", "err");
     }
   } catch (err) {
     status.textContent = "❌ " + err.message;
     status.className = "status err";
+    setConnBadge("❌ Erro", "err");
   }
+}
+
+$("#btnTest").addEventListener("click", (e) => {
+  e.stopPropagation();
+  runConnectionTest();
 });
 
 // ---------------------------------------------------------------------------
@@ -822,11 +831,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (cfg.authEnabled) $("#btnLogout").classList.remove("hidden");
     checkDelayWarning();
     if (cfg.hasEnvCredentials) {
-      $("#connStatus").textContent = "ℹ️ Credenciais detectadas no servidor (.env).";
-      $("#connStatus").className = "status ok";
-      $("#connBadge").textContent = "✅ Pronto (.env)";
-      $("#connBadge").className = "head-badge ok";
       setConnCollapsed(true); // já vem minimizado quando há credenciais no servidor
+      // Testa a conexão automaticamente e mostra "Conectado" no cabeçalho
+      runConnectionTest({ collapseOnSuccess: false });
     }
   } catch { /* ignore */ }
 });
