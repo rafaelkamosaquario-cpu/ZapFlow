@@ -45,11 +45,15 @@ function setConnBadge(text, cls) {
   $("#connBadge").textContent = text;
   $("#connBadge").className = "head-badge " + (cls || "");
 }
+function setConnTitle(text) {
+  $("#connTitle").textContent = text;
+}
 
 async function runConnectionTest({ collapseOnSuccess = true } = {}) {
   const status = $("#connStatus");
   status.textContent = "Testando...";
   status.className = "status";
+  setConnTitle("Conectando...");
   setConnBadge("⏳ Verificando...", "");
   try {
     const res = await fetch("/api/test-connection", {
@@ -63,21 +67,25 @@ async function runConnectionTest({ collapseOnSuccess = true } = {}) {
       if (connected === false) {
         status.textContent = "⚠️ Instância encontrada, mas o WhatsApp não está conectado (leia o QR Code).";
         status.className = "status err";
+        setConnTitle("Desconectado");
         setConnBadge("⚠️ Sem WhatsApp", "err");
       } else {
         status.textContent = "✅ Conexão OK!";
         status.className = "status ok";
-        setConnBadge("🟢 Conectado", "ok");
+        setConnTitle("Conectado");
+        setConnBadge("✅ Pronto", "ok");
         if (collapseOnSuccess) setTimeout(() => setConnCollapsed(true), 800);
       }
     } else {
       status.textContent = "❌ " + (data.error || "Falha na conexão.");
       status.className = "status err";
+      setConnTitle("Desconectado");
       setConnBadge("❌ Erro", "err");
     }
   } catch (err) {
     status.textContent = "❌ " + err.message;
     status.className = "status err";
+    setConnTitle("Desconectado");
     setConnBadge("❌ Erro", "err");
   }
 }
