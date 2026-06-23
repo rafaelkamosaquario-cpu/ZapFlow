@@ -830,3 +830,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch { /* ignore */ }
 });
+
+// Registra o Service Worker (PWA — instalável e com cache offline)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* ignora falha */ });
+  });
+}

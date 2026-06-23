@@ -65,7 +65,7 @@ app.use(express.json({ limit: "50mb" }));
 const PUBLIC_PATHS = new Set([
   "/login", "/login.html", "/login.js",
   "/style.css", "/zappy.svg", "/icon.svg",
-  "/manifest.webmanifest", "/favicon.ico",
+  "/manifest.json", "/sw.js", "/favicon.ico",
 ]);
 app.use((req, res, next) => {
   if (!AUTH_ENABLED) return next();

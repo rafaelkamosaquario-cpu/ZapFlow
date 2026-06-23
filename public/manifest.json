@@ -3,7 +3,9 @@
   "short_name": "ZapFlow",
   "description": "Disparo de mensagens de texto e imagem via Z-API",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0d1117",
   "theme_color": "#25D366",
   "icons": [
