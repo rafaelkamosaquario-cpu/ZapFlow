@@ -4,6 +4,7 @@
 let contacts = [];          // contatos válidos carregados da planilha
 let imageTab = "url";       // url | upload | none
 let imageBase64 = null;     // imagem em base64 quando enviada por arquivo
+let whenMode = "now";       // now | schedule
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -141,6 +142,20 @@ document.querySelectorAll(".tab").forEach((tab) => {
   });
 });
 
+// Abas "Enviar agora" / "Agendar"
+document.querySelectorAll(".tab[data-when]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab[data-when]").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    whenMode = tab.dataset.when;
+    document.querySelectorAll(".when-content").forEach((c) => {
+      c.classList.toggle("hidden", c.dataset.when !== whenMode);
+    });
+    const btn = $("#btnSend");
+    btn.textContent = whenMode === "schedule" ? "📅 Agendar disparo" : "🚀 Disparar mensagens";
+  });
+});
+
 $("#imageFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -180,6 +195,12 @@ $("#btnSend").addEventListener("click", async () => {
     alert("Escreva uma mensagem de texto e/ou selecione uma imagem.");
     return;
   }
+
+  // Modo agendamento: cria o job e sai (o servidor dispara na hora marcada)
+  if (whenMode === "schedule") {
+    return scheduleSend(message, image);
+  }
+
   if (!confirm(`Confirmar o disparo para ${contacts.length} contato(s)?`)) return;
 
   const btn = $("#btnSend");
@@ -267,6 +288,114 @@ function addLog(text, ok) {
 }
 
 // ---------------------------------------------------------------------------
+// Agendamento
+// ---------------------------------------------------------------------------
+async function scheduleSend(message, image) {
+  const value = $("#scheduledAt").value;
+  if (!value) {
+    alert("Escolha a data e o horário do agendamento.");
+    return;
+  }
+  const scheduledAt = new Date(value).getTime();
+  if (scheduledAt < Date.now()) {
+    alert("O horário escolhido já passou. Selecione um horário futuro.");
+    return;
+  }
+
+  const quando = new Date(scheduledAt).toLocaleString("pt-BR");
+  if (!confirm(`Agendar disparo para ${contacts.length} contato(s) em ${quando}?`)) return;
+
+  const btn = $("#btnSend");
+  btn.disabled = true;
+  btn.textContent = "Agendando...";
+
+  try {
+    const res = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...getCredentials(),
+        contacts,
+        message,
+        delayMs: Number($("#delayMs").value) || 0,
+        scheduledAt,
+        ...image,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao agendar.");
+    alert(`✅ Disparo agendado para ${quando}!`);
+    loadSchedules();
+  } catch (err) {
+    alert("Erro: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📅 Agendar disparo";
+  }
+}
+
+const STATUS_LABELS = {
+  pendente: { txt: "⏳ Pendente", cls: "pend" },
+  enviando: { txt: "📤 Enviando...", cls: "sending" },
+  concluido: { txt: "✅ Concluído", cls: "ok" },
+  erro: { txt: "❌ Erro", cls: "err" },
+  cancelado: { txt: "🚫 Cancelado", cls: "cancel" },
+};
+
+async function loadSchedules() {
+  try {
+    const res = await fetch("/api/schedules");
+    const data = await res.json();
+    renderSchedules(data.jobs || []);
+  } catch { /* ignore */ }
+}
+
+function renderSchedules(list) {
+  const wrap = $("#schedulesList");
+  const empty = $("#schedulesEmpty");
+  empty.classList.toggle("hidden", list.length > 0);
+  wrap.innerHTML = "";
+
+  for (const job of list) {
+    const st = STATUS_LABELS[job.status] || { txt: job.status, cls: "" };
+    const quando = new Date(job.scheduledAt).toLocaleString("pt-BR");
+    const preview = (job.message || (job.hasImage ? "[imagem]" : "")).slice(0, 60);
+    const result = job.result
+      ? `<small>${job.result.success} enviada(s), ${job.result.failed} falha(s)</small>`
+      : "";
+    const cancelBtn = job.status === "pendente"
+      ? `<button class="btn-cancel" data-id="${job.id}">Cancelar</button>`
+      : "";
+
+    const div = document.createElement("div");
+    div.className = "sched-item " + st.cls;
+    div.innerHTML = `
+      <div class="sched-head">
+        <span class="sched-status ${st.cls}">${st.txt}</span>
+        <span class="sched-when">📅 ${quando}</span>
+        ${cancelBtn}
+      </div>
+      <div class="sched-body">
+        <span>${job.contactsCount} contato(s)${job.hasImage ? " · 🖼️ imagem" : ""}</span>
+        ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}${preview.length >= 60 ? "..." : ""}"</span>` : ""}
+        ${result}
+      </div>`;
+    wrap.appendChild(div);
+  }
+
+  wrap.querySelectorAll(".btn-cancel").forEach((b) => {
+    b.addEventListener("click", async () => {
+      if (!confirm("Cancelar este agendamento?")) return;
+      await fetch("/api/schedules/" + b.dataset.id, { method: "DELETE" });
+      loadSchedules();
+    });
+  });
+}
+
+// Atualiza a lista de agendamentos periodicamente
+setInterval(loadSchedules, 10000);
+
+// ---------------------------------------------------------------------------
 // Util
 // ---------------------------------------------------------------------------
 function escapeHtml(str) {
@@ -280,6 +409,13 @@ function escapeHtml(str) {
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   loadCreds();
+  loadSchedules();
+
+  // Sugere um horário padrão (daqui a 1 hora) no campo de agendamento
+  const dt = new Date(Date.now() + 60 * 60 * 1000);
+  dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
+  $("#scheduledAt").value = dt.toISOString().slice(0, 16);
+
   try {
     const res = await fetch("/api/config");
     const cfg = await res.json();

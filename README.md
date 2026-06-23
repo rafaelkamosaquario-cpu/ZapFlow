@@ -13,6 +13,8 @@ Aplicativo web para **disparar mensagens de texto e imagem pelo WhatsApp** usand
 - 🏷️ Personalização com `{{nome}}` na mensagem
 - ⏱️ Intervalo configurável entre os envios (reduz risco de bloqueio)
 - 📈 Acompanhamento do progresso em tempo real, com relatório de sucesso/falha
+- 📅 **Agendamento** de disparos com data e horário (o servidor envia sozinho na hora marcada)
+- 📱 Interface responsiva — funciona no **celular** (veja o deploy no Railway)
 
 ## 🚀 Como rodar
 
@@ -82,7 +84,17 @@ A primeira aba da planilha é lida. Exemplo:
 | `POST` | `/api/contacts` | Lê a planilha enviada e retorna os contatos |
 | `POST` | `/api/test-connection` | Verifica o status da instância na Z-API |
 | `POST` | `/api/send` | Dispara as mensagens (stream NDJSON com o progresso) |
+| `POST` | `/api/schedule` | Cria um agendamento de disparo (data/horário) |
+| `GET`  | `/api/schedules` | Lista os agendamentos |
+| `GET`  | `/api/schedules/:id` | Detalhe de um agendamento (com log) |
+| `DELETE` | `/api/schedules/:id` | Cancela um agendamento pendente |
 | `GET`  | `/api/config` | Indica se há credenciais no `.env` |
+
+## ☁️ Publicar online (usar no celular)
+
+Quer um link público para acessar do celular? Veja o guia
+**[DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md)** — passo a passo para hospedar no
+[Railway](https://railway.app) gratuitamente.
 
 ## ⚠️ Uso responsável
 

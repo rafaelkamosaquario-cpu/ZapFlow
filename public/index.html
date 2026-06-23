@@ -90,6 +90,20 @@
     <!-- Passo 4: Disparo -->
     <section class="card">
       <h2><span class="step">4</span> Disparar</h2>
+
+      <label>Quando enviar?</label>
+      <div class="tabs">
+        <button class="tab active" data-when="now">▶️ Enviar agora</button>
+        <button class="tab" data-when="schedule">📅 Agendar</button>
+      </div>
+      <div class="when-content hidden" data-when="schedule">
+        <label class="inline">Data e horário do envio
+          <input type="datetime-local" id="scheduledAt" />
+        </label>
+        <p class="hint">O envio será disparado automaticamente pelo servidor na data/horário escolhido
+          (use o fuso do seu aparelho). O servidor precisa estar no ar nesse momento.</p>
+      </div>
+
       <div class="row">
         <label class="inline">Intervalo entre envios (ms)
           <input type="number" id="delayMs" value="1500" min="0" step="100" style="width:120px" />
@@ -101,6 +115,14 @@
         <p id="progressText"></p>
       </div>
       <div id="log" class="log hidden"></div>
+    </section>
+
+    <!-- Agendamentos -->
+    <section class="card">
+      <h2><span class="step">📅</span> Agendamentos</h2>
+      <p class="hint">Disparos programados. Pendentes podem ser cancelados; concluídos mostram o resultado.</p>
+      <div id="schedulesEmpty" class="hint">Nenhum agendamento ainda.</div>
+      <div id="schedulesList" class="schedules"></div>
     </section>
   </main>
 

@@ -142,6 +142,54 @@ td.invalid { color: var(--danger); }
 .log .line.ok { color: #86efac; }
 .log .line.err { color: #fca5a5; }
 
+input[type=datetime-local] {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+/* Agendamentos */
+.schedules { display: flex; flex-direction: column; gap: 10px; }
+.sched-item {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 9px;
+  padding: 12px 14px;
+}
+.sched-item.pend { border-left-color: #eab308; }
+.sched-item.sending { border-left-color: var(--secondary); }
+.sched-item.ok { border-left-color: var(--primary); }
+.sched-item.err { border-left-color: var(--danger); }
+.sched-item.cancel { border-left-color: var(--muted); opacity: .7; }
+
+.sched-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sched-status { font-weight: 700; font-size: 13px; }
+.sched-status.ok { color: var(--primary); }
+.sched-status.err { color: var(--danger); }
+.sched-status.pend { color: #eab308; }
+.sched-status.sending { color: var(--secondary); }
+.sched-when { color: var(--muted); font-size: 13px; }
+.sched-body { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.sched-msg { font-style: italic; }
+.btn-cancel {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 4px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.btn-cancel:hover { background: rgba(239,68,68,.12); }
+
 .footer { text-align: center; color: var(--muted); padding: 20px; }
 .hidden { display: none !important; }
 

@@ -4,6 +4,8 @@ import xlsx from "xlsx";
 import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 dotenv.config();
@@ -14,6 +16,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEFAULT_DELAY_MS = Number(process.env.DEFAULT_DELAY_MS || 1500);
+
+// Diretório de dados (para persistir os agendamentos). Em produção (ex.: Railway)
+// recomenda-se apontar para um volume para sobreviver a reinícios.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+const JOBS_FILE = path.join(DATA_DIR, "jobs.json");
 
 app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -123,6 +130,119 @@ function applyTemplate(message, contact) {
     .replace(/\{\{\s*nome\s*\}\}/gi, name)
     .replace(/\{\{\s*name\s*\}\}/gi, name);
 }
+
+// ---------------------------------------------------------------------------
+// Agendamento de disparos
+// ---------------------------------------------------------------------------
+let jobs = [];
+
+function loadJobs() {
+  try {
+    if (fs.existsSync(JOBS_FILE)) {
+      jobs = JSON.parse(fs.readFileSync(JOBS_FILE, "utf8"));
+    }
+  } catch (err) {
+    console.error("Não foi possível carregar os agendamentos:", err.message);
+    jobs = [];
+  }
+}
+
+function saveJobs() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar os agendamentos:", err.message);
+  }
+}
+
+/** Versão segura para o cliente: sem credenciais nem conteúdo pesado. */
+function publicJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    createdAt: job.createdAt,
+    scheduledAt: job.scheduledAt,
+    startedAt: job.startedAt || null,
+    finishedAt: job.finishedAt || null,
+    message: job.message,
+    hasImage: Boolean(job.imageUrl || job.imageBase64),
+    delayMs: job.delayMs,
+    contactsCount: job.contacts?.length || 0,
+    result: job.result || null,
+    error: job.error || null,
+  };
+}
+
+/** Executa um agendamento (envia para todos os contatos do job). */
+async function runJob(job) {
+  job.status = "enviando";
+  job.startedAt = Date.now();
+  job.logs = [];
+  let success = 0;
+  let failed = 0;
+  saveJobs();
+
+  for (let i = 0; i < job.contacts.length; i++) {
+    const contact = job.contacts[i];
+    if (!contact.phone) {
+      failed++;
+      job.logs.push({ phone: contact.rawPhone, name: contact.name, ok: false, error: "Número inválido" });
+    } else {
+      try {
+        await sendOne(job.credentials, contact, job);
+        success++;
+        job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
+      } catch (err) {
+        failed++;
+        const error = err.response?.data?.error || err.response?.data?.message || err.message;
+        job.logs.push({ phone: contact.phone, name: contact.name, ok: false, error });
+      }
+    }
+    job.result = { success, failed, total: job.contacts.length };
+    saveJobs();
+    if (i < job.contacts.length - 1 && job.delayMs > 0) {
+      await sleep(job.delayMs);
+    }
+  }
+
+  job.status = "concluido";
+  job.finishedAt = Date.now();
+  saveJobs();
+  console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
+}
+
+// Verifica periodicamente se há agendamentos vencidos para disparar.
+let schedulerRunning = false;
+async function schedulerTick() {
+  if (schedulerRunning) return;
+  const now = Date.now();
+  const due = jobs.filter((j) => j.status === "pendente" && j.scheduledAt <= now);
+  if (due.length === 0) return;
+
+  schedulerRunning = true;
+  for (const job of due) {
+    try {
+      await runJob(job);
+    } catch (err) {
+      job.status = "erro";
+      job.error = err.message;
+      saveJobs();
+    }
+  }
+  schedulerRunning = false;
+}
+
+loadJobs();
+// Marca como "erro" jobs que ficaram "enviando" por causa de um reinício do servidor.
+jobs.forEach((j) => {
+  if (j.status === "enviando") {
+    j.status = "erro";
+    j.error = "Interrompido por reinício do servidor.";
+  }
+});
+saveJobs();
+setInterval(schedulerTick, 15000);
 
 // ---------------------------------------------------------------------------
 // Rotas
@@ -235,6 +355,71 @@ app.post("/api/send", async (req, res) => {
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
+});
+
+// Cria um agendamento de disparo
+app.post("/api/schedule", (req, res) => {
+  const creds = resolveCredentials(req.body);
+  const { contacts, message, imageUrl, imageBase64, scheduledAt } = req.body;
+  const delayMs = Number(req.body.delayMs ?? DEFAULT_DELAY_MS);
+
+  if (!creds.instanceId || !creds.instanceToken) {
+    return res.status(400).json({ error: "Credenciais da Z-API incompletas." });
+  }
+  if (!Array.isArray(contacts) || contacts.length === 0) {
+    return res.status(400).json({ error: "Lista de contatos vazia." });
+  }
+  if (!message && !imageUrl && !imageBase64) {
+    return res.status(400).json({ error: "Informe uma mensagem de texto e/ou uma imagem." });
+  }
+  const when = Number(scheduledAt);
+  if (!when || Number.isNaN(when)) {
+    return res.status(400).json({ error: "Data/horário do agendamento inválido." });
+  }
+  if (when < Date.now() - 60000) {
+    return res.status(400).json({ error: "O horário do agendamento já passou." });
+  }
+
+  const job = {
+    id: crypto.randomUUID(),
+    status: "pendente",
+    createdAt: Date.now(),
+    scheduledAt: when,
+    credentials: creds,
+    contacts,
+    message: message || "",
+    imageUrl: imageUrl || null,
+    imageBase64: imageBase64 || null,
+    delayMs,
+  };
+  jobs.push(job);
+  saveJobs();
+  res.json({ ok: true, job: publicJob(job) });
+});
+
+// Lista os agendamentos (mais recentes primeiro)
+app.get("/api/schedules", (req, res) => {
+  const list = [...jobs].sort((a, b) => b.createdAt - a.createdAt).map(publicJob);
+  res.json({ jobs: list });
+});
+
+// Detalhe de um agendamento (inclui o log de envios)
+app.get("/api/schedules/:id", (req, res) => {
+  const job = jobs.find((j) => j.id === req.params.id);
+  if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
+  res.json({ job: { ...publicJob(job), logs: job.logs || [] } });
+});
+
+// Cancela um agendamento pendente
+app.delete("/api/schedules/:id", (req, res) => {
+  const job = jobs.find((j) => j.id === req.params.id);
+  if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
+  if (job.status !== "pendente") {
+    return res.status(400).json({ error: "Só é possível cancelar agendamentos pendentes." });
+  }
+  job.status = "cancelado";
+  saveJobs();
+  res.json({ ok: true });
 });
 
 // Indica se há credenciais configuradas no servidor (.env)
