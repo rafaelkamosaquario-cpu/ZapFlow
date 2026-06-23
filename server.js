@@ -161,17 +161,27 @@ function publicJob(job) {
   return {
     id: job.id,
     status: job.status,
+    immediate: Boolean(job.immediate),
     createdAt: job.createdAt,
     scheduledAt: job.scheduledAt,
     startedAt: job.startedAt || null,
     finishedAt: job.finishedAt || null,
     message: job.message,
-    hasImage: Boolean(job.imageUrl || job.imageBase64),
+    hasImage: Boolean(job.imageUrl || job.imageBase64 || job.hadImage),
     delayMs: job.delayMs,
     contactsCount: job.contacts?.length || 0,
     result: job.result || null,
     error: job.error || null,
   };
+}
+
+/** Após concluir um job, remove dados pesados/sensíveis (base64 e credenciais). */
+function trimFinishedJob(job) {
+  if (job.imageBase64) {
+    job.hadImage = true;
+    job.imageBase64 = null;
+  }
+  job.credentials = null;
 }
 
 /** Executa um agendamento (envia para todos os contatos do job). */
@@ -208,6 +218,7 @@ async function runJob(job) {
 
   job.status = "concluido";
   job.finishedAt = Date.now();
+  trimFinishedJob(job);
   saveJobs();
   console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
 }
@@ -327,6 +338,24 @@ app.post("/api/send", async (req, res) => {
   res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Cache-Control", "no-cache");
 
+  // Registra o envio no histórico (sem guardar o base64 da imagem)
+  const job = {
+    id: crypto.randomUUID(),
+    status: "enviando",
+    immediate: true,
+    createdAt: Date.now(),
+    scheduledAt: Date.now(),
+    startedAt: Date.now(),
+    message: message || "",
+    imageUrl: imageUrl || null,
+    hadImage: Boolean(imageUrl || imageBase64),
+    delayMs: delay,
+    contacts,
+    logs: [],
+  };
+  jobs.push(job);
+  saveJobs();
+
   let success = 0;
   let failed = 0;
 
@@ -334,24 +363,33 @@ app.post("/api/send", async (req, res) => {
     const contact = contacts[i];
     if (!contact.phone) {
       failed++;
+      job.logs.push({ phone: contact.rawPhone, name: contact.name, ok: false, error: "Número inválido" });
       res.write(JSON.stringify({ index: i, contact, ok: false, error: "Número inválido" }) + "\n");
       continue;
     }
     try {
       const result = await sendOne(creds, contact, { message, imageUrl, imageBase64 });
       success++;
+      job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
       res.write(JSON.stringify({ index: i, contact, ok: true, result }) + "\n");
     } catch (err) {
       failed++;
       const error = err.response?.data?.error || err.response?.data?.message || err.message;
+      job.logs.push({ phone: contact.phone, name: contact.name, ok: false, error });
       res.write(JSON.stringify({ index: i, contact, ok: false, error }) + "\n");
     }
 
+    job.result = { success, failed, total: contacts.length };
     // Aguarda o intervalo entre os envios (menos no último)
     if (i < contacts.length - 1 && delay > 0) {
       await sleep(delay);
     }
   }
+
+  job.status = "concluido";
+  job.finishedAt = Date.now();
+  job.result = { success, failed, total: contacts.length };
+  saveJobs();
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
@@ -408,6 +446,14 @@ app.get("/api/schedules/:id", (req, res) => {
   const job = jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
   res.json({ job: { ...publicJob(job), logs: job.logs || [] } });
+});
+
+// Limpa o histórico (remove os já finalizados; mantém pendentes/em andamento)
+app.delete("/api/schedules", (req, res) => {
+  const before = jobs.length;
+  jobs = jobs.filter((j) => j.status === "pendente" || j.status === "enviando");
+  saveJobs();
+  res.json({ ok: true, removed: before - jobs.length });
 });
 
 // Cancela um agendamento pendente

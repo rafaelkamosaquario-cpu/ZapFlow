@@ -19,25 +19,31 @@
 
   <main class="container">
     <!-- Passo 1: Credenciais -->
-    <section class="card">
-      <h2><span class="step">1</span> Conexão com a Z-API</h2>
-      <p class="hint">Pegue esses dados no painel da sua instância em
-        <a href="https://app.z-api.io" target="_blank" rel="noopener">app.z-api.io</a>.
-        Se já tiver configurado o arquivo <code>.env</code> no servidor, pode deixar em branco.</p>
-      <div class="grid">
-        <label>ID da Instância
-          <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
-        </label>
-        <label>Token da Instância
-          <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
-        </label>
-        <label>Client-Token (Segurança)
-          <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
-        </label>
-      </div>
-      <div class="row">
-        <button class="btn secondary" id="btnTest">Testar conexão</button>
-        <span id="connStatus" class="status"></span>
+    <section class="card" id="connCard">
+      <h2 class="collapsible" id="connHeader">
+        <span class="step">1</span> Conexão com a Z-API
+        <span id="connBadge" class="head-badge"></span>
+        <span class="chevron" id="connChevron">▾</span>
+      </h2>
+      <div id="connBody">
+        <p class="hint">Pegue esses dados no painel da sua instância em
+          <a href="https://app.z-api.io" target="_blank" rel="noopener">app.z-api.io</a>.
+          Se já tiver configurado o arquivo <code>.env</code> no servidor, pode deixar em branco.</p>
+        <div class="grid">
+          <label>ID da Instância
+            <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
+          </label>
+          <label>Token da Instância
+            <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
+          </label>
+          <label>Client-Token (Segurança)
+            <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
+          </label>
+        </div>
+        <div class="row">
+          <button class="btn secondary" id="btnTest">Testar conexão</button>
+          <span id="connStatus" class="status"></span>
+        </div>
       </div>
     </section>
 
@@ -136,6 +142,7 @@
 
         <div class="row">
           <button class="btn primary m-send" type="button" disabled>🚀 Disparar</button>
+          <button class="btn ghost m-clear" type="button">🧹 Limpar</button>
           <span class="m-status status"></span>
         </div>
         <div class="progress-wrap hidden m-progressWrap">
@@ -146,11 +153,15 @@
       </div>
     </template>
 
-    <!-- Agendamentos -->
+    <!-- Histórico de envios -->
     <section class="card">
-      <h2><span class="step">📅</span> Agendamentos</h2>
-      <p class="hint">Disparos programados. Pendentes podem ser cancelados; concluídos mostram o resultado.</p>
-      <div id="schedulesEmpty" class="hint">Nenhum agendamento ainda.</div>
+      <h2>
+        <span class="step">📊</span> Histórico de envios
+        <button class="btn ghost" id="btnClearHistory" type="button" style="margin-left:auto">🧹 Limpar histórico</button>
+      </h2>
+      <p class="hint">Tudo que foi enviado e agendado. Os pendentes podem ser cancelados;
+        os concluídos mostram quantas mensagens saíram. Toque em um item para ver os números.</p>
+      <div id="schedulesEmpty" class="hint">Nenhum envio ainda.</div>
       <div id="schedulesList" class="schedules"></div>
     </section>
   </main>

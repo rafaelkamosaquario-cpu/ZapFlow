@@ -32,7 +32,17 @@ function loadCreds() {
   });
 }
 
-$("#btnTest").addEventListener("click", async () => {
+// Recolher / expandir o Passo 1
+function setConnCollapsed(collapsed) {
+  $("#connBody").classList.toggle("hidden", collapsed);
+  $("#connChevron").textContent = collapsed ? "▸" : "▾";
+}
+$("#connHeader").addEventListener("click", () => {
+  setConnCollapsed(!$("#connBody").classList.contains("hidden"));
+});
+
+$("#btnTest").addEventListener("click", async (e) => {
+  e.stopPropagation();
   const status = $("#connStatus");
   status.textContent = "Testando...";
   status.className = "status";
@@ -45,13 +55,22 @@ $("#btnTest").addEventListener("click", async () => {
     const data = await res.json();
     if (data.ok) {
       const connected = data.status?.connected ?? data.status?.value;
-      status.textContent = connected === false
-        ? "⚠️ Instância encontrada, mas o WhatsApp não está conectado (leia o QR Code)."
-        : "✅ Conexão OK!";
-      status.className = "status ok";
+      if (connected === false) {
+        status.textContent = "⚠️ Instância encontrada, mas o WhatsApp não está conectado (leia o QR Code).";
+        status.className = "status err";
+        $("#connBadge").textContent = "⚠️ Sem WhatsApp";
+        $("#connBadge").className = "head-badge err";
+      } else {
+        status.textContent = "✅ Conexão OK!";
+        status.className = "status ok";
+        $("#connBadge").textContent = "✅ Conectado";
+        $("#connBadge").className = "head-badge ok";
+        setTimeout(() => setConnCollapsed(true), 800); // minimiza após conectar
+      }
     } else {
       status.textContent = "❌ " + (data.error || "Falha na conexão.");
       status.className = "status err";
+      $("#connBadge").textContent = "";
     }
   } catch (err) {
     status.textContent = "❌ " + err.message;
@@ -280,6 +299,8 @@ function addMessageBlock() {
 
   // Botão disparar
   $(".m-send", block).addEventListener("click", () => handleSend(block));
+  // Botão limpar
+  $(".m-clear", block).addEventListener("click", () => clearBlock(block));
 
   container.appendChild(block);
   renumberMessages();
@@ -290,6 +311,27 @@ $("#btnAddMessage").addEventListener("click", addMessageBlock);
 
 function updateSendButtons() {
   $$(".m-send", container).forEach((b) => { b.disabled = contacts.length === 0; });
+}
+
+/** Limpa só o que foi escrito (texto + imagem), mantendo o log visível. */
+function clearComposer(block) {
+  $(".m-message", block).value = "";
+  $(".m-imageUrl", block).value = "";
+  $(".m-imageFile", block).value = "";
+  block._imageBase64 = null;
+  const preview = $(".m-preview", block);
+  preview.src = "";
+  preview.classList.add("hidden");
+}
+
+/** Limpa o bloco inteiro (texto, imagem, status, log e progresso). */
+function clearBlock(block) {
+  clearComposer(block);
+  $(".m-status", block).textContent = "";
+  $(".m-log", block).innerHTML = "";
+  $(".m-log", block).classList.add("hidden");
+  $(".m-progressWrap", block).classList.add("hidden");
+  $(".m-progressBar", block).style.width = "0%";
 }
 
 /** Lê o conteúdo (texto + imagem) de um bloco. */
@@ -424,6 +466,9 @@ function handleProgress(block, evt) {
     setProgress(block, 100);
     $(".m-progressText", block).textContent =
       `Concluído! ${evt.success} enviada(s), ${evt.failed} falha(s) de ${evt.total}.`;
+    // Limpa os campos automaticamente para já montar uma nova mensagem
+    clearComposer(block);
+    loadSchedules(); // atualiza o histórico
     return;
   }
   const pct = Math.round(((evt.index + 1) / contacts.length) * 100);
@@ -470,6 +515,11 @@ async function loadSchedules() {
   } catch { /* ignore */ }
 }
 
+function statusLabel(job) {
+  if (job.immediate && job.status === "concluido") return { txt: "✅ Enviada", cls: "ok" };
+  return STATUS_LABELS[job.status] || { txt: job.status, cls: "" };
+}
+
 function renderSchedules(list) {
   const wrap = $("#schedulesList");
   const empty = $("#schedulesEmpty");
@@ -477,8 +527,9 @@ function renderSchedules(list) {
   wrap.innerHTML = "";
 
   for (const job of list) {
-    const st = STATUS_LABELS[job.status] || { txt: job.status, cls: "" };
+    const st = statusLabel(job);
     const quando = new Date(job.scheduledAt).toLocaleString("pt-BR");
+    const icon = job.status === "pendente" ? "📅" : "🕒";
     const preview = (job.message || (job.hasImage ? "[imagem]" : "")).slice(0, 60);
     const result = job.result
       ? `<small>${job.result.success} enviada(s), ${job.result.failed} falha(s)</small>`
@@ -492,25 +543,68 @@ function renderSchedules(list) {
     div.innerHTML = `
       <div class="sched-head">
         <span class="sched-status ${st.cls}">${st.txt}</span>
-        <span class="sched-when">📅 ${quando}</span>
+        <span class="sched-when">${icon} ${quando}</span>
         ${cancelBtn}
       </div>
       <div class="sched-body">
         <span>${job.contactsCount} contato(s)${job.hasImage ? " · 🖼️ imagem" : ""}</span>
         ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}${preview.length >= 60 ? "..." : ""}"</span>` : ""}
         ${result}
-      </div>`;
+        <a class="sched-detail-link" data-id="${job.id}">▸ ver números</a>
+      </div>
+      <div class="sched-detail hidden" data-detail="${job.id}"></div>`;
     wrap.appendChild(div);
   }
 
   wrap.querySelectorAll(".btn-cancel").forEach((b) => {
-    b.addEventListener("click", async () => {
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
       if (!confirm("Cancelar este agendamento?")) return;
       await fetch("/api/schedules/" + b.dataset.id, { method: "DELETE" });
       loadSchedules();
     });
   });
+
+  wrap.querySelectorAll(".sched-detail-link").forEach((a) => {
+    a.addEventListener("click", () => toggleDetail(a));
+  });
 }
+
+async function toggleDetail(link) {
+  const id = link.dataset.id;
+  const box = document.querySelector(`.sched-detail[data-detail="${id}"]`);
+  if (!box.classList.contains("hidden")) {
+    box.classList.add("hidden");
+    link.textContent = "▸ ver números";
+    return;
+  }
+  link.textContent = "▾ ocultar números";
+  box.classList.remove("hidden");
+  box.innerHTML = "<small>Carregando...</small>";
+  try {
+    const res = await fetch("/api/schedules/" + id);
+    const data = await res.json();
+    const logs = data.job?.logs || [];
+    if (!logs.length) {
+      box.innerHTML = "<small>Ainda sem detalhes (envio não iniciado).</small>";
+      return;
+    }
+    box.innerHTML = logs.map((l) => {
+      const nome = l.name ? escapeHtml(l.name) + " — " : "";
+      const status = l.ok ? '<span class="d-ok">✅</span>' : `<span class="d-err">❌ ${escapeHtml(l.error || "")}</span>`;
+      return `<div class="d-line">${status} ${nome}${escapeHtml(l.phone || "")}</div>`;
+    }).join("");
+  } catch {
+    box.innerHTML = "<small>Não foi possível carregar os detalhes.</small>";
+  }
+}
+
+// Limpar histórico (mantém pendentes/em andamento)
+$("#btnClearHistory").addEventListener("click", async () => {
+  if (!confirm("Limpar o histórico de envios concluídos?\n(Os agendamentos pendentes serão mantidos.)")) return;
+  await fetch("/api/schedules", { method: "DELETE" });
+  loadSchedules();
+});
 
 setInterval(loadSchedules, 10000);
 
@@ -540,6 +634,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (cfg.hasEnvCredentials) {
       $("#connStatus").textContent = "ℹ️ Credenciais detectadas no servidor (.env).";
       $("#connStatus").className = "status ok";
+      $("#connBadge").textContent = "✅ Pronto (.env)";
+      $("#connBadge").className = "head-badge ok";
+      setConnCollapsed(true); // já vem minimizado quando há credenciais no servidor
     }
   } catch { /* ignore */ }
 });
