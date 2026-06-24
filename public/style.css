@@ -174,6 +174,23 @@ td.invalid { color: var(--danger); }
 
 .preview { max-width: 200px; margin-top: 12px; border-radius: 9px; display: block; }
 
+/* Imagens (até 3) */
+.url-row { display: flex; gap: 8px; align-items: stretch; }
+.url-row input { flex: 1; margin-top: 0; }
+.url-row .m-add-url { flex: 0 0 auto; white-space: nowrap; margin-top: 0; }
+.images-strip { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
+.img-thumb { position: relative; width: 72px; height: 72px; border-radius: 9px; overflow: hidden; border: 1px solid var(--border); background: var(--card-2); }
+.img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.img-thumb img.broken { object-fit: contain; padding: 18px; opacity: .5; }
+.img-thumb-x {
+  position: absolute; top: 2px; right: 2px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,.65); color: #fff; border: none; cursor: pointer;
+  font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.img-thumb-x:hover { background: var(--danger); }
+.img-counter { font-size: 12px; color: var(--muted); font-weight: 600; }
+
 /* Blocos de mensagem */
 .msg-block {
   background: var(--card-2);

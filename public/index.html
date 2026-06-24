@@ -123,24 +123,23 @@
         <textarea class="m-message" rows="4" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
         <p class="hint">Use o botão <b>+ nome</b> (ou digite <code>{{nome}}</code>) para inserir o nome do contato.</p>
 
-        <label>Imagem (opcional)</label>
+        <label>Imagens (até 3, opcional)</label>
         <div class="tabs img-tabs">
           <button class="tab active" data-tab="upload" type="button">📷 Galeria / Foto</button>
           <button class="tab" data-tab="url" type="button">🔗 URL</button>
-          <button class="tab" data-tab="none" type="button">Sem imagem</button>
         </div>
         <div class="tab-content" data-tab="upload">
-          <input type="file" class="m-imageFile" accept="image/*" />
-          <p class="hint">Toque para escolher uma foto da sua galeria ou tirar uma na hora.</p>
-          <img class="preview m-preview hidden" alt="prévia" />
+          <input type="file" class="m-imageFile" accept="image/*" multiple />
+          <p class="hint">Toque para escolher até <b>3 fotos</b> da galeria ou tirar na hora.</p>
         </div>
         <div class="tab-content hidden" data-tab="url">
-          <input type="text" class="m-imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
-          <p class="hint">Cole o link de uma imagem que já está na internet (não serve para fotos da galeria).</p>
+          <div class="url-row">
+            <input type="text" class="m-imageUrl" placeholder="https://exemplo.com/imagem.jpg" />
+            <button class="btn ghost m-add-url" type="button">＋ Adicionar</button>
+          </div>
+          <p class="hint">Cole o link de uma imagem da internet e toque em Adicionar (até 3).</p>
         </div>
-        <div class="tab-content hidden" data-tab="none">
-          <p class="hint">Será enviado apenas o texto.</p>
-        </div>
+        <div class="m-images-strip images-strip"></div>
 
         <label>Quando enviar?</label>
         <div class="tabs when-tabs">

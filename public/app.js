@@ -257,17 +257,16 @@ function renumberMessages() {
 function addMessageBlock() {
   if (messageCount() >= MAX_MESSAGES) return;
   const block = template.content.firstElementChild.cloneNode(true);
-  block._imageBase64 = null; // estado da imagem por bloco
+  block._images = []; // até 3 imagens por mensagem: { kind: 'base64'|'url', data }
 
-  // Abas de imagem
+  // Abas de imagem (Galeria / URL)
   $$(".img-tabs .tab", block).forEach((tab) => {
     tab.addEventListener("click", () => {
       $$(".img-tabs .tab", block).forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
       block._imageTab = tab.dataset.tab;
       $$(".tab-content[data-tab]", block).forEach((c) => {
-        // Apenas os tab-content de imagem (têm data-tab url/upload/none)
-        if (["url", "upload", "none"].includes(c.dataset.tab)) {
+        if (["url", "upload"].includes(c.dataset.tab)) {
           c.classList.toggle("hidden", c.dataset.tab !== tab.dataset.tab);
         }
       });
@@ -275,18 +274,40 @@ function addMessageBlock() {
   });
   block._imageTab = "upload";
 
-  // Upload de imagem -> base64
+  // Upload de fotos (múltiplas) -> base64, respeitando o limite de 3
   $(".m-imageFile", block).addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      block._imageBase64 = reader.result;
-      const preview = $(".m-preview", block);
-      preview.src = reader.result;
-      preview.classList.remove("hidden");
-    };
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    let added = 0;
+    files.forEach((file) => {
+      if (block._images.length >= 3) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (block._images.length < 3) {
+          block._images.push({ kind: "base64", data: reader.result });
+          renderImagesStrip(block);
+        }
+      };
+      reader.readAsDataURL(file);
+      added++;
+    });
+    if (block._images.length + added > 3) {
+      alert("Você pode anexar no máximo 3 imagens por mensagem.");
+    }
+    e.target.value = ""; // permite reescolher os mesmos arquivos depois
+  });
+
+  // Adicionar imagem por URL
+  $(".m-add-url", block).addEventListener("click", () => {
+    const input = $(".m-imageUrl", block);
+    const url = input.value.trim();
+    if (!url) return;
+    if (block._images.length >= 3) {
+      alert("Você pode anexar no máximo 3 imagens por mensagem.");
+      return;
+    }
+    block._images.push({ kind: "url", data: url });
+    input.value = "";
+    renderImagesStrip(block);
   });
 
   // Abas "Enviar agora" / "Agendar"
@@ -359,15 +380,38 @@ function updateSendButtons() {
   $$(".m-send", container).forEach((b) => { b.disabled = contacts.length === 0; });
 }
 
-/** Limpa só o que foi escrito (texto + imagem), mantendo o log visível. */
+/** Renderiza a tira de miniaturas das imagens do bloco (até 3) com botão de remover. */
+function renderImagesStrip(block) {
+  const strip = $(".m-images-strip", block);
+  strip.innerHTML = "";
+  block._images.forEach((img, i) => {
+    const div = document.createElement("div");
+    div.className = "img-thumb";
+    div.innerHTML = `
+      <img src="${img.kind === "url" ? escapeHtml(img.data) : img.data}" alt="img ${i + 1}"
+           onerror="this.classList.add('broken')" />
+      <button type="button" class="img-thumb-x" title="Remover">✕</button>`;
+    div.querySelector(".img-thumb-x").addEventListener("click", () => {
+      block._images.splice(i, 1);
+      renderImagesStrip(block);
+    });
+    strip.appendChild(div);
+  });
+  if (block._images.length > 0) {
+    const counter = document.createElement("span");
+    counter.className = "img-counter";
+    counter.textContent = `${block._images.length}/3`;
+    strip.appendChild(counter);
+  }
+}
+
+/** Limpa só o que foi escrito (texto + imagens), mantendo o log visível. */
 function clearComposer(block) {
   $(".m-message", block).value = "";
   $(".m-imageUrl", block).value = "";
   $(".m-imageFile", block).value = "";
-  block._imageBase64 = null;
-  const preview = $(".m-preview", block);
-  preview.src = "";
-  preview.classList.add("hidden");
+  block._images = [];
+  renderImagesStrip(block);
 }
 
 /** Limpa o bloco inteiro (texto, imagem, status, log e progresso). */
@@ -380,35 +424,31 @@ function clearBlock(block) {
   $(".m-progressBar", block).style.width = "0%";
 }
 
-/** Lê o conteúdo (texto + imagem) de um bloco. */
+/** Lê o conteúdo (texto + imagens) de um bloco. */
 function readBlock(block) {
   const message = $(".m-message", block).value.trim();
-  let image = {};
-  if (block._imageTab === "url") {
-    const url = $(".m-imageUrl", block).value.trim();
-    if (url) image = { imageUrl: url };
-  } else if (block._imageTab === "upload" && block._imageBase64) {
-    image = { imageBase64: block._imageBase64 };
-  }
-  return { message, image };
+  const imgs = block._images || [];
+  const images = imgs.map((i) => i.data);
+  const imageUrls = imgs.filter((i) => i.kind === "url").map((i) => i.data);
+  return { message, images, imageUrls };
 }
 
 // ---------------------------------------------------------------------------
 // Disparo / Agendamento de um bloco
 // ---------------------------------------------------------------------------
 async function handleSend(block) {
-  const { message, image } = readBlock(block);
-  if (!message && !image.imageUrl && !image.imageBase64) {
-    alert("Escreva uma mensagem de texto e/ou selecione uma imagem.");
+  const { message, images } = readBlock(block);
+  if (!message && images.length === 0) {
+    alert("Escreva uma mensagem de texto e/ou selecione ao menos uma imagem.");
     return;
   }
   if (block._whenMode === "schedule") {
-    return scheduleBlock(block, message, image);
+    return scheduleBlock(block, message, images);
   }
-  return sendNowBlock(block, message, image);
+  return sendNowBlock(block, message, images);
 }
 
-async function sendNowBlock(block, message, image) {
+async function sendNowBlock(block, message, images) {
   const num = $(".msg-num", block).textContent;
   if (!confirm(`Disparar a Mensagem ${num} para ${contacts.length} contato(s) agora?`)) return;
 
@@ -430,7 +470,7 @@ async function sendNowBlock(block, message, image) {
         contacts,
         message,
         delayMs: getDelayMs(),
-        ...image,
+        images,
       }),
     });
     if (!res.ok) {
@@ -459,7 +499,7 @@ async function sendNowBlock(block, message, image) {
   }
 }
 
-async function scheduleBlock(block, message, image) {
+async function scheduleBlock(block, message, images) {
   const num = $(".msg-num", block).textContent;
   const value = $(".m-scheduledAt", block).value;
   if (!value) {
@@ -490,7 +530,7 @@ async function scheduleBlock(block, message, image) {
         message,
         delayMs: getDelayMs(),
         scheduledAt,
-        ...image,
+        images,
       }),
     });
     const data = await res.json();
@@ -593,7 +633,7 @@ function renderSchedules(list) {
         ${cancelBtn}
       </div>
       <div class="sched-body">
-        <span>${job.contactsCount} contato(s)${job.hasImage ? " · 🖼️ imagem" : ""}</span>
+        <span>${job.contactsCount} contato(s)${job.hasImage ? ` · 🖼️ ${job.imageCount > 1 ? job.imageCount + " imagens" : "imagem"}` : ""}</span>
         ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}${preview.length >= 60 ? "..." : ""}"</span>` : ""}
         ${result}
         <a class="sched-detail-link" data-id="${job.id}">▸ ver números</a>
@@ -673,9 +713,9 @@ document.querySelectorAll(".modal").forEach((m) => {
 let templateTargetBlock = null;
 
 function openSaveTemplate(block) {
-  const { message, image } = readBlock(block);
-  if (!message && !image.imageUrl) {
-    alert("Escreva um texto (e/ou informe a imagem por URL) para salvar como modelo.\n" +
+  const { message, imageUrls } = readBlock(block);
+  if (!message && imageUrls.length === 0) {
+    alert("Escreva um texto (e/ou informe imagens por URL) para salvar como modelo.\n" +
           "Obs.: fotos da galeria não são salvas no modelo, apenas URLs.");
     return;
   }
@@ -688,14 +728,14 @@ function openSaveTemplate(block) {
 
 $("#confirmSaveTemplate").addEventListener("click", async () => {
   if (!templateTargetBlock) return;
-  const { message, image } = readBlock(templateTargetBlock);
+  const { message, imageUrls } = readBlock(templateTargetBlock);
   const name = $("#templateName").value.trim();
   if (!name) { $("#saveTemplateError").textContent = "Dê um nome ao modelo."; return; }
   try {
     const res = await fetch("/api/templates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, message, imageUrl: image.imageUrl || "" }),
+      body: JSON.stringify({ name, message, imageUrls }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
@@ -727,10 +767,11 @@ function renderTemplates(list) {
   list.forEach((t) => {
     const div = document.createElement("div");
     div.className = "template-item";
-    const preview = (t.message || (t.imageUrl ? "[imagem]" : "")).slice(0, 80);
+    const urls = templateUrls(t);
+    const preview = (t.message || (urls.length ? "[imagem]" : "")).slice(0, 80);
     div.innerHTML = `
       <div class="t-name">${escapeHtml(t.name)}</div>
-      <div class="t-preview">${escapeHtml(preview)}${t.imageUrl ? " · 🖼️" : ""}</div>
+      <div class="t-preview">${escapeHtml(preview)}${urls.length ? ` · 🖼️ ${urls.length}` : ""}</div>
       <div class="t-actions">
         <button class="btn primary t-load" data-id="${t.id}">Usar</button>
         <button class="btn ghost t-del" data-id="${t.id}">Excluir</button>
@@ -741,15 +782,19 @@ function renderTemplates(list) {
   });
 }
 
+/** Normaliza as URLs de um modelo (compatível com o formato antigo imageUrl). */
+function templateUrls(t) {
+  if (Array.isArray(t.imageUrls)) return t.imageUrls.filter(Boolean);
+  return t.imageUrl ? [t.imageUrl] : [];
+}
+
 function loadTemplateInto(t) {
   const block = templateTargetBlock;
   if (!block) return;
   $(".m-message", block).value = t.message || "";
-  if (t.imageUrl) {
-    // ativa a aba URL e preenche
-    $(".img-tabs .tab[data-tab='url']", block).click();
-    $(".m-imageUrl", block).value = t.imageUrl;
-  }
+  // Restaura as imagens (URLs) do modelo, respeitando o limite de 3
+  block._images = templateUrls(t).slice(0, 3).map((url) => ({ kind: "url", data: url }));
+  renderImagesStrip(block);
   closeModal("templatesModal");
 }
 

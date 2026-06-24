@@ -10,7 +10,7 @@ ou inserida manualmente. Mascote: **Zappy** 🟢.
 - 📊 Importa contatos de **Excel** (detecta `Telefone`, `Celular`, `WhatsApp`, `Número`, `Nome`)
   **ou** adiciona contatos manualmente (nome + telefone)
 - ✅ Normaliza e valida os números (adiciona o DDI `55` do Brasil quando necessário)
-- 💬 Envia **texto** e/ou **imagem** (da galeria/foto ou por URL)
+- 💬 Envia **texto** e/ou **até 3 imagens** por mensagem (da galeria/foto ou por URL)
 - 🏷️ Personalização com `{{nome}}` (com botão de atalho **+ nome**)
 - ⏱️ Intervalo configurável **em segundos** (1–60), com aviso de risco de bloqueio
 - 📈 Progresso em tempo real + **histórico de envios** (com os números e quem respondeu)

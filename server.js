@@ -210,6 +210,15 @@ function applyTemplate(message, contact) {
     .replace(/\{\{\s*name\s*\}\}/gi, name);
 }
 
+/** Normaliza a lista de imagens (até 3), aceitando o formato antigo (url/base64 únicos). */
+function normalizeImages(images, imageUrl, imageBase64) {
+  let imgs = [];
+  if (Array.isArray(images)) imgs = images;
+  else if (imageUrl) imgs = [imageUrl];
+  else if (imageBase64) imgs = [imageBase64];
+  return imgs.filter((s) => typeof s === "string" && s.trim()).slice(0, 3);
+}
+
 // ---------------------------------------------------------------------------
 // Agendamento de disparos
 // ---------------------------------------------------------------------------
@@ -246,7 +255,8 @@ function publicJob(job) {
     startedAt: job.startedAt || null,
     finishedAt: job.finishedAt || null,
     message: job.message,
-    hasImage: Boolean(job.imageUrl || job.imageBase64 || job.hadImage),
+    hasImage: Boolean(job.images?.length || job.imageUrl || job.imageBase64 || job.hadImage),
+    imageCount: job.imageCount ?? (job.images?.length || 0),
     delayMs: job.delayMs,
     contactsCount: job.contacts?.length || 0,
     result: job.result || null,
@@ -254,10 +264,12 @@ function publicJob(job) {
   };
 }
 
-/** Após concluir um job, remove dados pesados/sensíveis (base64 e credenciais). */
+/** Após concluir um job, remove dados pesados/sensíveis (imagens e credenciais). */
 function trimFinishedJob(job) {
-  if (job.imageBase64) {
+  if (job.images?.length || job.imageBase64) {
     job.hadImage = true;
+    job.imageCount = job.imageCount ?? (job.images?.length || 1);
+    job.images = null;
     job.imageBase64 = null;
   }
   job.credentials = null;
@@ -452,34 +464,45 @@ app.post("/api/test-connection", async (req, res) => {
 });
 
 /** Envia uma única mensagem (texto ou imagem) para um número. */
-async function sendOne(creds, contact, { message, imageUrl, imageBase64 }) {
+async function sendOne(creds, contact, { message, imageUrl, imageBase64, images }) {
   const text = applyTemplate(message, contact);
-  let url;
-  let payload;
 
-  if (imageUrl || imageBase64) {
-    url = `${zapiBaseUrl(creds)}/send-image`;
-    payload = {
-      phone: contact.phone,
-      image: imageUrl || imageBase64,
-      caption: text || "",
-    };
-  } else {
-    url = `${zapiBaseUrl(creds)}/send-text`;
-    payload = { phone: contact.phone, message: text };
+  // Reúne as imagens (array novo) com compatibilidade ao formato antigo
+  let imgs = [];
+  if (Array.isArray(images)) imgs = images.filter(Boolean);
+  else if (imageUrl) imgs = [imageUrl];
+  else if (imageBase64) imgs = [imageBase64];
+  imgs = imgs.slice(0, 3);
+
+  // Apenas texto
+  if (imgs.length === 0) {
+    const { data } = await axios.post(
+      `${zapiBaseUrl(creds)}/send-text`,
+      { phone: contact.phone, message: text },
+      { headers: zapiHeaders(creds), timeout: 30000 }
+    );
+    return data;
   }
 
-  const { data } = await axios.post(url, payload, {
-    headers: zapiHeaders(creds),
-    timeout: 30000,
-  });
-  return data;
+  // Uma ou mais imagens: a legenda (texto) vai na primeira
+  const results = [];
+  for (let i = 0; i < imgs.length; i++) {
+    const { data } = await axios.post(
+      `${zapiBaseUrl(creds)}/send-image`,
+      { phone: contact.phone, image: imgs[i], caption: i === 0 ? (text || "") : "" },
+      { headers: zapiHeaders(creds), timeout: 60000 }
+    );
+    results.push(data);
+    if (i < imgs.length - 1) await sleep(800); // pequena pausa entre imagens
+  }
+  return results;
 }
 
 // Dispara as mensagens com streaming de progresso (Server-Sent Events estilo NDJSON)
 app.post("/api/send", async (req, res) => {
   const creds = resolveCredentials(req.body);
   const { contacts, message, imageUrl, imageBase64 } = req.body;
+  const images = normalizeImages(req.body.images, imageUrl, imageBase64);
   const delay = Number(req.body.delayMs ?? DEFAULT_DELAY_MS);
 
   if (!creds.instanceId || !creds.instanceToken) {
@@ -488,15 +511,15 @@ app.post("/api/send", async (req, res) => {
   if (!Array.isArray(contacts) || contacts.length === 0) {
     return res.status(400).json({ error: "Lista de contatos vazia." });
   }
-  if (!message && !imageUrl && !imageBase64) {
-    return res.status(400).json({ error: "Informe uma mensagem de texto e/ou uma imagem." });
+  if (!message && images.length === 0) {
+    return res.status(400).json({ error: "Informe uma mensagem de texto e/ou ao menos uma imagem." });
   }
 
   // Streaming: enviamos um JSON por linha conforme o progresso avança.
   res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Cache-Control", "no-cache");
 
-  // Registra o envio no histórico (sem guardar o base64 da imagem)
+  // Registra o envio no histórico (sem guardar base64 das imagens)
   const job = {
     id: crypto.randomUUID(),
     status: "enviando",
@@ -505,8 +528,9 @@ app.post("/api/send", async (req, res) => {
     scheduledAt: Date.now(),
     startedAt: Date.now(),
     message: message || "",
-    imageUrl: imageUrl || null,
-    hadImage: Boolean(imageUrl || imageBase64),
+    images, // usado no envio; limpo ao concluir (trimFinishedJob)
+    hadImage: images.length > 0,
+    imageCount: images.length,
     delayMs: delay,
     contacts,
     logs: [],
@@ -526,7 +550,7 @@ app.post("/api/send", async (req, res) => {
       continue;
     }
     try {
-      const result = await sendOne(creds, contact, { message, imageUrl, imageBase64 });
+      const result = await sendOne(creds, contact, { message, images });
       success++;
       job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
       res.write(JSON.stringify({ index: i, contact, ok: true, result }) + "\n");
@@ -558,6 +582,7 @@ app.post("/api/send", async (req, res) => {
 app.post("/api/schedule", (req, res) => {
   const creds = resolveCredentials(req.body);
   const { contacts, message, imageUrl, imageBase64, scheduledAt } = req.body;
+  const images = normalizeImages(req.body.images, imageUrl, imageBase64);
   const delayMs = Number(req.body.delayMs ?? DEFAULT_DELAY_MS);
 
   if (!creds.instanceId || !creds.instanceToken) {
@@ -566,8 +591,8 @@ app.post("/api/schedule", (req, res) => {
   if (!Array.isArray(contacts) || contacts.length === 0) {
     return res.status(400).json({ error: "Lista de contatos vazia." });
   }
-  if (!message && !imageUrl && !imageBase64) {
-    return res.status(400).json({ error: "Informe uma mensagem de texto e/ou uma imagem." });
+  if (!message && images.length === 0) {
+    return res.status(400).json({ error: "Informe uma mensagem de texto e/ou ao menos uma imagem." });
   }
   const when = Number(scheduledAt);
   if (!when || Number.isNaN(when)) {
@@ -585,8 +610,8 @@ app.post("/api/schedule", (req, res) => {
     credentials: creds,
     contacts,
     message: message || "",
-    imageUrl: imageUrl || null,
-    imageBase64: imageBase64 || null,
+    images,
+    imageCount: images.length,
     delayMs,
   };
   jobs.push(job);
@@ -651,8 +676,11 @@ app.get("/api/templates", (req, res) => res.json({ templates }));
 
 app.post("/api/templates", (req, res) => {
   const { name, message, imageUrl } = req.body || {};
+  // Até 3 URLs de imagem (compatível com o campo antigo imageUrl)
+  let imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : (imageUrl ? [imageUrl] : []);
+  imageUrls = imageUrls.filter((u) => typeof u === "string" && u.trim()).slice(0, 3).map((u) => u.slice(0, 1000));
   if (!name || !name.trim()) return res.status(400).json({ error: "Dê um nome ao modelo." });
-  if (!message && !imageUrl) return res.status(400).json({ error: "O modelo precisa de texto ou imagem." });
+  if (!message && imageUrls.length === 0) return res.status(400).json({ error: "O modelo precisa de texto ou imagem." });
   if (templates.length >= MAX_TEMPLATES) {
     return res.status(400).json({ error: `Limite de ${MAX_TEMPLATES} modelos atingido. Exclua algum para salvar outro.` });
   }
@@ -660,7 +688,7 @@ app.post("/api/templates", (req, res) => {
     id: crypto.randomUUID(),
     name: name.trim().slice(0, 40),
     message: (message || "").slice(0, 5000),
-    imageUrl: (imageUrl || "").slice(0, 1000),
+    imageUrls,
   };
   templates.push(template);
   saveTemplates();
