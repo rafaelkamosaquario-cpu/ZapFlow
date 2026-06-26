@@ -244,6 +244,18 @@ function saveJobs() {
   }
 }
 
+/** Conta quantos contatos da campanha responderam (após o disparo). */
+function countReplies(job) {
+  if (!job.logs?.length) return 0;
+  const since = job.startedAt || job.createdAt || 0;
+  const replied = new Set(metrics.responses.filter((r) => r.ts >= since).map((r) => r.phone));
+  let n = 0;
+  for (const l of job.logs) {
+    if (l.ok && replied.has(String(l.phone || "").replace(/\D/g, ""))) n++;
+  }
+  return n;
+}
+
 /** Versão segura para o cliente: sem credenciais nem conteúdo pesado. */
 function publicJob(job) {
   return {
@@ -260,6 +272,7 @@ function publicJob(job) {
     delayMs: job.delayMs,
     contactsCount: job.contacts?.length || 0,
     result: job.result || null,
+    repliedCount: countReplies(job),
     error: job.error || null,
   };
 }
@@ -669,6 +682,12 @@ app.get("/api/metrics", (req, res) => {
     hoje: summarizeMetrics(startToday),
     mes: summarizeMetrics(startMonth),
   });
+});
+
+// Lista as respostas recebidas (caixa de entrada do dashboard)
+app.get("/api/responses", (req, res) => {
+  const list = [...metrics.responses].sort((a, b) => b.ts - a.ts).slice(0, 300);
+  res.json({ responses: list, total: metrics.responses.length });
 });
 
 // --- Modelos de mensagem ---

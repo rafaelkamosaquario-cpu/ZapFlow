@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#25D366" />
+  <title>ZapFlow · Painel</title>
+  <link rel="icon" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="zappy.svg" alt="Zappy" class="logo-img" />
+      <div>
+        <h1>Zap<span class="brand-accent">Flow</span> · Painel</h1>
+        <p>Acompanhe campanhas, respostas e follow-up</p>
+      </div>
+    </div>
+    <nav class="topnav">
+      <a class="navbtn" href="/">← Voltar ao disparo</a>
+    </nav>
+  </header>
+
+  <div class="dash-nav">
+    <button class="dash-tab active" data-view="overview">🏠 Visão Geral</button>
+    <button class="dash-tab" data-view="campaigns">📣 Campanhas</button>
+    <button class="dash-tab" data-view="responses">💬 Respostas</button>
+    <button class="dash-tab" data-view="followup">🔁 Follow-up</button>
+  </div>
+
+  <main class="container">
+    <!-- Visão Geral -->
+    <section class="dash-view" data-view="overview">
+      <div class="metrics-panels">
+        <div class="metric-panel" id="panelHoje"><h4>Hoje</h4><div class="metric-content"></div></div>
+        <div class="metric-panel" id="panelMes"><h4>Este mês</h4><div class="metric-content"></div></div>
+      </div>
+      <p class="hint">💡 As respostas só aparecem se o webhook da Z-API estiver ativo.</p>
+    </section>
+
+    <!-- Campanhas -->
+    <section class="dash-view hidden" data-view="campaigns">
+      <h2 class="dash-title">📣 Campanhas</h2>
+      <p class="hint">Cada disparo é uma campanha. Toque para ver os contatos e quem respondeu.</p>
+      <div id="campaignsList" class="dash-list"></div>
+    </section>
+
+    <!-- Respostas -->
+    <section class="dash-view hidden" data-view="responses">
+      <h2 class="dash-title">💬 Respostas dos clientes</h2>
+      <p class="hint">Mensagens recebidas (via webhook da Z-API), mais recentes primeiro.</p>
+      <div id="responsesList" class="dash-list"></div>
+    </section>
+
+    <!-- Follow-up -->
+    <section class="dash-view hidden" data-view="followup">
+      <h2 class="dash-title">🔁 Follow-up de campanhas</h2>
+      <p class="hint">Reengaje quem <b>recebeu mas não respondeu</b>. Prepare um novo disparo só para eles.</p>
+      <div id="followupList" class="dash-list"></div>
+    </section>
+  </main>
+
+  <!-- Detalhe de campanha -->
+  <div class="modal hidden" id="campaignModal">
+    <div class="modal-box modal-wide">
+      <div class="modal-head">
+        <h3 id="campaignTitle">Campanha</h3>
+        <button class="modal-close" data-close="campaignModal" type="button">✕</button>
+      </div>
+      <div id="campaignSummary" class="campaign-summary"></div>
+      <div class="row" style="margin:10px 0">
+        <button class="btn primary" id="btnPrepareFollowup" type="button">🔁 Preparar follow-up (quem não respondeu)</button>
+      </div>
+      <div id="campaignContacts" class="dash-detail"></div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <small>ZapFlow · Painel de campanhas</small>
+  </footer>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

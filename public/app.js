@@ -169,6 +169,23 @@ function addManualContact() {
   rebuildContacts();
 }
 
+/** Carrega contatos de follow-up vindos do Painel (sessionStorage). */
+function loadFollowupContacts() {
+  try {
+    const raw = sessionStorage.getItem("zapflow_followup");
+    if (!raw) return;
+    sessionStorage.removeItem("zapflow_followup");
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || !list.length) return;
+    manualContacts = list
+      .map((c) => ({ phone: normalizePhone(c.phone), name: c.name || "", rawPhone: String(c.phone || ""), manual: true }))
+      .filter((c) => c.phone);
+    rebuildContacts();
+    $("#followupCount").textContent = manualContacts.length;
+    $("#followupBanner").classList.remove("hidden");
+  } catch { /* ignore */ }
+}
+
 /** Recombina importados + manuais e atualiza a tabela. */
 function rebuildContacts() {
   contacts = [...importedContacts, ...manualContacts];
@@ -807,10 +824,8 @@ async function deleteTemplate(id) {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard de métricas
+// Dashboard de métricas (modal legado — o painel completo agora é dashboard.html)
 // ---------------------------------------------------------------------------
-$("#btnMetrics").addEventListener("click", openMetrics);
-
 async function openMetrics() {
   openModal("metricsModal");
   $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Carregando...</p>";
@@ -872,6 +887,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   addMessageBlock(); // começa com 1 mensagem
   loadSchedules();
+  loadFollowupContacts(); // carrega contatos vindos do "Preparar follow-up"
 
   // Intervalo: restaura preferência salva ou usa o padrão do servidor
   const savedDelay = localStorage.getItem("zapflow_delay");
