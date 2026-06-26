@@ -322,6 +322,7 @@ async function runJob(job) {
 
   job.status = "concluido";
   job.finishedAt = Date.now();
+  recordClientsSent(job.contacts);
   trimFinishedJob(job);
   saveJobs();
   recordCampaign(success, failed);
@@ -437,6 +438,73 @@ function saveTemplates() {
   }
 }
 loadTemplates();
+
+// ---------------------------------------------------------------------------
+// CRM-lite: base de clientes (data/clients.json)
+// ---------------------------------------------------------------------------
+const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
+const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
+let clients = [];
+
+function loadClients() {
+  try {
+    if (fs.existsSync(CLIENTS_FILE)) clients = JSON.parse(fs.readFileSync(CLIENTS_FILE, "utf8"));
+  } catch {
+    clients = [];
+  }
+}
+function saveClients() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar os clientes:", err.message);
+  }
+}
+function onlyDigits(p) { return String(p || "").replace(/\D/g, ""); }
+/** Telefone canônico do CRM: aplica a mesma normalização (DDI 55) dos contatos. */
+function canonPhone(p) { return normalizePhone(p) || onlyDigits(p); }
+function findClient(phone) {
+  const p = canonPhone(phone);
+  return p ? clients.find((c) => c.phone === p) : null;
+}
+function upsertClient(phone, name) {
+  const p = canonPhone(phone);
+  if (!p) return null;
+  let c = findClient(p);
+  const now = Date.now();
+  if (!c) {
+    c = { id: crypto.randomUUID(), phone: p, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
+    clients.push(c);
+  } else if (name && !c.name) {
+    c.name = name;
+  }
+  return c;
+}
+/** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
+function recordClientsSent(list) {
+  if (!Array.isArray(list)) return;
+  const now = Date.now();
+  list.forEach((ct) => {
+    const c = upsertClient(ct.phone, ct.name);
+    if (c) {
+      c.lastSentAt = now;
+      c.updatedAt = now;
+      if (!c.stage || c.stage === "Novo") c.stage = "Contatado";
+    }
+  });
+  saveClients();
+}
+/** Registra que um cliente respondeu (avança a etapa). */
+function recordClientReply(phone) {
+  const c = upsertClient(phone);
+  if (!c) return;
+  c.lastReplyAt = Date.now();
+  c.updatedAt = Date.now();
+  if (c.stage === "Novo" || c.stage === "Contatado") c.stage = "Respondeu";
+  saveClients();
+}
+loadClients();
 
 // ---------------------------------------------------------------------------
 // Rotas
@@ -586,6 +654,7 @@ app.post("/api/send", async (req, res) => {
   job.result = { success, failed, total: contacts.length };
   saveJobs();
   recordCampaign(success, failed);
+  recordClientsSent(contacts);
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
@@ -721,6 +790,51 @@ app.delete("/api/templates/:id", (req, res) => {
   res.json({ ok: before !== templates.length });
 });
 
+// --- CRM-lite: clientes ---
+app.get("/api/clients", (req, res) => {
+  const search = String(req.query.search || "").trim().toLowerCase();
+  const tag = String(req.query.tag || "");
+  const stage = String(req.query.stage || "");
+  let list = clients.filter((c) => {
+    if (stage && c.stage !== stage) return false;
+    if (tag && !(c.tags || []).includes(tag)) return false;
+    if (search && !`${c.name} ${c.phone}`.toLowerCase().includes(search)) return false;
+    return true;
+  });
+  list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 1000);
+  res.json({ clients: list, total: clients.length, shown: list.length });
+});
+
+app.get("/api/clients/meta", (req, res) => {
+  const tagSet = new Set();
+  const stageCount = {};
+  clients.forEach((c) => {
+    (c.tags || []).forEach((t) => tagSet.add(t));
+    stageCount[c.stage] = (stageCount[c.stage] || 0) + 1;
+  });
+  res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: clients.length });
+});
+
+app.patch("/api/clients/:id", (req, res) => {
+  const c = clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  const { name, stage, tags, notes } = req.body || {};
+  if (typeof name === "string") c.name = name.slice(0, 80);
+  if (typeof stage === "string" && stage) c.stage = stage.slice(0, 40);
+  if (Array.isArray(tags)) c.tags = tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
+  if (typeof notes === "string") c.notes = notes.slice(0, 1000);
+  c.updatedAt = Date.now();
+  saveClients();
+  res.json({ ok: true, client: c });
+});
+
+app.delete("/api/clients/:id", (req, res) => {
+  const before = clients.length;
+  clients = clients.filter((c) => c.id !== req.params.id);
+  saveClients();
+  res.json({ ok: before !== clients.length });
+});
+
 // --- Webhook da Z-API (respostas recebidas) ---
 app.post("/api/webhook", (req, res) => {
   try {
@@ -731,6 +845,7 @@ app.post("/api/webhook", (req, res) => {
     if (phone && !fromMe) {
       const content = b.text?.message || b.message || b.body || b.caption || "";
       recordResponse(phone, Date.now(), content);
+      recordClientReply(phone); // atualiza a etapa do cliente no CRM
     }
   } catch (err) {
     console.error("Erro no webhook:", err.message);

@@ -33,6 +33,7 @@ $$(".dash-tab").forEach((tab) => {
 
 function loadView(view) {
   if (view === "overview") loadOverview();
+  else if (view === "clients") loadClients();
   else if (view === "campaigns") loadCampaigns();
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
@@ -72,6 +73,134 @@ function renderMetricPanel(sel, m) {
     <div class="week-chart">${chart}</div>
     <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:4px">Mensagens por dia da semana</div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Clientes (CRM-lite)
+// ---------------------------------------------------------------------------
+const STAGE_CLS = { Novo: "pend", Contatado: "sending", Respondeu: "ok", Negociando: "pend", Cliente: "ok", Perdido: "cancel" };
+let crmMeta = { stages: [], tags: [] };
+let crmList = [];
+let crmCurrent = null;
+
+async function loadClients() {
+  await loadCrmMeta();
+  const wrap = $("#clientsList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  const params = new URLSearchParams({
+    search: $("#crmSearch").value.trim(),
+    stage: $("#crmStage").value,
+    tag: $("#crmTag").value,
+  });
+  try {
+    const res = await fetch("/api/clients?" + params);
+    const data = await res.json();
+    crmList = data.clients || [];
+    $("#crmShown").textContent = `${data.shown} de ${data.total} cliente(s)`;
+    if (!crmList.length) {
+      wrap.innerHTML = "<p class='hint'>Nenhum cliente nesse filtro. A base se preenche conforme você dispara.</p>";
+      return;
+    }
+    wrap.innerHTML = "";
+    crmList.forEach((c) => wrap.appendChild(clientCard(c)));
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro ao carregar clientes.</p>";
+  }
+}
+
+async function loadCrmMeta() {
+  try {
+    const res = await fetch("/api/clients/meta");
+    crmMeta = await res.json();
+    const stageSel = $("#crmStage");
+    if (stageSel.options.length <= 1) {
+      crmMeta.stages.forEach((s) => stageSel.insertAdjacentHTML("beforeend", `<option value="${s}">${s}</option>`));
+    }
+    const tagSel = $("#crmTag");
+    tagSel.innerHTML = '<option value="">Todas as tags</option>' +
+      crmMeta.tags.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    // barra de etapas
+    $("#crmStageBar").innerHTML = crmMeta.stages
+      .map((s) => `<span class="stage-pill ${STAGE_CLS[s] || ""}">${s}: <b>${crmMeta.stageCount[s] || 0}</b></span>`)
+      .join("");
+  } catch { /* ignore */ }
+}
+
+function clientCard(c) {
+  const div = document.createElement("div");
+  div.className = "dash-card " + (STAGE_CLS[c.stage] || "");
+  const tags = (c.tags || []).map((t) => `<span class="badge manual">${escapeHtml(t)}</span>`).join(" ");
+  const last = c.lastReplyAt ? `↩ respondeu ${fmtDate(c.lastReplyAt)}`
+    : c.lastSentAt ? `📤 enviado ${fmtDate(c.lastSentAt)}` : "novo";
+  div.innerHTML = `
+    <div class="dash-card-head">
+      <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
+      <span class="stage-pill ${STAGE_CLS[c.stage] || ""}">${escapeHtml(c.stage)}</span>
+    </div>
+    <div class="dash-card-body">
+      <span>📱 ${escapeHtml(c.phone)} · ${last}</span>
+      ${tags ? `<span>${tags}</span>` : ""}
+    </div>`;
+  div.addEventListener("click", () => openClient(c));
+  return div;
+}
+
+function openClient(c) {
+  crmCurrent = c;
+  $("#clientTitle").textContent = c.name || "Cliente";
+  $("#clientPhone").textContent = "📱 " + c.phone;
+  $("#clientName").value = c.name || "";
+  $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
+  $("#clientTags").value = (c.tags || []).join(", ");
+  $("#clientNotes").value = c.notes || "";
+  $("#clientMeta").textContent =
+    (c.lastSentAt ? `Último envio: ${fmtDate(c.lastSentAt)}. ` : "") +
+    (c.lastReplyAt ? `Última resposta: ${fmtDate(c.lastReplyAt)}.` : "");
+  $("#clientStatus").textContent = "";
+  openModal("clientModal");
+}
+
+$("#btnSaveClient").addEventListener("click", async () => {
+  if (!crmCurrent) return;
+  const body = {
+    name: $("#clientName").value.trim(),
+    stage: $("#clientStage").value,
+    tags: $("#clientTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+    notes: $("#clientNotes").value.trim(),
+  };
+  try {
+    const res = await fetch("/api/clients/" + crmCurrent.id, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error();
+    closeModal("clientModal");
+    loadClients();
+  } catch {
+    $("#clientStatus").textContent = "❌ Erro ao salvar";
+    $("#clientStatus").className = "status err";
+  }
+});
+
+$("#btnDeleteClient").addEventListener("click", async () => {
+  if (!crmCurrent || !confirm("Excluir este cliente da base?")) return;
+  await fetch("/api/clients/" + crmCurrent.id, { method: "DELETE" });
+  closeModal("clientModal");
+  loadClients();
+});
+
+// Disparar para a lista filtrada
+$("#btnCrmDispatch").addEventListener("click", () => {
+  if (!crmList.length) { alert("Não há clientes nesse filtro."); return; }
+  const contacts = crmList.map((c) => ({ phone: c.phone, name: c.name || "" }));
+  sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "lista do CRM", contacts }));
+  alert(`${contacts.length} cliente(s) preparados para disparo.\nVocê será levado ao disparo para montar a mensagem.`);
+  window.location.href = "/";
+});
+
+// Filtros (com pequeno debounce na busca)
+let crmTimer = null;
+$("#crmSearch").addEventListener("input", () => { clearTimeout(crmTimer); crmTimer = setTimeout(loadClients, 350); });
+$("#crmStage").addEventListener("change", loadClients);
+$("#crmTag").addEventListener("change", loadClients);
 
 // ---------------------------------------------------------------------------
 // Campanhas
@@ -153,7 +282,7 @@ $("#btnPrepareFollowup").addEventListener("click", () => {
     alert("Todos que receberam já responderam (ou ninguém foi enviado). 🎉");
     return;
   }
-  sessionStorage.setItem("zapflow_followup", JSON.stringify(naoResponderam));
+  sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "follow-up", contacts: naoResponderam }));
   alert(`${naoResponderam.length} contato(s) que não responderam foram preparados.\nVocê será levado ao disparo para montar a mensagem de follow-up.`);
   window.location.href = "/";
 });

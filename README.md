@@ -17,8 +17,10 @@ ou inserida manualmente. Mascote: **Zappy** 🟢.
 - 📅 **Agendamento** com data e horário (o servidor envia sozinho na hora marcada)
 - ✉️ Até **5 mensagens independentes**, cada uma com seu texto, imagem e horário
 - 📑 **Modelos de mensagem** salvos (até 10) para reutilizar
-- 📊 **Dashboard de métricas** (Hoje / Este mês): enviadas, com/sem retorno, taxa de
-  resposta e melhor horário (requer webhook da Z-API)
+- 📊 **Painel/Dashboard** navegável: Visão Geral, Clientes (CRM), Campanhas,
+  Respostas e Follow-up
+- 👥 **CRM-lite**: base de clientes que cresce sozinha (tags, etapas/funil, anotações)
+  e disparo para segmentos filtrados
 - 🔒 **Login simples** opcional (usuário/senha via `.env`)
 - 📱 Interface responsiva — funciona no **celular** (veja o deploy no Railway)
 
@@ -134,6 +136,7 @@ Tudo é salvo em arquivos JSON dentro de `DATA_DIR` (padrão `./data`):
 - `jobs.json` — agendamentos e histórico de envios
 - `metrics.json` — métricas e respostas recebidas (webhook)
 - `templates.json` — modelos de mensagem
+- `clients.json` — base de clientes do CRM (tags, etapas, anotações)
 
 No Railway, aponte `DATA_DIR=/data` e crie um **volume** em `/data` para não perder
 nada nos redeploys (passo a passo no `DEPLOY-RAILWAY.md`).

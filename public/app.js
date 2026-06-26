@@ -169,19 +169,23 @@ function addManualContact() {
   rebuildContacts();
 }
 
-/** Carrega contatos de follow-up vindos do Painel (sessionStorage). */
+/** Carrega uma lista vinda do Painel (follow-up ou CRM) via sessionStorage. */
 function loadFollowupContacts() {
   try {
-    const raw = sessionStorage.getItem("zapflow_followup");
+    const raw = sessionStorage.getItem("zapflow_loadlist") || sessionStorage.getItem("zapflow_followup");
     if (!raw) return;
+    sessionStorage.removeItem("zapflow_loadlist");
     sessionStorage.removeItem("zapflow_followup");
-    const list = JSON.parse(raw);
-    if (!Array.isArray(list) || !list.length) return;
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed) ? parsed : (parsed.contacts || []);
+    const label = Array.isArray(parsed) ? "follow-up" : (parsed.label || "lista");
+    if (!list.length) return;
     manualContacts = list
       .map((c) => ({ phone: normalizePhone(c.phone), name: c.name || "", rawPhone: String(c.phone || ""), manual: true }))
       .filter((c) => c.phone);
     rebuildContacts();
     $("#followupCount").textContent = manualContacts.length;
+    $("#loadlistLabel").textContent = label;
     $("#followupBanner").classList.remove("hidden");
   } catch { /* ignore */ }
 }
