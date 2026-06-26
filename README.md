@@ -21,6 +21,8 @@ ou inserida manualmente. Mascote: **Zappy** 🟢.
   Respostas e Follow-up
 - 👥 **CRM-lite**: base de clientes que cresce sozinha (tags, etapas/funil, anotações)
   e disparo para segmentos filtrados
+- 🤖 **Chatbot por regras**: respostas automáticas por palavra-chave (com `{{nome}}`)
+  e resposta padrão, via webhook da Z-API
 - 🔒 **Login simples** opcional (usuário/senha via `.env`)
 - 📱 Interface responsiva — funciona no **celular** (veja o deploy no Railway)
 
@@ -137,6 +139,7 @@ Tudo é salvo em arquivos JSON dentro de `DATA_DIR` (padrão `./data`):
 - `metrics.json` — métricas e respostas recebidas (webhook)
 - `templates.json` — modelos de mensagem
 - `clients.json` — base de clientes do CRM (tags, etapas, anotações)
+- `chatbot.json` — regras de respostas automáticas
 
 No Railway, aponte `DATA_DIR=/data` e crie um **volume** em `/data` para não perder
 nada nos redeploys (passo a passo no `DEPLOY-RAILWAY.md`).

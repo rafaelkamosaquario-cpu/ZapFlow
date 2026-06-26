@@ -28,6 +28,7 @@
     <button class="dash-tab" data-view="campaigns">📣 Campanhas</button>
     <button class="dash-tab" data-view="responses">💬 Respostas</button>
     <button class="dash-tab" data-view="followup">🔁 Follow-up</button>
+    <button class="dash-tab" data-view="chatbot">🤖 Auto</button>
   </div>
 
   <main class="container">
@@ -69,6 +70,27 @@
       <h2 class="dash-title">💬 Respostas dos clientes</h2>
       <p class="hint">Mensagens recebidas (via webhook da Z-API), mais recentes primeiro.</p>
       <div id="responsesList" class="dash-list"></div>
+    </section>
+
+    <!-- Chatbot / Automação -->
+    <section class="dash-view hidden" data-view="chatbot">
+      <h2 class="dash-title">🤖 Respostas automáticas</h2>
+      <p class="hint">Quando um cliente responde com uma palavra-chave, o ZapFlow responde sozinho.
+        Use <code>{{nome}}</code> para personalizar. (Requer webhook da Z-API ativo.)</p>
+      <label class="switch-row"><input type="checkbox" id="botEnabled" /> <b>Ativar respostas automáticas</b></label>
+
+      <div id="rulesList" class="rules-list"></div>
+      <button class="btn secondary" id="btnAddRule" type="button">➕ Adicionar regra</button>
+
+      <div class="bot-fallback">
+        <label class="switch-row"><input type="checkbox" id="botFallbackEnabled" /> <b>Resposta padrão</b> (quando nada combina)</label>
+        <textarea id="botFallbackReply" rows="2" placeholder="Ex.: Olá {{nome}}! Recebemos sua mensagem, em breve um atendente responde. 🙂"></textarea>
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <button class="btn primary" id="btnSaveBot" type="button">💾 Salvar automação</button>
+        <span id="botStatus" class="status"></span>
+      </div>
     </section>
 
     <!-- Follow-up -->

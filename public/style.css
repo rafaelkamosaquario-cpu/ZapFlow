@@ -346,6 +346,14 @@ input[type=datetime-local] {
 .stage-pill.sending { color: var(--secondary); border-color: rgba(18,140,126,.5); }
 .stage-pill.cancel { color: var(--muted); }
 
+/* Chatbot / Automação */
+.switch-row { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 10px 0; cursor: pointer; }
+.switch-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary); }
+.rules-list { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
+.rule-card { background: var(--card-2); border: 1px solid var(--border); border-radius: 11px; padding: 14px; }
+.rule-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.bot-fallback { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); }
+
 /* Intervalo (segundos) */
 .delay-field { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
 .delay-field span { color: var(--muted); font-size: 13px; }

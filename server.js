@@ -507,6 +507,68 @@ function recordClientReply(phone) {
 loadClients();
 
 // ---------------------------------------------------------------------------
+// Chatbot por regras (data/chatbot.json)
+// ---------------------------------------------------------------------------
+const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
+let chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
+const autoReplyCooldown = new Map(); // anti-spam por número
+
+function loadChatbot() {
+  try {
+    if (fs.existsSync(CHATBOT_FILE)) chatbot = JSON.parse(fs.readFileSync(CHATBOT_FILE, "utf8"));
+  } catch {
+    chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
+  }
+}
+function saveChatbot() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CHATBOT_FILE, JSON.stringify(chatbot, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar o chatbot:", err.message);
+  }
+}
+loadChatbot();
+
+/** Encontra a resposta automática para um texto recebido (ou null). */
+function findChatbotReply(text) {
+  if (!chatbot.enabled) return null;
+  const msg = String(text || "").trim().toLowerCase();
+  if (!msg) return null;
+  for (const r of chatbot.rules || []) {
+    if (r.active === false) continue;
+    const kws = (r.keywords || []).map((k) => String(k).toLowerCase().trim()).filter(Boolean);
+    const hit = kws.some((k) => {
+      if (r.matchType === "exact") return msg === k;
+      if (r.matchType === "starts") return msg.startsWith(k);
+      return msg.includes(k);
+    });
+    if (hit) return r.reply;
+  }
+  if (chatbot.fallback?.enabled && chatbot.fallback.reply) return chatbot.fallback.reply;
+  return null;
+}
+
+/** Envia a resposta automática (usa credenciais do .env, com anti-spam). */
+async function sendAutoReply(phone, text) {
+  const creds = resolveCredentials({});
+  if (!creds.instanceId || !creds.instanceToken || !text) return;
+  const p = onlyDigits(phone);
+  const now = Date.now();
+  if (autoReplyCooldown.get(p) && now - autoReplyCooldown.get(p) < 8000) return;
+  autoReplyCooldown.set(p, now);
+  try {
+    await axios.post(
+      `${zapiBaseUrl(creds)}/send-text`,
+      { phone: p, message: text },
+      { headers: zapiHeaders(creds), timeout: 20000 }
+    );
+  } catch (err) {
+    console.error("Falha na resposta automática:", err.response?.data?.error || err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Rotas
 // ---------------------------------------------------------------------------
 
@@ -835,6 +897,31 @@ app.delete("/api/clients/:id", (req, res) => {
   res.json({ ok: before !== clients.length });
 });
 
+// --- Chatbot por regras ---
+app.get("/api/chatbot", (req, res) => res.json(chatbot));
+
+app.put("/api/chatbot", (req, res) => {
+  const b = req.body || {};
+  chatbot = {
+    enabled: !!b.enabled,
+    rules: Array.isArray(b.rules) ? b.rules.slice(0, 30).map((r) => ({
+      id: r.id || crypto.randomUUID(),
+      keywords: Array.isArray(r.keywords)
+        ? r.keywords.map((k) => String(k).trim().slice(0, 40)).filter(Boolean).slice(0, 15)
+        : [],
+      reply: String(r.reply || "").slice(0, 2000),
+      matchType: ["contains", "exact", "starts"].includes(r.matchType) ? r.matchType : "contains",
+      active: r.active !== false,
+    })) : [],
+    fallback: {
+      enabled: !!(b.fallback && b.fallback.enabled),
+      reply: String(b.fallback?.reply || "").slice(0, 2000),
+    },
+  };
+  saveChatbot();
+  res.json({ ok: true, chatbot });
+});
+
 // --- Webhook da Z-API (respostas recebidas) ---
 app.post("/api/webhook", (req, res) => {
   try {
@@ -846,6 +933,12 @@ app.post("/api/webhook", (req, res) => {
       const content = b.text?.message || b.message || b.body || b.caption || "";
       recordResponse(phone, Date.now(), content);
       recordClientReply(phone); // atualiza a etapa do cliente no CRM
+      // Resposta automática (chatbot por regras), personalizada com {{nome}}
+      const reply = findChatbotReply(content);
+      if (reply) {
+        const cli = findClient(phone);
+        sendAutoReply(phone, applyTemplate(reply, { name: cli?.name || "" }));
+      }
     }
   } catch (err) {
     console.error("Erro no webhook:", err.message);

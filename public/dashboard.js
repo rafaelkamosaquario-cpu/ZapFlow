@@ -37,6 +37,7 @@ function loadView(view) {
   else if (view === "campaigns") loadCampaigns();
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
+  else if (view === "chatbot") loadChatbot();
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +351,76 @@ async function loadFollowup() {
     wrap.innerHTML = "<p class='hint'>Erro ao carregar.</p>";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Chatbot / Automação
+// ---------------------------------------------------------------------------
+async function loadChatbot() {
+  try {
+    const cfg = await (await fetch("/api/chatbot")).json();
+    $("#botEnabled").checked = !!cfg.enabled;
+    $("#botFallbackEnabled").checked = !!(cfg.fallback && cfg.fallback.enabled);
+    $("#botFallbackReply").value = cfg.fallback?.reply || "";
+    $("#rulesList").innerHTML = "";
+    (cfg.rules || []).forEach(addRuleRow);
+    if (!cfg.rules || !cfg.rules.length) addRuleRow();
+  } catch {
+    $("#rulesList").innerHTML = "<p class='hint'>Erro ao carregar.</p>";
+  }
+}
+
+function addRuleRow(rule = {}) {
+  const div = document.createElement("div");
+  div.className = "rule-card";
+  const mt = rule.matchType || "contains";
+  div.innerHTML = `
+    <div class="rule-head">
+      <label class="switch-row" style="margin:0"><input type="checkbox" class="rule-active" ${rule.active === false ? "" : "checked"} /> Ativa</label>
+      <button type="button" class="btn-remove rule-del">✕ Remover</button>
+    </div>
+    <label>Palavras-chave <small class="hint" style="font-weight:400">(separe por vírgula)</small>
+      <input type="text" class="rule-keywords" placeholder="preço, valor, quanto custa" value="${escapeHtml((rule.keywords || []).join(", "))}" />
+    </label>
+    <label>Quando a mensagem
+      <select class="rule-match">
+        <option value="contains" ${mt === "contains" ? "selected" : ""}>contém a palavra</option>
+        <option value="exact" ${mt === "exact" ? "selected" : ""}>é exatamente igual</option>
+        <option value="starts" ${mt === "starts" ? "selected" : ""}>começa com</option>
+      </select>
+    </label>
+    <label>Responder com
+      <textarea class="rule-reply" rows="2" placeholder="Olá {{nome}}! Nossa tabela de pneus: ...">${escapeHtml(rule.reply || "")}</textarea>
+    </label>`;
+  div.querySelector(".rule-del").addEventListener("click", () => div.remove());
+  $("#rulesList").appendChild(div);
+}
+
+$("#btnAddRule").addEventListener("click", () => addRuleRow());
+
+$("#btnSaveBot").addEventListener("click", async () => {
+  const rules = $$(".rule-card").map((card) => ({
+    keywords: $(".rule-keywords", card).value.split(",").map((k) => k.trim()).filter(Boolean),
+    matchType: $(".rule-match", card).value,
+    reply: $(".rule-reply", card).value.trim(),
+    active: $(".rule-active", card).checked,
+  })).filter((r) => r.keywords.length && r.reply);
+
+  const body = {
+    enabled: $("#botEnabled").checked,
+    rules,
+    fallback: { enabled: $("#botFallbackEnabled").checked, reply: $("#botFallbackReply").value.trim() },
+  };
+  const status = $("#botStatus");
+  try {
+    const res = await fetch("/api/chatbot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error();
+    status.textContent = "✅ Automação salva!";
+    status.className = "status ok";
+  } catch {
+    status.textContent = "❌ Erro ao salvar";
+    status.className = "status err";
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Modal helpers
