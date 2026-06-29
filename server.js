@@ -609,35 +609,31 @@ app.post("/api/test-connection", async (req, res) => {
 /** Envia uma única mensagem (texto ou imagem) para um número. */
 async function sendOne(creds, contact, { message, imageUrl, imageBase64, images }) {
   const text = applyTemplate(message, contact);
+  const imgs = normalizeImages(images, imageUrl, imageBase64); // até 3
+  const results = [];
 
-  // Reúne as imagens (array novo) com compatibilidade ao formato antigo
-  let imgs = [];
-  if (Array.isArray(images)) imgs = images.filter(Boolean);
-  else if (imageUrl) imgs = [imageUrl];
-  else if (imageBase64) imgs = [imageBase64];
-  imgs = imgs.slice(0, 3);
-
-  // Apenas texto
-  if (imgs.length === 0) {
+  // 1) Texto como mensagem NORMAL (largura cheia, não como legenda de imagem)
+  if (text) {
     const { data } = await axios.post(
       `${zapiBaseUrl(creds)}/send-text`,
       { phone: contact.phone, message: text },
       { headers: zapiHeaders(creds), timeout: 30000 }
     );
-    return data;
+    results.push(data);
+    if (imgs.length) await sleep(800);
   }
 
-  // Uma ou mais imagens: a legenda (texto) vai na primeira
-  const results = [];
+  // 2) Imagens enviadas em seguida, SEM legenda (cada uma é uma mensagem)
   for (let i = 0; i < imgs.length; i++) {
     const { data } = await axios.post(
       `${zapiBaseUrl(creds)}/send-image`,
-      { phone: contact.phone, image: imgs[i], caption: i === 0 ? (text || "") : "" },
+      { phone: contact.phone, image: imgs[i], caption: "" },
       { headers: zapiHeaders(creds), timeout: 60000 }
     );
     results.push(data);
     if (i < imgs.length - 1) await sleep(800); // pequena pausa entre imagens
   }
+
   return results;
 }
 
