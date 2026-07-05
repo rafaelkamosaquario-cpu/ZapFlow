@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#25D366" />
-  <title>ZapFlow · Painel</title>
+  <meta name="theme-color" content="#0F1923" />
+  <title>ZapFlow</title>
   <link rel="icon" href="icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -38,7 +41,7 @@
         <div class="metric-panel" id="panelHoje"><h4>Hoje</h4><div class="metric-content"></div></div>
         <div class="metric-panel" id="panelMes"><h4>Este mês</h4><div class="metric-content"></div></div>
       </div>
-      <p class="hint">💡 As respostas só aparecem se o webhook da Z-API estiver ativo.</p>
+      <p class="hint">💡 As respostas só aparecem com a integração de respostas ativa.</p>
     </section>
 
     <!-- Clientes (CRM) -->
@@ -68,7 +71,7 @@
     <!-- Respostas -->
     <section class="dash-view hidden" data-view="responses">
       <h2 class="dash-title">💬 Respostas dos clientes</h2>
-      <p class="hint">Mensagens recebidas (via webhook da Z-API), mais recentes primeiro.</p>
+      <p class="hint">Mensagens recebidas dos seus clientes, mais recentes primeiro.</p>
       <div id="responsesList" class="dash-list"></div>
     </section>
 
@@ -76,7 +79,7 @@
     <section class="dash-view hidden" data-view="chatbot">
       <h2 class="dash-title">🤖 Respostas automáticas</h2>
       <p class="hint">Quando um cliente responde com uma palavra-chave, o ZapFlow responde sozinho.
-        Use <code>{{nome}}</code> para personalizar. (Requer webhook da Z-API ativo.)</p>
+        Use <code>{{nome}}</code> para personalizar. (Requer a integração de respostas ativa.)</p>
       <label class="switch-row"><input type="checkbox" id="botEnabled" /> <b>Ativar respostas automáticas</b></label>
 
       <div id="rulesList" class="rules-list"></div>

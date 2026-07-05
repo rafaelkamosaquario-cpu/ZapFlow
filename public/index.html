@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#25D366" />
-  <title>ZapFlow · Disparo de Mensagens (Z-API)</title>
+  <meta name="theme-color" content="#0F1923" />
+  <title>ZapFlow</title>
   <link rel="icon" href="icon.svg" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -16,7 +19,7 @@
       <img src="zappy.svg" alt="Zappy" class="logo-img" />
       <div>
         <h1>Zap<span class="brand-accent">Flow</span></h1>
-        <p>Disparo de mensagens de texto e imagem via Z-API</p>
+        <p>Sua central de relacionamento no WhatsApp</p>
       </div>
     </div>
     <nav class="topnav">
@@ -33,22 +36,21 @@
     <!-- Passo 1: Credenciais -->
     <section class="card" id="connCard">
       <h2 class="collapsible" id="connHeader">
-        <span class="step">1</span> <span id="connTitle">Conexão com a Z-API</span>
+        <span class="step">1</span> <span id="connTitle">Conexão</span>
         <span id="connBadge" class="head-badge"></span>
         <span class="chevron" id="connChevron">▾</span>
       </h2>
       <div id="connBody">
-        <p class="hint">Pegue esses dados no painel da sua instância em
-          <a href="https://app.z-api.io" target="_blank" rel="noopener">app.z-api.io</a>.
-          Se já tiver configurado o arquivo <code>.env</code> no servidor, pode deixar em branco.</p>
+        <p class="hint">Conecte sua conta do WhatsApp para começar.
+          Se a conexão já estiver configurada no servidor, pode deixar em branco.</p>
         <div class="grid">
-          <label>ID da Instância
+          <label>ID da conexão
             <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
           </label>
-          <label>Token da Instância
+          <label>Token de acesso
             <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
           </label>
-          <label>Client-Token (Segurança)
+          <label>Token de segurança
             <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
           </label>
         </div>
@@ -199,8 +201,7 @@
         <div class="metric-panel" id="panelHoje"><h4>Hoje</h4><div class="metric-content"></div></div>
         <div class="metric-panel" id="panelMes"><h4>Este mês</h4><div class="metric-content"></div></div>
       </div>
-      <p class="hint">💡 As respostas (retorno) só aparecem se o <b>webhook</b> da Z-API estiver configurado
-        — veja o README.</p>
+      <p class="hint">💡 As respostas (retorno) só aparecem com a <b>integração de respostas</b> ativa.</p>
     </div>
   </div>
 

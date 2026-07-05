@@ -56,7 +56,7 @@ async function loadOverview() {
 }
 
 function renderMetricPanel(sel, m) {
-  const rateColor = m.taxa >= 30 ? "var(--primary)" : m.taxa >= 10 ? "#eab308" : "var(--danger)";
+  const rateColor = m.taxa >= 30 ? "var(--success)" : m.taxa >= 15 ? "var(--warn)" : "var(--error)";
   const hora = m.melhorHora === null ? "—" : String(m.melhorHora).padStart(2, "0") + "h";
   const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const maxWeek = Math.max(1, ...m.week);
@@ -78,7 +78,7 @@ function renderMetricPanel(sel, m) {
 // ---------------------------------------------------------------------------
 // Clientes (CRM-lite)
 // ---------------------------------------------------------------------------
-const STAGE_CLS = { Novo: "pend", Contatado: "sending", Respondeu: "ok", Negociando: "pend", Cliente: "ok", Perdido: "cancel" };
+const STAGE_CLS = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Cliente: "st-cliente", Perdido: "st-perdido" };
 let crmMeta = { stages: [], tags: [] };
 let crmList = [];
 let crmCurrent = null;
