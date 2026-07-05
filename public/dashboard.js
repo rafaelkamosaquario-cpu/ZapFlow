@@ -1,6 +1,15 @@
 const $ = (s, c = document) => c.querySelector(s);
 const $$ = (s, c = document) => Array.from(c.querySelectorAll(s));
 
+// PWA: busca atualização do app e recarrega sozinho quando o SW novo assume
+if ("serviceWorker" in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return; refreshing = true; location.reload();
+  });
+  navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update()).catch(() => {});
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")

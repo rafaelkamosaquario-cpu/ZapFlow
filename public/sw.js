@@ -1,5 +1,5 @@
 // Service Worker do ZapFlow — cache do "app shell" para funcionar offline.
-const CACHE = "zapflow-v1";
+const CACHE = "zapflow-v3";
 const ASSETS = [
   "/",
   "/index.html",
@@ -37,10 +37,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
 
+  // Sempre revalida com o servidor (no-cache) para nunca servir versão antiga;
+  // o cache fica só como fallback offline.
   event.respondWith(
-    fetch(request)
+    fetch(new Request(request.url, { cache: "no-cache", credentials: "same-origin" }))
       .then((res) => {
-        // Não cacheia redirecionamentos (ex.: tela de login)
         if (res && res.ok && res.type === "basic") {
           const copy = res.clone();
           caches.open(CACHE).then((cache) => cache.put(request, copy));

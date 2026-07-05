@@ -916,7 +916,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // Registra o Service Worker (PWA — instalável e com cache offline)
 if ("serviceWorker" in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return; refreshing = true; location.reload();
+  });
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => { /* ignora falha */ });
+    navigator.serviceWorker.register("/sw.js").then((reg) => reg.update()).catch(() => {});
   });
 }
