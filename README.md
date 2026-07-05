@@ -140,6 +140,7 @@ Tudo é salvo em arquivos JSON dentro de `DATA_DIR` (padrão `./data`):
 - `templates.json` — modelos de mensagem
 - `clients.json` — base de clientes do CRM (tags, etapas, anotações)
 - `agenda.json` — contatos salvos (agenda) usados para resolver nomes
+- `conversas.json` — caixa de entrada de conversas (recebidas/enviadas)
 - `chatbot.json` — regras de respostas automáticas
 
 No Railway, aponte `DATA_DIR=/data` e crie um **volume** em `/data` para não perder

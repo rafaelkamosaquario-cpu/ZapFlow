@@ -342,8 +342,8 @@ async function runJob(job) {
 
   job.status = "concluido";
   job.finishedAt = Date.now();
-  recordClientsSent(job.contacts);
   const label = campaignLabel(job.message, job.hadImage || job.images?.length);
+  recordClientsSent(job.contacts, label);
   trimFinishedJob(job);
   saveJobs();
   recordCampaign(success, failed, label);
@@ -557,7 +557,7 @@ function migrateClients() {
   }
 }
 /** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
-function recordClientsSent(list) {
+function recordClientsSent(list, campaignName) {
   if (!Array.isArray(list)) return;
   const now = Date.now();
   list.forEach((ct) => {
@@ -565,6 +565,7 @@ function recordClientsSent(list) {
     if (c) {
       c.lastSentAt = now;
       c.updatedAt = now;
+      if (campaignName) c.lastCampaignName = campaignName;
       if (!c.stage || c.stage === "Novo") c.stage = "Contatado";
     }
   });
@@ -630,6 +631,67 @@ function inAgenda(phone) { return Boolean(findAgenda(phone)); }
 loadAgenda();
 
 // ---------------------------------------------------------------------------
+// Conversas (caixa de entrada do dia a dia — data/conversas.json)
+// ---------------------------------------------------------------------------
+const CONVERSAS_FILE = path.join(DATA_DIR, "conversas.json");
+const CONV_MAX = 5000;
+const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
+let conversas = [];
+
+function loadConversas() {
+  try {
+    if (fs.existsSync(CONVERSAS_FILE)) conversas = JSON.parse(fs.readFileSync(CONVERSAS_FILE, "utf8"));
+  } catch {
+    conversas = [];
+  }
+}
+function saveConversas() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CONVERSAS_FILE, JSON.stringify(conversas, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar as conversas:", err.message);
+  }
+}
+/** Registra uma mensagem na conversa (dir: "in" recebida | "out" enviada). */
+function recordMessage(phone, text, dir) {
+  const key = phoneKey(phone);
+  if (!key) return;
+  const t = String(text || "").slice(0, 1000);
+  const now = Date.now();
+  if (dir === "out") {
+    // Evita duplicar (nosso envio + eco do webhook "enviadas por mim")
+    const dup = conversas.some((m) => m.dir === "out" && m.key === key && m.text === t && now - m.ts < 60000);
+    if (dup) return;
+  }
+  conversas.push({ key, phone: canonPhone(phone), text: t, ts: now, dir });
+  if (conversas.length > CONV_MAX) conversas = conversas.slice(-CONV_MAX);
+  saveConversas();
+}
+/** A conversa é de campanha? (o contato recebeu disparo nos últimos 30 dias) */
+function isCampaignOrigin(key) {
+  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  return Boolean(c && c.lastSentAt && Date.now() - c.lastSentAt <= CAMPAIGN_WINDOW);
+}
+function campaignNameOf(key) {
+  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  return (c && c.lastCampaignName) || "";
+}
+/** Contador de conversas de hoje (total, de campanha e do dia a dia). */
+function conversasSummaryToday() {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const seen = new Set();
+  let campanha = 0, diaadia = 0;
+  conversas.filter((m) => m.ts >= start.getTime()).forEach((m) => {
+    if (seen.has(m.key)) return;
+    seen.add(m.key);
+    if (isCampaignOrigin(m.key)) campanha++; else diaadia++;
+  });
+  return { total: seen.size, campanha, diaadia };
+}
+loadConversas();
+
+// ---------------------------------------------------------------------------
 // Chatbot por regras (data/chatbot.json)
 // ---------------------------------------------------------------------------
 const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
@@ -686,6 +748,7 @@ async function sendAutoReply(phone, text) {
       { phone: p, message: text },
       { headers: zapiHeaders(creds), timeout: 20000 }
     );
+    recordMessage(p, text, "out"); // registra na caixa de conversas
   } catch (err) {
     console.error("Falha na resposta automática:", err.response?.data?.error || err.message);
   }
@@ -835,7 +898,7 @@ app.post("/api/send", async (req, res) => {
   job.result = { success, failed, total: contacts.length };
   saveJobs();
   recordCampaign(success, failed, campaignLabel(message, images.length));
-  recordClientsSent(contacts);
+  recordClientsSent(contacts, campaignLabel(message, images.length));
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
@@ -932,6 +995,7 @@ app.get("/api/metrics", (req, res) => {
   res.json({
     hoje: summarizeMetrics(startToday),
     mes: summarizeMetrics(startMonth),
+    conversasHoje: conversasSummaryToday(),
   });
 });
 
@@ -1087,6 +1151,50 @@ app.delete("/api/agenda/:id", (req, res) => {
   res.json({ ok: before !== agenda.length });
 });
 
+// --- Conversas (caixa de entrada) ---
+app.get("/api/conversas", (req, res) => {
+  const filter = String(req.query.filter || "all");
+  const s = String(req.query.search || "").trim().toLowerCase();
+  // Agrupa por contato (última mensagem de cada)
+  const byKey = new Map();
+  for (const m of conversas) {
+    const cur = byKey.get(m.key);
+    if (!cur || m.ts > cur.lastTs) byKey.set(m.key, { key: m.key, phone: m.phone, lastText: m.text, lastTs: m.ts, dir: m.dir });
+  }
+  let threads = [...byKey.values()].map((t) => {
+    const camp = isCampaignOrigin(t.key);
+    return { ...t, name: resolveName(t.phone, ""), origem: camp ? "campaign" : "daily", campaignName: camp ? campaignNameOf(t.key) : "" };
+  });
+  if (filter === "campaign") threads = threads.filter((t) => t.origem === "campaign");
+  if (filter === "daily") threads = threads.filter((t) => t.origem === "daily");
+  if (s) threads = threads.filter((t) => `${t.name} ${t.phone}`.toLowerCase().includes(s));
+  threads.sort((a, b) => b.lastTs - a.lastTs);
+  res.json({ threads: threads.slice(0, 300) });
+});
+
+app.get("/api/conversas/:key", (req, res) => {
+  const key = req.params.key;
+  const messages = conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts);
+  const phone = messages[0]?.phone || key;
+  res.json({ key, phone, name: resolveName(phone, ""), origem: isCampaignOrigin(key) ? "campaign" : "daily", campaignName: campaignNameOf(key), messages });
+});
+
+app.post("/api/conversas/:key/reply", async (req, res) => {
+  const creds = resolveCredentials(req.body);
+  if (!creds.instanceId || !creds.instanceToken) return res.status(400).json({ error: "Conexão não configurada." });
+  const message = String(req.body?.message || "").trim();
+  if (!message) return res.status(400).json({ error: "Mensagem vazia." });
+  const existing = conversas.find((m) => m.key === req.params.key);
+  const phone = existing ? onlyDigits(existing.phone) : req.params.key;
+  try {
+    await axios.post(`${zapiBaseUrl(creds)}/send-text`, { phone, message }, { headers: zapiHeaders(creds), timeout: 20000 });
+    recordMessage(phone, message, "out");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
+  }
+});
+
 // --- Chatbot por regras ---
 app.get("/api/chatbot", (req, res) => res.json(chatbot));
 
@@ -1118,17 +1226,21 @@ app.post("/api/webhook", (req, res) => {
     const b = req.body || {};
     const phone = b.phone || b.participantPhone || b.connectedPhone;
     const fromMe = b.fromMe === true;
-    // Conta apenas mensagens RECEBIDAS (resposta do contato, não enviadas por nós)
+    const content = b.text?.message || b.message || b.body || b.caption || "";
     if (phone && !fromMe) {
-      const content = b.text?.message || b.message || b.body || b.caption || "";
+      // Mensagem RECEBIDA (resposta do contato)
       recordResponse(phone, Date.now(), content);
       recordClientReply(phone); // atualiza a etapa do cliente no CRM
+      if (content) recordMessage(phone, content, "in"); // caixa de conversas
       // Resposta automática (chatbot por regras), personalizada com {{nome}}
       const reply = findChatbotReply(content);
       if (reply) {
         const cli = findClient(phone);
         sendAutoReply(phone, applyTemplate(reply, { name: cli?.name || "" }));
       }
+    } else if (phone && fromMe && content) {
+      // Mensagem ENVIADA por mim (ex.: respondida direto pelo celular)
+      recordMessage(phone, content, "out");
     }
   } catch (err) {
     console.error("Erro no webhook:", err.message);

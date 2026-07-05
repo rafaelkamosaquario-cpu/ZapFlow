@@ -35,6 +35,7 @@ function loadView(view) {
   if (view === "overview") loadOverview();
   else if (view === "clients") loadClients();
   else if (view === "agenda") loadAgenda();
+  else if (view === "conversas") loadConversas();
   else if (view === "campaigns") loadCampaigns();
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
@@ -51,6 +52,10 @@ async function loadOverview() {
     const data = await res.json();
     renderMetricPanel("#panelHoje", data.hoje);
     renderMetricPanel("#panelMes", data.mes);
+    const ch = data.conversasHoje || { total: 0, campanha: 0, diaadia: 0 };
+    const cel = $("#convToday");
+    cel.innerHTML = `💬 <b>Conversas hoje: ${ch.total}</b> <span>(${ch.campanha} de campanhas, ${ch.diaadia} do dia a dia)</span>`;
+    cel.classList.remove("hidden");
   } catch {
     $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Erro ao carregar.</p>";
   }
@@ -210,6 +215,106 @@ let crmTimer = null;
 $("#crmSearch").addEventListener("input", () => { clearTimeout(crmTimer); crmTimer = setTimeout(loadClients, 350); });
 $("#crmStage").addEventListener("change", loadClients);
 $("#crmTag").addEventListener("change", loadClients);
+
+// ---------------------------------------------------------------------------
+// Conversas (caixa de entrada)
+// ---------------------------------------------------------------------------
+let convFilter = "all";
+let chatKey = null;
+
+async function loadConversas() {
+  const wrap = $("#conversasList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const params = new URLSearchParams({ filter: convFilter, search: $("#convSearch").value.trim() });
+    const data = await (await fetch("/api/conversas?" + params)).json();
+    const threads = data.threads || [];
+    if (!threads.length) {
+      wrap.innerHTML = "<p class='hint'>Nenhuma conversa ainda. Elas aparecem quando alguém te responde ou escreve.</p>";
+      return;
+    }
+    wrap.innerHTML = "";
+    threads.forEach((t) => {
+      const div = document.createElement("div");
+      div.className = "dash-card conv-item";
+      const nome = t.name || t.phone;
+      const badge = t.origem === "campaign"
+        ? `<span class="conv-badge camp">📣 ${escapeHtml(t.campaignName || "Campanha")}</span>`
+        : `<span class="conv-badge daily">💬 Dia a dia</span>`;
+      const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">${escapeHtml(nome)}</span>
+          <span class="dash-when">${fmtDate(t.lastTs)}</span>
+        </div>
+        <div class="dash-card-body">
+          <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
+          ${badge}
+        </div>`;
+      div.addEventListener("click", () => openChat(t.key, nome));
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro ao carregar conversas.</p>";
+  }
+}
+
+$$(".conv-fbtn").forEach((b) => b.addEventListener("click", () => {
+  $$(".conv-fbtn").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  convFilter = b.dataset.filter;
+  loadConversas();
+}));
+let convTimer = null;
+$("#convSearch").addEventListener("input", () => { clearTimeout(convTimer); convTimer = setTimeout(loadConversas, 350); });
+
+async function openChat(key, nome) {
+  chatKey = key;
+  $("#chatTitle").textContent = nome || "Conversa";
+  $("#chatStatus").textContent = "";
+  $("#chatMessages").innerHTML = "<p class='hint'>Carregando...</p>";
+  openModal("chatModal");
+  try {
+    const data = await (await fetch("/api/conversas/" + key)).json();
+    const box = $("#chatMessages");
+    box.innerHTML = (data.messages || []).map((m) =>
+      `<div class="bubble ${m.dir === "out" ? "out" : "in"}">
+         <div class="bubble-text">${escapeHtml(m.text)}</div>
+         <div class="bubble-time">${fmtDate(m.ts)}</div>
+       </div>`).join("") || "<p class='hint'>Sem mensagens.</p>";
+    box.scrollTop = box.scrollHeight;
+  } catch {
+    $("#chatMessages").innerHTML = "<p class='hint'>Erro ao carregar a conversa.</p>";
+  }
+}
+
+async function sendReply() {
+  if (!chatKey) return;
+  const input = $("#chatInput");
+  const message = input.value.trim();
+  if (!message) return;
+  const status = $("#chatStatus");
+  $("#chatSend").disabled = true;
+  status.textContent = "Enviando...";
+  status.className = "status";
+  try {
+    const res = await fetch("/api/conversas/" + chatKey + "/reply", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao enviar.");
+    input.value = "";
+    status.textContent = "";
+    openChat(chatKey, $("#chatTitle").textContent); // recarrega o histórico
+  } catch (err) {
+    status.textContent = "❌ " + err.message;
+    status.className = "status err";
+  } finally {
+    $("#chatSend").disabled = false;
+  }
+}
+$("#chatSend").addEventListener("click", sendReply);
+$("#chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendReply(); });
 
 // ---------------------------------------------------------------------------
 // Agenda de contatos
