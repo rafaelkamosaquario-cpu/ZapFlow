@@ -28,6 +28,7 @@
   <div class="dash-nav">
     <button class="dash-tab active" data-view="overview">🏠 Visão Geral</button>
     <button class="dash-tab" data-view="clients">👥 Clientes</button>
+    <button class="dash-tab" data-view="agenda">📇 Contatos</button>
     <button class="dash-tab" data-view="campaigns">📣 Campanhas</button>
     <button class="dash-tab" data-view="responses">💬 Respostas</button>
     <button class="dash-tab" data-view="followup">🔁 Follow-up</button>
@@ -59,6 +60,30 @@
         <span class="hint" id="crmShown" style="margin:0"></span>
       </div>
       <div id="clientsList" class="dash-list"></div>
+    </section>
+
+    <!-- Agenda de contatos -->
+    <section class="dash-view hidden" data-view="agenda">
+      <h2 class="dash-title">📇 Contatos salvos</h2>
+      <p class="hint">Sua agenda (como os contatos do celular). O nome daqui é usado em todo o app.</p>
+
+      <div class="agenda-add">
+        <div class="manual-row">
+          <input type="text" id="agName" placeholder="Nome" />
+          <input type="tel" id="agPhone" placeholder="Telefone (ex.: 11 99999-8888)" inputmode="numeric" />
+          <button class="btn secondary" id="btnAgAdd" type="button">➕ Adicionar</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="btn secondary" for="agFile" style="cursor:pointer">📄 Importar planilha</label>
+          <input type="file" id="agFile" accept=".xlsx,.xls,.csv" hidden />
+          <button class="btn secondary" id="btnAgSync" type="button">🔄 Sincronizar contatos do chip</button>
+          <span id="agStatus" class="status"></span>
+        </div>
+      </div>
+
+      <input type="text" id="agSearch" placeholder="🔍 Buscar nome ou telefone" style="margin-top:14px" />
+      <p class="hint" id="agCount" style="margin:8px 0 0"></p>
+      <div id="agendaList" class="dash-list"></div>
     </section>
 
     <!-- Campanhas -->

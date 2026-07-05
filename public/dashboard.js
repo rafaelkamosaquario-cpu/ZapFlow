@@ -34,6 +34,7 @@ $$(".dash-tab").forEach((tab) => {
 function loadView(view) {
   if (view === "overview") loadOverview();
   else if (view === "clients") loadClients();
+  else if (view === "agenda") loadAgenda();
   else if (view === "campaigns") loadCampaigns();
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
@@ -137,9 +138,11 @@ function clientCard(c) {
   const tags = (c.tags || []).map((t) => `<span class="badge manual">${escapeHtml(t)}</span>`).join(" ");
   const last = c.lastReplyAt ? `↩ respondeu ${fmtDate(c.lastReplyAt)}`
     : c.lastSentAt ? `📤 enviado ${fmtDate(c.lastSentAt)}` : "novo";
+  const nome = c.displayName || c.name || "(sem nome)";
+  const agenda = c.inAgenda ? ' <span title="Na sua agenda">📇</span>' : "";
   div.innerHTML = `
     <div class="dash-card-head">
-      <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
+      <span class="resp-phone">${escapeHtml(nome)}${agenda}</span>
       <span class="stage-pill ${STAGE_CLS[c.stage] || ""}">${escapeHtml(c.stage)}</span>
     </div>
     <div class="dash-card-body">
@@ -152,8 +155,8 @@ function clientCard(c) {
 
 function openClient(c) {
   crmCurrent = c;
-  $("#clientTitle").textContent = c.name || "Cliente";
-  $("#clientPhone").textContent = "📱 " + c.phone;
+  $("#clientTitle").textContent = c.displayName || c.name || "Cliente";
+  $("#clientPhone").textContent = "📱 " + c.phone + (c.inAgenda ? "  📇 na agenda" : "");
   $("#clientName").value = c.name || "";
   $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
   $("#clientTags").value = (c.tags || []).join(", ");
@@ -207,6 +210,99 @@ let crmTimer = null;
 $("#crmSearch").addEventListener("input", () => { clearTimeout(crmTimer); crmTimer = setTimeout(loadClients, 350); });
 $("#crmStage").addEventListener("change", loadClients);
 $("#crmTag").addEventListener("change", loadClients);
+
+// ---------------------------------------------------------------------------
+// Agenda de contatos
+// ---------------------------------------------------------------------------
+const ORIGEM_LABEL = { planilha: "📄 Planilha", manual: "✍️ Manual", chip: "📱 Chip" };
+
+async function loadAgenda() {
+  const wrap = $("#agendaList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const params = new URLSearchParams({ search: $("#agSearch").value.trim() });
+    const data = await (await fetch("/api/agenda?" + params)).json();
+    $("#agCount").textContent = `${data.shown} de ${data.total} contato(s) na agenda`;
+    if (!data.contacts.length) {
+      wrap.innerHTML = "<p class='hint'>Nenhum contato salvo ainda. Adicione manualmente, importe uma planilha ou sincronize do chip.</p>";
+      return;
+    }
+    wrap.innerHTML = "";
+    data.contacts.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      div.style.cursor = "default";
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">📇 ${escapeHtml(c.name || "(sem nome)")}</span>
+          <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
+        </div>
+        <div class="dash-card-body">
+          <span>📱 ${escapeHtml(c.phone)} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
+        </div>`;
+      div.querySelector(".ag-del").addEventListener("click", async () => {
+        if (!confirm("Remover este contato da agenda?")) return;
+        await fetch("/api/agenda/" + c.id, { method: "DELETE" });
+        loadAgenda();
+      });
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro ao carregar a agenda.</p>";
+  }
+}
+
+// Adicionar manualmente
+$("#btnAgAdd").addEventListener("click", async () => {
+  const name = $("#agName").value.trim();
+  const phone = $("#agPhone").value.trim();
+  const status = $("#agStatus");
+  if (!phone) { status.textContent = "Informe o telefone."; status.className = "status err"; return; }
+  const res = await fetch("/api/agenda", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }) });
+  const data = await res.json();
+  if (!res.ok) { status.textContent = "❌ " + (data.error || "Erro"); status.className = "status err"; return; }
+  status.textContent = "✅ Salvo!"; status.className = "status ok";
+  $("#agName").value = ""; $("#agPhone").value = "";
+  loadAgenda();
+});
+
+// Importar planilha
+$("#agFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const status = $("#agStatus");
+  status.textContent = "Importando..."; status.className = "status";
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    const res = await fetch("/api/agenda/upload", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha");
+    status.textContent = `✅ ${data.imported} contato(s) importado(s)!`; status.className = "status ok";
+    loadAgenda();
+  } catch (err) {
+    status.textContent = "❌ " + err.message; status.className = "status err";
+  }
+  e.target.value = "";
+});
+
+// Sincronizar do chip
+$("#btnAgSync").addEventListener("click", async () => {
+  const status = $("#agStatus");
+  if (!confirm("Importar os contatos salvos no aparelho conectado?")) return;
+  status.textContent = "Sincronizando (pode levar alguns segundos)..."; status.className = "status";
+  try {
+    const res = await fetch("/api/agenda/sync-chip", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha");
+    status.textContent = `✅ ${data.imported} contato(s) sincronizado(s)!`; status.className = "status ok";
+    loadAgenda();
+  } catch (err) {
+    status.textContent = "❌ " + err.message; status.className = "status err";
+  }
+});
+
+let agTimer = null;
+$("#agSearch").addEventListener("input", () => { clearTimeout(agTimer); agTimer = setTimeout(loadAgenda, 350); });
 
 // ---------------------------------------------------------------------------
 // Campanhas
@@ -310,9 +406,10 @@ async function loadResponses() {
     list.forEach((r) => {
       const div = document.createElement("div");
       div.className = "dash-card";
+      const titulo = r.name ? `${escapeHtml(r.name)} · ${escapeHtml(r.phone)}` : `📱 ${escapeHtml(r.phone)}`;
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="resp-phone">📱 ${escapeHtml(r.phone)}</span>
+          <span class="resp-phone">${titulo}</span>
           <span class="dash-when">🕒 ${fmtDate(r.ts)}</span>
         </div>
         ${r.content ? `<div class="dash-card-body"><span class="sched-msg">"${escapeHtml(r.content)}"</span></div>` : ""}`;

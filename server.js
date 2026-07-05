@@ -583,6 +583,53 @@ loadClients();
 migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
 
 // ---------------------------------------------------------------------------
+// Agenda de contatos salvos (data/agenda.json)
+// ---------------------------------------------------------------------------
+const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
+let agenda = [];
+
+function loadAgenda() {
+  try {
+    if (fs.existsSync(AGENDA_FILE)) agenda = JSON.parse(fs.readFileSync(AGENDA_FILE, "utf8"));
+  } catch {
+    agenda = [];
+  }
+}
+function saveAgenda() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(AGENDA_FILE, JSON.stringify(agenda, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar a agenda:", err.message);
+  }
+}
+function findAgenda(phone) {
+  const k = phoneKey(phone);
+  return k ? agenda.find((a) => (a.key || phoneKey(a.phone)) === k) : null;
+}
+function upsertAgenda(phone, name, origem) {
+  const k = phoneKey(phone);
+  if (!k) return null;
+  let a = findAgenda(phone);
+  if (!a) {
+    a = { id: crypto.randomUUID(), name: (name || "").trim(), phone: canonPhone(phone), key: k, origem: origem || "manual", createdAt: Date.now() };
+    agenda.push(a);
+  } else {
+    // Manual sobrescreve; planilha/chip só preenchem se estiver vazio
+    if (name && (origem === "manual" || !a.name)) a.name = name.trim();
+    if (String(canonPhone(phone)).length > String(a.phone).length) a.phone = canonPhone(phone);
+  }
+  return a;
+}
+/** Resolve o nome de um número: 1º agenda → 2º nome informado → "" (sem nome). */
+function resolveName(phone, fallback) {
+  const a = findAgenda(phone);
+  return (a && a.name) || (fallback || "").trim() || "";
+}
+function inAgenda(phone) { return Boolean(findAgenda(phone)); }
+loadAgenda();
+
+// ---------------------------------------------------------------------------
 // Chatbot por regras (data/chatbot.json)
 // ---------------------------------------------------------------------------
 const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
@@ -851,6 +898,7 @@ app.get("/api/schedules/:id", (req, res) => {
   );
   const logs = (job.logs || []).map((l) => ({
     ...l,
+    name: resolveName(l.phone, l.name),
     replied: repliedSet.has(phoneKey(l.phone)),
   }));
   res.json({ job: { ...publicJob(job), logs } });
@@ -889,7 +937,10 @@ app.get("/api/metrics", (req, res) => {
 
 // Lista as respostas recebidas (caixa de entrada do dashboard)
 app.get("/api/responses", (req, res) => {
-  const list = [...metrics.responses].sort((a, b) => b.ts - a.ts).slice(0, 300);
+  const list = [...metrics.responses]
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 300)
+    .map((r) => ({ ...r, name: resolveName(r.phone, "") }));
   res.json({ responses: list, total: metrics.responses.length });
 });
 
@@ -930,13 +981,16 @@ app.get("/api/clients", (req, res) => {
   const tag = String(req.query.tag || "");
   const stage = String(req.query.stage || "");
   let list = clients.filter((c) => {
+    const nome = resolveName(c.phone, c.name);
     if (stage && c.stage !== stage) return false;
     if (tag && !(c.tags || []).includes(tag)) return false;
-    if (search && !`${c.name} ${c.phone}`.toLowerCase().includes(search)) return false;
+    if (search && !`${nome} ${c.phone}`.toLowerCase().includes(search)) return false;
     return true;
   });
   list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 1000);
-  res.json({ clients: list, total: clients.length, shown: list.length });
+  // Enriquece com nome resolvido (agenda → campanha) e flag de agenda
+  const enriched = list.map((c) => ({ ...c, displayName: resolveName(c.phone, c.name), inAgenda: inAgenda(c.phone) }));
+  res.json({ clients: enriched, total: clients.length, shown: enriched.length });
 });
 
 app.get("/api/clients/meta", (req, res) => {
@@ -967,6 +1021,70 @@ app.delete("/api/clients/:id", (req, res) => {
   clients = clients.filter((c) => c.id !== req.params.id);
   saveClients();
   res.json({ ok: before !== clients.length });
+});
+
+// --- Agenda de contatos salvos ---
+app.get("/api/agenda", (req, res) => {
+  const s = String(req.query.search || "").trim().toLowerCase();
+  let list = agenda.filter((a) => !s || `${a.name} ${a.phone}`.toLowerCase().includes(s));
+  list = list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", "pt")).slice(0, 2000);
+  res.json({ contacts: list, total: agenda.length, shown: list.length });
+});
+
+app.post("/api/agenda", (req, res) => {
+  const { name, phone } = req.body || {};
+  if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido. Inclua o DDD." });
+  const contact = upsertAgenda(phone, name || "", "manual");
+  saveAgenda();
+  res.json({ ok: true, contact });
+});
+
+// Importa contatos de uma planilha (reaproveita o parser do Passo 2)
+app.post("/api/agenda/upload", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
+  try {
+    const contacts = parseContactsFromBuffer(req.file.buffer);
+    let imported = 0;
+    contacts.forEach((c) => { if (c.phone) { upsertAgenda(c.phone, c.name, "planilha"); imported++; } });
+    saveAgenda();
+    res.json({ ok: true, imported });
+  } catch (err) {
+    res.status(500).json({ error: "Falha ao ler a planilha: " + err.message });
+  }
+});
+
+// Sincroniza os contatos salvos no chip (GET /contacts da Z-API, com paginação)
+app.post("/api/agenda/sync-chip", async (req, res) => {
+  const creds = resolveCredentials(req.body);
+  if (!creds.instanceId || !creds.instanceToken) {
+    return res.status(400).json({ error: "Conexão não configurada." });
+  }
+  let imported = 0;
+  try {
+    for (let page = 1; page <= 30; page++) {
+      const url = `${zapiBaseUrl(creds)}/contacts?page=${page}&pageSize=100`;
+      const { data } = await axios.get(url, { headers: zapiHeaders(creds), timeout: 30000 });
+      const list = Array.isArray(data) ? data : (data?.contacts || []);
+      if (!list.length) break;
+      for (const c of list) {
+        const phone = c.phone || c.id || "";
+        const name = c.name || c.vname || c.notify || c.short || "";
+        if (phoneKey(phone)) { upsertAgenda(phone, name, "chip"); imported++; }
+      }
+      if (list.length < 100) break;
+    }
+    saveAgenda();
+    res.json({ ok: true, imported });
+  } catch (err) {
+    res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
+  }
+});
+
+app.delete("/api/agenda/:id", (req, res) => {
+  const before = agenda.length;
+  agenda = agenda.filter((a) => a.id !== req.params.id);
+  saveAgenda();
+  res.json({ ok: before !== agenda.length });
 });
 
 // --- Chatbot por regras ---
