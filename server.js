@@ -138,6 +138,26 @@ function normalizePhone(raw) {
 }
 
 /**
+ * Chave canônica de telefone para COMPARAÇÃO/dedup.
+ * Iguala números BR com e sem o nono dígito (ex.: 5542998582489 == 554298582489):
+ * remove não-dígitos, garante DDI 55 e remove o "9" extra após o DDD.
+ * Usada em CRM, respostas, campanhas, follow-up e webhook — nunca para envio.
+ */
+function phoneKey(raw) {
+  let d = String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!d) return "";
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = "55" + d;
+  if (d.startsWith("55") && d.length >= 12) {
+    const ddd = d.slice(2, 4);
+    let rest = d.slice(4);
+    // Celular com 9 dígitos começando por 9 → remove o 9 para a forma canônica
+    if (rest.length === 9 && rest[0] === "9") rest = rest.slice(1);
+    return "55" + ddd + rest;
+  }
+  return d;
+}
+
+/**
  * Resolve as credenciais da Z-API priorizando o que foi enviado no corpo da
  * requisição e caindo para as variáveis de ambiente.
  */
@@ -248,10 +268,10 @@ function saveJobs() {
 function countReplies(job) {
   if (!job.logs?.length) return 0;
   const since = job.startedAt || job.createdAt || 0;
-  const replied = new Set(metrics.responses.filter((r) => r.ts >= since).map((r) => r.phone));
+  const replied = new Set(metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone)));
   let n = 0;
   for (const l of job.logs) {
-    if (l.ok && replied.has(String(l.phone || "").replace(/\D/g, ""))) n++;
+    if (l.ok && replied.has(phoneKey(l.phone))) n++;
   }
   return n;
 }
@@ -389,6 +409,7 @@ function recordCampaign(sent, failed, ts = Date.now()) {
 function recordResponse(phone, ts = Date.now(), content = "") {
   metrics.responses.push({
     phone: String(phone || "").replace(/\D/g, ""),
+    key: phoneKey(phone),
     ts,
     content: String(content || "").slice(0, 200),
   });
@@ -462,24 +483,64 @@ function saveClients() {
   }
 }
 function onlyDigits(p) { return String(p || "").replace(/\D/g, ""); }
-/** Telefone canônico do CRM: aplica a mesma normalização (DDI 55) dos contatos. */
+/** Telefone "discável" para exibir/enviar (com DDI 55, preserva o nono dígito). */
 function canonPhone(p) { return normalizePhone(p) || onlyDigits(p); }
+/** Chave canônica de um cliente (compatível com registros antigos sem `key`). */
+function clientKey(c) { return c.key || phoneKey(c.phone); }
 function findClient(phone) {
-  const p = canonPhone(phone);
-  return p ? clients.find((c) => c.phone === p) : null;
+  const k = phoneKey(phone);
+  return k ? clients.find((c) => clientKey(c) === k) : null;
 }
 function upsertClient(phone, name) {
-  const p = canonPhone(phone);
-  if (!p) return null;
-  let c = findClient(p);
+  const k = phoneKey(phone);
+  if (!k) return null;
+  const display = canonPhone(phone);
   const now = Date.now();
+  let c = findClient(phone);
   if (!c) {
-    c = { id: crypto.randomUUID(), phone: p, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
+    c = { id: crypto.randomUUID(), phone: display, key: k, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
     clients.push(c);
-  } else if (name && !c.name) {
-    c.name = name;
+  } else {
+    if (name && !c.name) c.name = name;
+    if (!c.key) c.key = k;
+    // Prefere guardar a forma com o nono dígito (mais confiável para envio)
+    if (String(display).length > String(c.phone).length) c.phone = display;
   }
   return c;
+}
+
+/** Mescla clientes duplicados pela chave canônica (migração do nono dígito). */
+function migrateClients() {
+  const byKey = new Map();
+  const merged = [];
+  const stageRank = (s) => Math.max(0, CRM_STAGES.indexOf(s));
+  let changed = false;
+  for (const c of clients) {
+    const k = clientKey(c);
+    if (!c.key) { c.key = k; changed = true; }
+    if (!byKey.has(k)) {
+      byKey.set(k, c);
+      merged.push(c);
+    } else {
+      changed = true;
+      const keep = byKey.get(k);
+      if (!keep.name && c.name) keep.name = c.name;
+      keep.tags = Array.from(new Set([...(keep.tags || []), ...(c.tags || [])]));
+      if (c.notes) keep.notes = [keep.notes, c.notes].filter(Boolean).join(" | ").slice(0, 1000);
+      keep.createdAt = Math.min(keep.createdAt || Date.now(), c.createdAt || Date.now());
+      if (c.lastSentAt) keep.lastSentAt = Math.max(keep.lastSentAt || 0, c.lastSentAt);
+      if (c.lastReplyAt) keep.lastReplyAt = Math.max(keep.lastReplyAt || 0, c.lastReplyAt);
+      if (stageRank(c.stage) > stageRank(keep.stage)) keep.stage = c.stage;
+      if (String(c.phone).length > String(keep.phone).length) keep.phone = c.phone;
+      keep.updatedAt = Date.now();
+    }
+  }
+  if (changed || merged.length !== clients.length) {
+    clients = merged;
+    saveClients();
+    if (merged.length !== clients.length) { /* noop */ }
+    console.log(`CRM: base normalizada (${clients.length} clientes únicos).`);
+  }
 }
 /** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
 function recordClientsSent(list) {
@@ -505,6 +566,7 @@ function recordClientReply(phone) {
   saveClients();
 }
 loadClients();
+migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
 
 // ---------------------------------------------------------------------------
 // Chatbot por regras (data/chatbot.json)
@@ -771,11 +833,11 @@ app.get("/api/schedules/:id", (req, res) => {
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
   const since = job.startedAt || job.createdAt || 0;
   const repliedSet = new Set(
-    metrics.responses.filter((r) => r.ts >= since).map((r) => r.phone)
+    metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone))
   );
   const logs = (job.logs || []).map((l) => ({
     ...l,
-    replied: repliedSet.has(String(l.phone || "").replace(/\D/g, "")),
+    replied: repliedSet.has(phoneKey(l.phone)),
   }));
   res.json({ job: { ...publicJob(job), logs } });
 });
