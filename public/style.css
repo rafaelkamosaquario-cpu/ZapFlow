@@ -319,6 +319,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .metric-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .metric-row span { font-size: 12px; color: var(--muted); order: 1; }
 .metric-row b { font-size: 24px; font-weight: 700; color: var(--text); order: 2; line-height: 1.1; }
+.metric-row.campaign-row b { font-size: 15px; font-weight: 600; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .metric-rate-bar { height: 10px; background: var(--border); border-radius: 20px; overflow: hidden; margin: 10px 0 4px; }
 .metric-rate-fill { height: 100%; transition: width .4s; }
 .week-chart { display: flex; align-items: flex-end; gap: 5px; height: 70px; margin-top: 14px; }

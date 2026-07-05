@@ -63,9 +63,14 @@ function renderMetricPanel(sel, m) {
   const chart = m.week.map((v, i) =>
     `<div class="week-col"><div class="week-bar" style="height:${Math.round((v / maxWeek) * 100)}%" title="${v}"></div><span class="week-label">${dias[i]}</span></div>`
   ).join("");
+  const nomes = m.campanhaNomes || [];
+  const campLabel = !nomes.length ? "—"
+    : nomes.length === 1 ? nomes[0]
+    : `${nomes[0]} (+${nomes.length - 1} outras)`;
   $(sel + " .metric-content").innerHTML = `
+    <div class="metric-row campaign-row"><span>Campanha</span><b title="${escapeHtml(nomes.join(", "))}">${escapeHtml(campLabel)}</b></div>
     <div class="metric-row"><span>Mensagens enviadas</span><b>${m.totalSent}</b></div>
-    <div class="metric-row"><span>Com retorno</span><b style="color:var(--primary)">${m.replied}</b></div>
+    <div class="metric-row"><span>Com retorno</span><b style="color:var(--success)">${m.replied}</b></div>
     <div class="metric-row"><span>Sem retorno</span><b>${m.semRetorno}</b></div>
     <div class="metric-row"><span>Campanhas</span><b>${m.campanhas}</b></div>
     <div class="metric-row"><span>Melhor horário</span><b>${hora}</b></div>

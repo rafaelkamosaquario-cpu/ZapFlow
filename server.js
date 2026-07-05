@@ -343,9 +343,10 @@ async function runJob(job) {
   job.status = "concluido";
   job.finishedAt = Date.now();
   recordClientsSent(job.contacts);
+  const label = campaignLabel(job.message, job.hadImage || job.images?.length);
   trimFinishedJob(job);
   saveJobs();
-  recordCampaign(success, failed);
+  recordCampaign(success, failed, label);
   console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
 }
 
@@ -401,8 +402,14 @@ function saveMetrics() {
     console.error("Não foi possível salvar as métricas:", err.message);
   }
 }
-function recordCampaign(sent, failed, ts = Date.now()) {
-  metrics.sends.push({ ts, sent, failed });
+/** Rótulo automático de uma campanha (1ª linha da mensagem ou "com imagem"). */
+function campaignLabel(message, hasImage) {
+  const t = String(message || "").trim().split("\n")[0].trim();
+  if (t) return t.slice(0, 40);
+  return hasImage ? "Campanha com imagem" : "Campanha";
+}
+function recordCampaign(sent, failed, name = "Campanha", ts = Date.now()) {
+  metrics.sends.push({ ts, sent, failed, name });
   metrics.campaigns = (metrics.campaigns || 0) + 1;
   saveMetrics();
 }
@@ -419,7 +426,7 @@ function summarizeMetrics(from) {
   const sends = metrics.sends.filter((s) => s.ts >= from);
   const responses = metrics.responses.filter((r) => r.ts >= from);
   const totalSent = sends.reduce((a, s) => a + (s.sent || 0), 0);
-  const repliedNumbers = new Set(responses.map((r) => r.phone));
+  const repliedNumbers = new Set(responses.map((r) => phoneKey(r.phone)));
   const replied = repliedNumbers.size;
   const semRetorno = Math.max(totalSent - replied, 0);
   const taxa = totalSent ? Math.round((replied / totalSent) * 1000) / 10 : 0;
@@ -432,7 +439,14 @@ function summarizeMetrics(from) {
   const week = [0, 0, 0, 0, 0, 0, 0]; // dom..sáb (mensagens enviadas)
   sends.forEach((s) => { week[new Date(s.ts).getDay()] += (s.sent || 0); });
 
-  return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week };
+  // Nomes das campanhas do período (mais recentes primeiro, sem repetir)
+  const campanhaNomes = [];
+  [...sends].sort((a, b) => b.ts - a.ts).forEach((s) => {
+    const n = s.name || "Campanha";
+    if (!campanhaNomes.includes(n)) campanhaNomes.push(n);
+  });
+
+  return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week, campanhaNomes };
 }
 
 loadMetrics();
@@ -773,7 +787,7 @@ app.post("/api/send", async (req, res) => {
   job.finishedAt = Date.now();
   job.result = { success, failed, total: contacts.length };
   saveJobs();
-  recordCampaign(success, failed);
+  recordCampaign(success, failed, campaignLabel(message, images.length));
   recordClientsSent(contacts);
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
