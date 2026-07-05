@@ -21,14 +21,14 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-$$(".dash-tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    $$(".dash-tab").forEach((t) => t.classList.remove("active"));
-    tab.classList.add("active");
-    const view = tab.dataset.view;
-    $$(".dash-view").forEach((v) => v.classList.toggle("hidden", v.dataset.view !== view));
-    loadView(view);
-  });
+function activateView(view) {
+  $$(".dash-tab, .side-tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+  $$(".dash-view").forEach((v) => v.classList.toggle("hidden", v.dataset.view !== view));
+  loadView(view);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+$$(".dash-tab, .side-tab").forEach((tab) => {
+  tab.addEventListener("click", () => activateView(tab.dataset.view));
 });
 
 function loadView(view) {
@@ -43,47 +43,151 @@ function loadView(view) {
 }
 
 // ---------------------------------------------------------------------------
-// Visão Geral
+// Visão Geral (Dashboard BI)
 // ---------------------------------------------------------------------------
+let ovPeriod = "hoje";
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const rateColor = (t) => t >= 30 ? css("--success") : t >= 15 ? css("--warn") : css("--error");
+
+$$(".period-pill").forEach((p) => p.addEventListener("click", () => {
+  $$(".period-pill").forEach((x) => x.classList.remove("active"));
+  p.classList.add("active");
+  ovPeriod = p.dataset.period;
+  loadOverview();
+}));
+
+/** Animação de contagem crescente (0.5s). */
+function countUp(el, target, suffix = "") {
+  const dur = 500, t0 = performance.now();
+  const dec = String(target).includes(".");
+  function step(t) {
+    const p = Math.min((t - t0) / dur, 1);
+    const val = target * (0.5 - Math.cos(Math.PI * p) / 2); // easeInOut
+    el.textContent = (dec ? val.toFixed(1) : Math.round(val)) + suffix;
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = target + suffix;
+  }
+  requestAnimationFrame(step);
+}
+
 async function loadOverview() {
-  $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Carregando...</p>";
   try {
-    const res = await fetch("/api/metrics");
-    const data = await res.json();
-    renderMetricPanel("#panelHoje", data.hoje);
-    renderMetricPanel("#panelMes", data.mes);
-    const ch = data.conversasHoje || { total: 0, campanha: 0, diaadia: 0 };
-    const cel = $("#convToday");
-    cel.innerHTML = `💬 <b>Conversas hoje: ${ch.total}</b> <span>(${ch.campanha} de campanhas, ${ch.diaadia} do dia a dia)</span>`;
-    cel.classList.remove("hidden");
+    const data = await (await fetch("/api/dashboard?period=" + ovPeriod)).json();
+    const k = data.kpis;
+    const semDados = !k.enviadas && !k.conversas.total && !k.clientes;
+    $("#ovEmpty").classList.toggle("hidden", !semDados);
+    $("#ovBody").classList.toggle("hidden", semDados);
+    if (semDados) return;
+
+    // LINHA 1 — KPIs (com contagem crescente)
+    countUp($("#kpiEnviadas"), k.enviadas);
+    countUp($("#kpiConversas"), k.conversas.total);
+    $("#kpiConversasSub").textContent = `${k.conversas.campanha} de campanha · ${k.conversas.diaadia} dia a dia`;
+    const tx = $("#kpiTaxa"); tx.style.color = rateColor(k.taxa); countUp(tx, k.taxa, "%");
+    countUp($("#kpiClientes"), k.clientes);
+    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} novos no período` : "";
+
+    // LINHA 2 — Donut + barras
+    drawDonut($("#donutChart"), data.donut.responderam, data.donut.responderam + data.donut.semResposta, k.taxa);
+    $("#donutPct").textContent = k.taxa + "%"; $("#donutPct").style.color = rateColor(k.taxa);
+    $("#legResp").textContent = data.donut.responderam;
+    $("#legNo").textContent = data.donut.semResposta;
+    renderWeekBars(data.weekday);
+
+    // LINHA 3 — Linha + funil
+    drawLine($("#lineChart"), data.serie30);
+    renderFunil(data.funil);
+
+    // LINHA 4 — Ranking + melhor horário
+    renderRanking(data.ranking);
+    $("#melhorHora").textContent = data.melhorHora === null ? "—" : String(data.melhorHora).padStart(2, "0") + "h";
   } catch {
-    $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Erro ao carregar.</p>";
+    $("#ovEmpty").classList.remove("hidden");
+    $("#ovEmpty").textContent = "Erro ao carregar o painel.";
   }
 }
 
-function renderMetricPanel(sel, m) {
-  const rateColor = m.taxa >= 30 ? "var(--success)" : m.taxa >= 15 ? "var(--warn)" : "var(--error)";
-  const hora = m.melhorHora === null ? "—" : String(m.melhorHora).padStart(2, "0") + "h";
+function renderWeekBars(week) {
   const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const maxWeek = Math.max(1, ...m.week);
-  const chart = m.week.map((v, i) =>
-    `<div class="week-col"><div class="week-bar" style="height:${Math.round((v / maxWeek) * 100)}%" title="${v}"></div><span class="week-label">${dias[i]}</span></div>`
+  const max = Math.max(1, ...week);
+  const maxIdx = week.indexOf(Math.max(...week));
+  $("#weekChart").innerHTML = week.map((v, i) =>
+    `<div class="week-col"><div class="week-bar${i === maxIdx && v > 0 ? " top" : ""}" style="height:${Math.round((v / max) * 100)}%" title="${v}"></div><span class="week-label">${dias[i]}</span></div>`
   ).join("");
-  const nomes = m.campanhaNomes || [];
-  const campLabel = !nomes.length ? "—"
-    : nomes.length === 1 ? nomes[0]
-    : `${nomes[0]} (+${nomes.length - 1} outras)`;
-  $(sel + " .metric-content").innerHTML = `
-    <div class="metric-row campaign-row"><span>Campanha</span><b title="${escapeHtml(nomes.join(", "))}">${escapeHtml(campLabel)}</b></div>
-    <div class="metric-row"><span>Mensagens enviadas</span><b>${m.totalSent}</b></div>
-    <div class="metric-row"><span>Com retorno</span><b style="color:var(--success)">${m.replied}</b></div>
-    <div class="metric-row"><span>Sem retorno</span><b>${m.semRetorno}</b></div>
-    <div class="metric-row"><span>Campanhas</span><b>${m.campanhas}</b></div>
-    <div class="metric-row"><span>Melhor horário</span><b>${hora}</b></div>
-    <div style="margin-top:10px;font-size:13px">Taxa de resposta: <b style="color:${rateColor}">${m.taxa}%</b></div>
-    <div class="metric-rate-bar"><div class="metric-rate-fill" style="width:${Math.min(m.taxa, 100)}%;background:${rateColor}"></div></div>
-    <div class="week-chart">${chart}</div>
-    <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:4px">Mensagens por dia da semana</div>`;
+}
+
+function renderFunil(funil) {
+  const clsMap = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Cliente: "st-cliente" };
+  const max = Math.max(1, ...funil.map((f) => f.count));
+  $("#funilChart").innerHTML = funil.map((f) =>
+    `<div class="funil-row" data-stage="${f.stage}">
+       <span class="funil-label">${f.stage}</span>
+       <div class="funil-track"><div class="funil-bar ${clsMap[f.stage]}" style="width:${Math.max(4, Math.round((f.count / max) * 100))}%"></div></div>
+       <span class="funil-count">${f.count}</span>
+     </div>`).join("");
+  $$("#funilChart .funil-row").forEach((row) => row.addEventListener("click", () => {
+    activateView("clients");
+    setTimeout(() => { const sel = $("#crmStage"); if (sel) { sel.value = row.dataset.stage; loadClients(); } }, 150);
+  }));
+}
+
+function renderRanking(list) {
+  if (!list.length) { $("#rankingList").innerHTML = "<p class='hint'>Nenhuma campanha ainda.</p>"; return; }
+  $("#rankingList").innerHTML = list.map((r) => `
+    <div class="rank-item">
+      <div class="rank-info">
+        <span class="rank-name">${escapeHtml(r.name)}</span>
+        <span class="rank-stats">📤 ${r.enviadas} · ↩ ${r.respostas} · <b style="color:${rateColor(r.taxa)}">${r.taxa}%</b></span>
+      </div>
+      <button class="btn ghost rank-fu" data-id="${r.id}">🔁</button>
+    </div>`).join("");
+  $$("#rankingList .rank-fu").forEach((b) => b.addEventListener("click", () => { activateView("campaigns"); setTimeout(() => openCampaign(b.dataset.id), 150); }));
+}
+
+// --- Gráficos em canvas (sem lib) ---
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || c.width, h = c.clientHeight || c.height;
+  c.width = w * dpr; c.height = h * dpr;
+  const ctx = c.getContext("2d"); ctx.scale(dpr, dpr);
+  return { ctx, w, h };
+}
+function drawDonut(canvas, value, total, pct) {
+  const { ctx, w, h } = fitCanvas(canvas);
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 8, lw = r * 0.32;
+  const frac = total ? value / total : 0;
+  ctx.clearRect(0, 0, w, h);
+  ctx.lineWidth = lw; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = "#2A3B4D"; ctx.stroke();
+  if (frac > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.strokeStyle = rateColor(pct); ctx.stroke();
+  }
+}
+function drawLine(canvas, serie) {
+  const { ctx, w, h } = fitCanvas(canvas);
+  ctx.clearRect(0, 0, w, h);
+  const pad = { l: 6, r: 6, t: 10, b: 6 };
+  const env = serie.enviadas, resp = serie.respostas, n = env.length;
+  const max = Math.max(1, ...env, ...resp);
+  const px = (i) => pad.l + (i * (w - pad.l - pad.r)) / (n - 1);
+  const py = (v) => h - pad.b - (v / max) * (h - pad.t - pad.b);
+  const line = (arr, color, fill) => {
+    ctx.beginPath();
+    arr.forEach((v, i) => (i ? ctx.lineTo(px(i), py(v)) : ctx.moveTo(px(i), py(v))));
+    if (fill) {
+      ctx.lineTo(px(n - 1), h - pad.b); ctx.lineTo(px(0), h - pad.b); ctx.closePath();
+      const g = ctx.createLinearGradient(0, pad.t, 0, h);
+      g.addColorStop(0, color + "55"); g.addColorStop(1, color + "00");
+      ctx.fillStyle = g; ctx.fill();
+    } else {
+      ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.lineJoin = "round"; ctx.stroke();
+    }
+  };
+  line(env, css("--primary-light"), true);
+  line(env, css("--primary-light"), false);
+  line(resp, css("--accent"), false);
 }
 
 // ---------------------------------------------------------------------------

@@ -678,16 +678,19 @@ function campaignNameOf(key) {
   return (c && c.lastCampaignName) || "";
 }
 /** Contador de conversas de hoje (total, de campanha e do dia a dia). */
-function conversasSummaryToday() {
-  const start = new Date(); start.setHours(0, 0, 0, 0);
+function conversasSummary(from) {
   const seen = new Set();
   let campanha = 0, diaadia = 0;
-  conversas.filter((m) => m.ts >= start.getTime()).forEach((m) => {
+  conversas.filter((m) => m.ts >= from).forEach((m) => {
     if (seen.has(m.key)) return;
     seen.add(m.key);
     if (isCampaignOrigin(m.key)) campanha++; else diaadia++;
   });
   return { total: seen.size, campanha, diaadia };
+}
+function conversasSummaryToday() {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  return conversasSummary(start.getTime());
 }
 loadConversas();
 
@@ -1006,6 +1009,73 @@ app.get("/api/responses", (req, res) => {
     .slice(0, 300)
     .map((r) => ({ ...r, name: resolveName(r.phone, "") }));
   res.json({ responses: list, total: metrics.responses.length });
+});
+
+// Dados agregados do dashboard de Visão Geral (por período)
+app.get("/api/dashboard", (req, res) => {
+  const period = String(req.query.period || "hoje");
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  let from;
+  if (period === "7d") { const t = new Date(dayStart); t.setDate(t.getDate() - 6); from = t.getTime(); }
+  else if (period === "mes") from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  else from = dayStart;
+
+  const sends = metrics.sends.filter((s) => s.ts >= from);
+  const responses = metrics.responses.filter((r) => r.ts >= from);
+  const enviadas = sends.reduce((a, s) => a + (s.sent || 0), 0);
+  const replied = new Set(responses.map((r) => phoneKey(r.phone))).size;
+  const taxa = enviadas ? Math.round((replied / enviadas) * 1000) / 10 : 0;
+
+  const week = [0, 0, 0, 0, 0, 0, 0];
+  sends.forEach((s) => { week[new Date(s.ts).getDay()] += (s.sent || 0); });
+
+  const hours = {};
+  responses.forEach((r) => { const h = new Date(r.ts).getHours(); hours[h] = (hours[h] || 0) + 1; });
+  let melhorHora = null, mx = 0;
+  for (const h in hours) { if (hours[h] > mx) { mx = hours[h]; melhorHora = Number(h); } }
+
+  // Funil do CRM (contagem por etapa)
+  const funilStages = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente"];
+  const stageCount = {};
+  clients.forEach((c) => { stageCount[c.stage] = (stageCount[c.stage] || 0) + 1; });
+  const funil = funilStages.map((s) => ({ stage: s, count: stageCount[s] || 0 }));
+
+  // Série dos últimos 30 dias (enviadas x respostas por dia)
+  const labels = [], serieEnv = [], serieResp = [];
+  for (let i = 29; i >= 0; i--) {
+    const d0 = dayStart - i * 864e5, d1 = d0 + 864e5;
+    labels.push(new Date(d0).getDate());
+    serieEnv.push(metrics.sends.filter((s) => s.ts >= d0 && s.ts < d1).reduce((a, s) => a + (s.sent || 0), 0));
+    serieResp.push(metrics.responses.filter((r) => r.ts >= d0 && r.ts < d1).length);
+  }
+
+  // Ranking das últimas 5 campanhas concluídas
+  const ranking = jobs.filter((j) => j.status === "concluido")
+    .sort((a, b) => (b.finishedAt || b.scheduledAt || 0) - (a.finishedAt || a.scheduledAt || 0))
+    .slice(0, 5)
+    .map((j) => {
+      const env = j.result?.success || 0;
+      const resp = countReplies(j);
+      return { id: j.id, name: campaignLabel(j.message, j.hadImage || j.imageCount), enviadas: env, respostas: resp, taxa: env ? Math.round((resp / env) * 1000) / 10 : 0, ts: j.finishedAt || j.scheduledAt };
+    });
+
+  res.json({
+    period,
+    kpis: {
+      enviadas,
+      conversas: conversasSummary(from),
+      taxa,
+      clientes: clients.length,
+      clientesNovos: clients.filter((c) => (c.createdAt || 0) >= from).length,
+    },
+    donut: { responderam: replied, semResposta: Math.max(enviadas - replied, 0) },
+    weekday: week,
+    serie30: { labels, enviadas: serieEnv, respostas: serieResp },
+    funil,
+    ranking,
+    melhorHora,
+  });
 });
 
 // --- Modelos de mensagem ---
