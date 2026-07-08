@@ -105,7 +105,13 @@
         <small id="manualError" class="manual-error"></small>
         <div class="row" style="margin-top:10px">
           <button class="btn secondary" id="btnSyncChip" type="button">🔄 Sincronizar contatos do chip</button>
+          <button class="btn secondary" id="btnPickSaved" type="button">📇 Escolher dos contatos salvos</button>
           <span id="syncChipStatus" class="status"></span>
+        </div>
+        <div id="savedPicker" class="saved-picker hidden">
+          <input type="text" id="savedSearch" placeholder="🔍 Buscar nome ou telefone" />
+          <p class="hint" id="savedCount" style="margin:8px 0 0"></p>
+          <div id="savedList" class="dash-list"></div>
         </div>
       </div>
 

@@ -209,6 +209,74 @@ if (btnSyncChip) {
   });
 }
 
+// Escolher contatos salvos (agenda) um a um, direto na tela de disparo
+const btnPickSaved = $("#btnPickSaved");
+if (btnPickSaved) {
+  let savedLoaded = false;
+  let savedTimer = null;
+  btnPickSaved.addEventListener("click", () => {
+    const picker = $("#savedPicker");
+    picker.classList.toggle("hidden");
+    if (!picker.classList.contains("hidden") && !savedLoaded) {
+      savedLoaded = true;
+      loadSavedContacts();
+    }
+  });
+  $("#savedSearch").addEventListener("input", () => {
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(loadSavedContacts, 300);
+  });
+}
+
+async function loadSavedContacts() {
+  const wrap = $("#savedList");
+  const countEl = $("#savedCount");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const params = new URLSearchParams({ search: $("#savedSearch").value.trim() });
+    const data = await (await fetch("/api/agenda?" + params)).json();
+    countEl.textContent = `${data.shown} de ${data.total} contato(s) salvos`;
+    if (!data.contacts.length) {
+      wrap.innerHTML = "<p class='hint'>Nenhum contato salvo encontrado.</p>";
+      return;
+    }
+    wrap.innerHTML = "";
+    data.contacts.forEach((c) => {
+      const phone = normalizePhone(c.phone);
+      if (!phone) return;
+      const inList = contacts.some((x) => x.phone === phone);
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      div.style.cursor = "default";
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">📇 ${escapeHtml(c.name || "(sem nome)")}</span>
+          <button class="btn ghost saved-add ${inList ? "in-cart" : ""}" type="button">${inList ? "✓ Inserido" : "➕ Inserir"}</button>
+        </div>
+        <div class="dash-card-body"><span>📱 ${escapeHtml(c.phone)}</span></div>`;
+      div.querySelector(".saved-add").addEventListener("click", (e) => {
+        const btn = e.currentTarget;
+        const idx = manualContacts.findIndex((x) => x.phone === phone);
+        if (idx >= 0) {
+          manualContacts.splice(idx, 1);
+          btn.classList.remove("in-cart");
+          btn.textContent = "➕ Inserir";
+        } else {
+          if (!contacts.some((x) => x.phone === phone)) {
+            manualContacts.push({ phone, name: c.name || "", rawPhone: String(c.phone || ""), manual: true });
+          }
+          btn.classList.add("in-cart");
+          btn.textContent = "✓ Inserido";
+        }
+        rebuildContacts();
+      });
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro ao carregar os contatos salvos.</p>";
+  }
+}
+
 /** Carrega uma lista vinda do Painel (follow-up ou CRM) via sessionStorage. */
 function loadFollowupContacts() {
   try {

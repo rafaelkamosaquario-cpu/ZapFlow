@@ -283,7 +283,9 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .followup-banner { max-width: 900px; margin: 14px auto 0; padding: 12px 16px; background: rgba(245,166,35,.12); border: 1px solid var(--warn); border-radius: 10px; color: var(--warn); font-size: 14px; display: flex; align-items: center; gap: 10px; }
 
 /* Barra "carrinho" de contatos da agenda */
-.ag-add.in-cart { color: var(--wa); border-color: var(--wa); }
+.in-cart { color: var(--wa); border-color: var(--wa); }
+.saved-picker { margin-top: 12px; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.saved-picker .dash-list { max-height: 340px; overflow: auto; margin-top: 10px; }
 .ag-cart-bar { position: sticky; bottom: 12px; margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: var(--card-2); border: 1px solid var(--primary); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 .ag-cart-bar #agCartLabel { font-weight: 700; color: var(--text); }
 
