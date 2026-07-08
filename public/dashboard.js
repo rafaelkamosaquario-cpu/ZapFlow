@@ -572,6 +572,7 @@ $("#agSearch").addEventListener("input", () => { clearTimeout(agTimer); agTimer 
 let allJobs = [];
 
 async function loadCampaigns() {
+  loadDrafts();
   const wrap = $("#campaignsList");
   wrap.innerHTML = "<p class='hint'>Carregando...</p>";
   try {
@@ -603,6 +604,96 @@ function campaignCard(job) {
   div.addEventListener("click", () => openCampaign(job.id));
   return div;
 }
+
+// --- Modelos / rascunhos de campanha (mesma base de "Salvar como modelo" do disparo) ---
+function draftUrls(t) {
+  if (Array.isArray(t.imageUrls)) return t.imageUrls.filter(Boolean);
+  return t.imageUrl ? [t.imageUrl] : [];
+}
+
+async function loadDrafts() {
+  const wrap = $("#draftsList");
+  if (!wrap) return;
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const data = await (await fetch("/api/templates")).json();
+    const list = data.templates || [];
+    $("#draftsCount").textContent = `${list.length}/10`;
+    if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhum modelo salvo ainda. Crie um acima ou use “Salvar como modelo” na tela de disparo.</p>"; return; }
+    wrap.innerHTML = "";
+    list.forEach((t) => {
+      const urls = draftUrls(t);
+      const preview = (t.message || "").slice(0, 80) || (urls.length ? "[imagem]" : "");
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      div.style.cursor = "default";
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">💾 ${escapeHtml(t.name || "(sem nome)")}</span>
+          <div class="row" style="gap:6px;margin:0">
+            <button class="btn ghost draft-use">🚀 Usar no disparo</button>
+            <button class="btn-cancel draft-del">Excluir</button>
+          </div>
+        </div>
+        <div class="dash-card-body">
+          ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}"</span>` : ""}
+          ${urls.length ? `<span>🖼️ ${urls.length} imagem(ns)</span>` : ""}
+        </div>`;
+      div.querySelector(".draft-use").addEventListener("click", () => {
+        sessionStorage.setItem("zapflow_loadtemplate", JSON.stringify(t));
+        window.location.href = "/";
+      });
+      div.querySelector(".draft-del").addEventListener("click", async () => {
+        if (!confirm("Excluir este modelo?")) return;
+        await fetch("/api/templates/" + t.id, { method: "DELETE" });
+        loadDrafts();
+      });
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro ao carregar os modelos.</p>";
+  }
+}
+
+function clearDraftForm() {
+  ["draftName", "draftMsg", "draftLink", "draftImg"].forEach((id) => { const el = $("#" + id); if (el) el.value = ""; });
+  const st = $("#draftStatus"); if (st) { st.textContent = ""; st.className = "status"; }
+}
+
+$("#btnNewDraft")?.addEventListener("click", () => {
+  const form = $("#draftForm");
+  form.classList.toggle("hidden");
+  if (!form.classList.contains("hidden")) $("#draftName").focus();
+});
+$("#btnCancelDraft")?.addEventListener("click", () => {
+  $("#draftForm").classList.add("hidden");
+  clearDraftForm();
+});
+$("#btnSaveDraft")?.addEventListener("click", async () => {
+  const name = $("#draftName").value.trim();
+  const msg = $("#draftMsg").value.trim();
+  const link = $("#draftLink").value.trim();
+  const img = $("#draftImg").value.trim();
+  const status = $("#draftStatus");
+  const message = link ? (msg ? msg + "\n" + link : link) : msg;
+  if (!name) { status.textContent = "Dê um nome ao modelo."; status.className = "status err"; return; }
+  if (!message && !img) { status.textContent = "Escreva a mensagem ou informe uma imagem."; status.className = "status err"; return; }
+  try {
+    const res = await fetch("/api/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, message, imageUrls: img ? [img] : [] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
+    status.textContent = "✅ Modelo salvo!"; status.className = "status ok";
+    clearDraftForm();
+    $("#draftForm").classList.add("hidden");
+    loadDrafts();
+  } catch (err) {
+    status.textContent = "❌ " + err.message; status.className = "status err";
+  }
+});
 
 let currentDetail = null;
 

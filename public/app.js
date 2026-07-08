@@ -303,7 +303,32 @@ function rebuildContacts() {
   contacts = [...importedContacts, ...manualContacts];
   renderContacts();
   updateSendButtons();
+  updateClearButtons();
 }
+
+/** Mostra os botões de limpar conforme houver planilha importada ou contatos manuais. */
+function updateClearButtons() {
+  const hasFile = importedContacts.length > 0 || importedInvalid.length > 0;
+  const hasManual = manualContacts.length > 0;
+  $("#clearFileRow")?.classList.toggle("hidden", !hasFile);
+  $("#clearManualRow")?.classList.toggle("hidden", !hasManual);
+}
+
+// Limpar a planilha importada
+$("#btnClearFile")?.addEventListener("click", () => {
+  importedContacts = [];
+  importedInvalid = [];
+  fileInput.value = "";
+  $("#fileName").textContent = "";
+  rebuildContacts();
+});
+
+// Limpar os contatos adicionados manualmente / sincronizados
+$("#btnClearManual")?.addEventListener("click", () => {
+  if (!confirm("Limpar todos os contatos adicionados manualmente?")) return;
+  manualContacts = [];
+  rebuildContacts();
+});
 
 function renderContacts() {
   const summary = $("#contactsSummary");
@@ -681,6 +706,7 @@ function handleProgress(block, evt) {
     setProgress(block, 100);
     $(".m-progressText", block).textContent =
       `Concluído! ${evt.success} enviada(s), ${evt.failed} falha(s) de ${evt.total}.`;
+    notifyDisparoDone(evt.success, evt.failed, evt.total);
     // Limpa os campos automaticamente para já montar uma nova mensagem
     clearComposer(block);
     loadSchedules(); // atualiza o histórico
@@ -994,6 +1020,80 @@ function escapeHtml(str) {
 }
 
 // ---------------------------------------------------------------------------
+// Aviso flutuante (toast) + notificação ao concluir o disparo
+// ---------------------------------------------------------------------------
+function ensureToastHost() {
+  let host = document.getElementById("toastHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toastHost";
+    host.className = "toast-host";
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function showToast(title, body, kind = "ok", timeout = 6000) {
+  const host = ensureToastHost();
+  const el = document.createElement("div");
+  el.className = "toast toast-" + kind;
+  el.innerHTML = `
+    <div class="toast-ico">${kind === "err" ? "⚠️" : "✅"}</div>
+    <div class="toast-txt">
+      <b>${escapeHtml(title)}</b>
+      <span>${escapeHtml(body)}</span>
+    </div>
+    <button class="toast-close" type="button" aria-label="Fechar">✕</button>`;
+  let done = false;
+  const dismiss = () => {
+    if (done) return; done = true;
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 280);
+  };
+  el.querySelector(".toast-close").addEventListener("click", dismiss);
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("in"));
+  if (timeout) setTimeout(dismiss, timeout);
+}
+
+function notifyDisparoDone(success, failed, total) {
+  const ok = Number(success) || 0;
+  const fail = Number(failed) || 0;
+  const title = fail ? "Disparo concluído com avisos" : "Disparo concluído! 🚀";
+  const body = `${ok} enviada(s)` + (fail ? ` · ${fail} falha(s)` : "") + ` de ${total} contato(s).`;
+  showToast(title, body, fail ? "err" : "ok", 8000);
+
+  // Notificação do sistema (aparece na tela mesmo com o app minimizado, estilo iFood)
+  try {
+    if ("Notification" in window) {
+      if (Notification.permission === "granted") {
+        new Notification("ZapFlow · " + title, { body, icon: "/icon.svg", badge: "/icon.svg" });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((p) => {
+          if (p === "granted") new Notification("ZapFlow · " + title, { body, icon: "/icon.svg" });
+        });
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+/** Carrega um modelo/rascunho vindo da aba Campanhas (via sessionStorage) no 1º bloco. */
+function applyLoadedTemplate() {
+  try {
+    const raw = sessionStorage.getItem("zapflow_loadtemplate");
+    if (!raw) return;
+    sessionStorage.removeItem("zapflow_loadtemplate");
+    const t = JSON.parse(raw);
+    const block = container.querySelector(".msg-block");
+    if (!block) return;
+    $(".m-message", block).value = t.message || "";
+    block._images = templateUrls(t).slice(0, 3).map((url) => ({ kind: "url", data: url }));
+    renderImagesStrip(block);
+    showToast("Modelo carregado 💾", `"${t.name || "modelo"}" pronto. Escolha os contatos e dispare.`, "ok", 6000);
+  } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
 // Inicialização
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1003,6 +1103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   addMessageBlock(); // começa com 1 mensagem
   loadSchedules();
   loadFollowupContacts(); // carrega contatos vindos do "Preparar follow-up"
+  applyLoadedTemplate();  // carrega modelo vindo da aba Campanhas
 
   // Intervalo: restaura preferência salva ou usa o padrão do servidor
   const savedDelay = localStorage.getItem("zapflow_delay");

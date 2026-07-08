@@ -189,6 +189,32 @@
     <!-- Campanhas -->
     <section class="dash-view hidden" data-view="campaigns">
       <h2 class="dash-title">📣 Campanhas</h2>
+
+      <!-- Modelos / rascunhos de campanha -->
+      <div class="draft-box">
+        <div class="draft-box-head">
+          <h3>💾 Modelos de campanha</h3>
+          <span class="hint" id="draftsCount"></span>
+        </div>
+        <p class="hint">Salve até 10 modelos prontos (texto, imagem e link) para reenviar quando quiser.</p>
+
+        <div id="draftForm" class="draft-form hidden">
+          <input type="text" id="draftName" placeholder="Nome do modelo (ex.: Promoção de sexta)" maxlength="40" />
+          <textarea id="draftMsg" rows="3" placeholder="Mensagem (use {{nome}} para o nome do contato)"></textarea>
+          <input type="text" id="draftLink" placeholder="Link (opcional) — ex.: https://rfpneus.com.br" />
+          <input type="text" id="draftImg" placeholder="URL da imagem (opcional) — ex.: https://.../foto.jpg" />
+          <div class="row">
+            <button class="btn primary" id="btnSaveDraft" type="button">💾 Salvar modelo</button>
+            <button class="btn ghost" id="btnCancelDraft" type="button">Cancelar</button>
+            <span id="draftStatus" class="status"></span>
+          </div>
+        </div>
+
+        <button class="btn secondary" id="btnNewDraft" type="button">➕ Criar modelo de campanha</button>
+        <div id="draftsList" class="dash-list" style="margin-top:12px"></div>
+      </div>
+
+      <h3 class="dash-subtitle">📨 Campanhas enviadas</h3>
       <p class="hint">Cada disparo é uma campanha. Toque para ver os contatos e quem respondeu.</p>
       <div id="campaignsList" class="dash-list"></div>
     </section>

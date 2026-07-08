@@ -94,6 +94,9 @@
         <p>📎 Clique ou arraste sua planilha aqui</p>
         <small id="fileName"></small>
       </div>
+      <div class="row hidden" id="clearFileRow" style="margin-top:8px">
+        <button class="btn ghost" id="btnClearFile" type="button">🧹 Limpar planilha</button>
+      </div>
 
       <div class="manual-add">
         <p class="manual-title">✍️ Ou adicione manualmente:</p>
@@ -103,6 +106,9 @@
           <button class="btn secondary" id="btnAddContact" type="button">➕ Adicionar</button>
         </div>
         <small id="manualError" class="manual-error"></small>
+        <div class="row hidden" id="clearManualRow" style="margin-top:8px">
+          <button class="btn ghost" id="btnClearManual" type="button">🧹 Limpar contatos manuais</button>
+        </div>
         <div class="row" style="margin-top:10px">
           <button class="btn secondary" id="btnSyncChip" type="button">🔄 Sincronizar contatos do chip</button>
           <button class="btn secondary" id="btnPickSaved" type="button">📇 Escolher dos contatos salvos</button>
