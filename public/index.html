@@ -61,40 +61,9 @@
       </div>
     </section>
 
-    <!-- Passo 2: Lista de contatos -->
+    <!-- Passo 2: Mensagens (até 5, cada uma independente) -->
     <section class="card">
-      <h2><span class="step">2</span> Lista de contatos</h2>
-      <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code> <b>ou</b> adicione contatos
-        manualmente abaixo. A planilha deve ter uma coluna de telefone (aceita <em>Telefone</em>,
-        <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
-      <div class="dropzone" id="dropzone">
-        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden />
-        <p>📎 Clique ou arraste sua planilha aqui</p>
-        <small id="fileName"></small>
-      </div>
-
-      <div class="manual-add">
-        <p class="manual-title">✍️ Ou adicione manualmente:</p>
-        <div class="manual-row">
-          <input type="text" id="manualName" placeholder="Nome (opcional)" />
-          <input type="tel" id="manualPhone" placeholder="Telefone (ex.: 11 99999-8888)" inputmode="numeric" />
-          <button class="btn secondary" id="btnAddContact" type="button">➕ Adicionar</button>
-        </div>
-        <small id="manualError" class="manual-error"></small>
-      </div>
-
-      <div id="contactsSummary" class="summary hidden"></div>
-      <div class="table-wrap hidden" id="tableWrap">
-        <table id="contactsTable">
-          <thead><tr><th>#</th><th>Nome</th><th>Número (normalizado)</th><th>Status</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Passo 3: Mensagens (até 5, cada uma independente) -->
-    <section class="card">
-      <h2><span class="step">3</span> Mensagens</h2>
+      <h2><span class="step">2</span> Mensagens</h2>
       <p class="hint">Crie até <b>5 mensagens</b>. Cada uma tem seu próprio texto, imagem e
         horário — você pode disparar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
 
@@ -112,6 +81,41 @@
       <div id="messagesContainer"></div>
 
       <button class="btn secondary" id="btnAddMessage" type="button">➕ Adicionar mensagem</button>
+    </section>
+
+    <!-- Passo 3: Lista de contatos -->
+    <section class="card">
+      <h2><span class="step">3</span> Lista de contatos</h2>
+      <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code>, adicione contatos
+        manualmente <b>ou</b> sincronize os contatos salvos no seu chip. A planilha deve ter uma coluna de telefone
+        (aceita <em>Telefone</em>, <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden />
+        <p>📎 Clique ou arraste sua planilha aqui</p>
+        <small id="fileName"></small>
+      </div>
+
+      <div class="manual-add">
+        <p class="manual-title">✍️ Ou adicione manualmente:</p>
+        <div class="manual-row">
+          <input type="text" id="manualName" placeholder="Nome (opcional)" />
+          <input type="tel" id="manualPhone" placeholder="Telefone (ex.: 11 99999-8888)" inputmode="numeric" />
+          <button class="btn secondary" id="btnAddContact" type="button">➕ Adicionar</button>
+        </div>
+        <small id="manualError" class="manual-error"></small>
+        <div class="row" style="margin-top:10px">
+          <button class="btn secondary" id="btnSyncChip" type="button">🔄 Sincronizar contatos do chip</button>
+          <span id="syncChipStatus" class="status"></span>
+        </div>
+      </div>
+
+      <div id="contactsSummary" class="summary hidden"></div>
+      <div class="table-wrap hidden" id="tableWrap">
+        <table id="contactsTable">
+          <thead><tr><th>#</th><th>Nome</th><th>Número (normalizado)</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- Template de um bloco de mensagem -->

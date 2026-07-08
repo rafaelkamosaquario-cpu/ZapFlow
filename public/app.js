@@ -169,6 +169,46 @@ function addManualContact() {
   rebuildContacts();
 }
 
+// Sincronizar contatos salvos no chip e carregá-los na lista de disparo
+const btnSyncChip = $("#btnSyncChip");
+if (btnSyncChip) {
+  btnSyncChip.addEventListener("click", async () => {
+    const status = $("#syncChipStatus");
+    btnSyncChip.disabled = true;
+    status.className = "status";
+    status.textContent = "🔄 Sincronizando...";
+    try {
+      const res = await fetch("/api/agenda/sync-chip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(getCredentials()),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao sincronizar.");
+
+      // Puxa a agenda (já com os contatos do chip) e adiciona à lista de disparo
+      const ag = await (await fetch("/api/agenda")).json();
+      let added = 0;
+      (ag.contacts || []).forEach((c) => {
+        const phone = normalizePhone(c.phone);
+        if (!phone) return;
+        if (contacts.some((x) => x.phone === phone)) return;
+        if (manualContacts.some((x) => x.phone === phone)) return;
+        manualContacts.push({ phone, name: c.name || "", rawPhone: String(c.phone || ""), manual: true });
+        added++;
+      });
+      rebuildContacts();
+      status.className = "status ok";
+      status.textContent = `✅ ${data.imported} do chip · ${added} adicionado(s) à lista`;
+    } catch (err) {
+      status.className = "status err";
+      status.textContent = "❌ " + err.message;
+    } finally {
+      btnSyncChip.disabled = false;
+    }
+  });
+}
+
 /** Carrega uma lista vinda do Painel (follow-up ou CRM) via sessionStorage. */
 function loadFollowupContacts() {
   try {

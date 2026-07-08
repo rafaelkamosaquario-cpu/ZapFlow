@@ -176,6 +176,14 @@
       <input type="text" id="agSearch" placeholder="🔍 Buscar nome ou telefone" style="margin-top:14px" />
       <p class="hint" id="agCount" style="margin:8px 0 0"></p>
       <div id="agendaList" class="dash-list"></div>
+
+      <div id="agCartBar" class="ag-cart-bar hidden">
+        <span id="agCartLabel">0 selecionado(s)</span>
+        <div class="row" style="gap:8px;margin:0">
+          <button class="btn ghost" id="btnAgCartClear" type="button">Limpar</button>
+          <button class="btn primary" id="btnAgCartGo" type="button">🚀 Ir para o disparo</button>
+        </div>
+      </div>
     </section>
 
     <!-- Campanhas -->

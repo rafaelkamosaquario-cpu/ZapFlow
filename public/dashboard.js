@@ -447,28 +447,72 @@ async function loadAgenda() {
     }
     wrap.innerHTML = "";
     data.contacts.forEach((c) => {
+      const inCart = agendaCart.some((x) => x.phone === c.phone);
       const div = document.createElement("div");
       div.className = "dash-card";
       div.style.cursor = "default";
       div.innerHTML = `
         <div class="dash-card-head">
           <span class="resp-phone">📇 ${escapeHtml(c.name || "(sem nome)")}</span>
-          <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
+          <div class="row" style="gap:6px;margin:0">
+            <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "✓ Inserido" : "➕ Inserir"}</button>
+            <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
+          </div>
         </div>
         <div class="dash-card-body">
           <span>📱 ${escapeHtml(c.phone)} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
         </div>`;
+      div.querySelector(".ag-add").addEventListener("click", (e) => {
+        toggleCart(c, e.currentTarget);
+      });
       div.querySelector(".ag-del").addEventListener("click", async () => {
         if (!confirm("Remover este contato da agenda?")) return;
         await fetch("/api/agenda/" + c.id, { method: "DELETE" });
+        agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
+        updateAgCart();
         loadAgenda();
       });
       wrap.appendChild(div);
     });
+    updateAgCart();
   } catch {
     wrap.innerHTML = "<p class='hint'>Erro ao carregar a agenda.</p>";
   }
 }
+
+// "Carrinho" de contatos selecionados na agenda para enviar ao disparo
+let agendaCart = [];
+function toggleCart(c, btn) {
+  const idx = agendaCart.findIndex((x) => x.phone === c.phone);
+  if (idx >= 0) {
+    agendaCart.splice(idx, 1);
+    btn.classList.remove("in-cart");
+    btn.textContent = "➕ Inserir";
+  } else {
+    agendaCart.push({ phone: c.phone, name: c.name || "" });
+    btn.classList.add("in-cart");
+    btn.textContent = "✓ Inserido";
+  }
+  updateAgCart();
+}
+function updateAgCart() {
+  const bar = document.getElementById("agCartBar");
+  if (!bar) return;
+  const n = agendaCart.length;
+  bar.classList.toggle("hidden", n === 0);
+  const label = document.getElementById("agCartLabel");
+  if (label) label.textContent = `${n} contato(s) selecionado(s)`;
+}
+document.getElementById("btnAgCartClear")?.addEventListener("click", () => {
+  agendaCart = [];
+  updateAgCart();
+  loadAgenda();
+});
+document.getElementById("btnAgCartGo")?.addEventListener("click", () => {
+  if (!agendaCart.length) return;
+  sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "contatos da agenda", contacts: agendaCart }));
+  window.location.href = "/";
+});
 
 // Adicionar manualmente
 $("#btnAgAdd").addEventListener("click", async () => {
