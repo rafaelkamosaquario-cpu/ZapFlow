@@ -306,12 +306,12 @@ function rebuildContacts() {
   updateClearButtons();
 }
 
-/** Mostra os botões de limpar conforme houver planilha importada ou contatos manuais. */
+/** Mantém os botões de limpar sempre visíveis; habilita só quando há o que limpar. */
 function updateClearButtons() {
   const hasFile = importedContacts.length > 0 || importedInvalid.length > 0;
   const hasManual = manualContacts.length > 0;
-  $("#clearFileRow")?.classList.toggle("hidden", !hasFile);
-  $("#clearManualRow")?.classList.toggle("hidden", !hasManual);
+  const bf = $("#btnClearFile"); if (bf) bf.disabled = !hasFile;
+  const bm = $("#btnClearManual"); if (bm) bm.disabled = !hasManual;
 }
 
 // Limpar a planilha importada
