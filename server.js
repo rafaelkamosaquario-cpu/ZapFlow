@@ -10,6 +10,15 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
+// Blindagem: um erro isolado (webhook estranho, falha de rede, agendador)
+// NÃO pode derrubar o servidor inteiro e travar o deploy. Apenas registra.
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err && err.stack ? err.stack : err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason && reason.stack ? reason.stack : reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
