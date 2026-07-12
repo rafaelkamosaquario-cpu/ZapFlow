@@ -33,7 +33,7 @@
   </header>
 
   <div id="followupBanner" class="followup-banner hidden">
-    <span>🔁 <b id="followupCount">0</b> contato(s) carregados (<span id="loadlistLabel">lista</span>) do Painel. Monte a mensagem e dispare.</span>
+    <span><b id="followupCount">0</b> contato(s) carregados (<span id="loadlistLabel">lista</span>) do Painel. Monte a mensagem e envie a campanha.</span>
   </div>
 
   <main class="container">
@@ -45,39 +45,48 @@
       <button class="stepbar-item" type="button" data-target="secEnviar"><span class="stepbar-n">4</span> Enviar</button>
     </div>
 
-    <!-- Passo 1: Credenciais -->
-    <section class="card" id="connCard">
-      <h2 class="collapsible" id="connHeader">
-        <span class="step">1</span> <span id="connTitle">Conexão</span>
-        <span id="connBadge" class="head-badge"></span>
-        <span class="chevron" id="connChevron">▾</span>
-      </h2>
-      <div id="connBody">
-        <p class="hint">Conecte sua conta do WhatsApp para começar.
-          Se a conexão já estiver configurada no servidor, pode deixar em branco.</p>
-        <div class="grid">
-          <label>ID da conexão
-            <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
-          </label>
-          <label>Token de acesso
-            <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
-          </label>
-          <label>Token de segurança
-            <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
-          </label>
-        </div>
-        <div class="row">
-          <button class="btn secondary" id="btnTest">Testar conexão</button>
-          <span id="connStatus" class="status"></span>
-        </div>
+    <!-- Status da conexão (credenciais ficam em Configurar) -->
+    <section class="card conn-card" id="connCard">
+      <span class="wa-dot checking" id="connDot"></span>
+      <div class="conn-txt">
+        <b id="connTitle">Verificando conexão…</b>
+        <span id="connStatus" class="status"></span>
+      </div>
+      <div class="conn-actions">
+        <button class="btn secondary" id="btnTest" type="button"><i data-icon="wifi" data-size="16"></i> Verificar conexão</button>
+        <button class="btn ghost" id="btnConfig" type="button"><i data-icon="settings" data-size="16"></i> Configurar</button>
       </div>
     </section>
+
+    <!-- Modal: Configurar WhatsApp (integração) -->
+    <div class="modal hidden" id="settingsModal">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h3>WhatsApp · Integração</h3>
+          <button class="modal-close" data-close="settingsModal" type="button" aria-label="Fechar">✕</button>
+        </div>
+        <p class="hint">Configure a conexão do seu WhatsApp. Se já estiver configurada no servidor, pode deixar em branco.</p>
+        <label>ID da conexão
+          <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
+        </label>
+        <label>Token de acesso
+          <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
+        </label>
+        <label>Token de segurança
+          <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
+        </label>
+        <div class="row">
+          <button class="btn primary" id="btnTestModal" type="button"><i data-icon="wifi" data-size="18"></i> Testar conexão</button>
+          <span id="connStatusModal" class="status"></span>
+        </div>
+      </div>
+    </div>
 
     <!-- Passo 2: Mensagens (até 5, cada uma independente) -->
     <section class="card" id="secMensagens">
       <h2><span class="step">2</span> Mensagens</h2>
       <p class="hint">Crie até <b>5 mensagens</b>. Cada uma tem seu próprio texto, imagem e
-        horário — você pode disparar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
+        horário — você pode enviar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
 
       <div class="row">
         <label class="inline">Aguardar entre cada mensagem
@@ -88,7 +97,7 @@
         </label>
         <span class="hint" style="margin:0">Pausa entre cada contato (vale para todas as mensagens).</span>
       </div>
-      <small id="delayWarning" class="delay-warning hidden">⚠️ Intervalos muito curtos aumentam risco de bloqueio do número.</small>
+      <small id="delayWarning" class="delay-warning hidden">Intervalos muito curtos aumentam risco de bloqueio do número.</small>
 
       <div id="messagesContainer"></div>
 
@@ -103,7 +112,7 @@
         (aceita <em>Telefone</em>, <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden />
-        <p>📎 Clique ou arraste sua planilha aqui</p>
+        <p>Clique ou arraste sua planilha aqui</p>
         <small id="fileName"></small>
       </div>
       <div class="row" id="clearFileRow" style="margin-top:8px">
@@ -111,7 +120,7 @@
       </div>
 
       <div class="manual-add">
-        <p class="manual-title">✍️ Ou adicione manualmente:</p>
+        <p class="manual-title">Ou adicione manualmente:</p>
         <div class="manual-row">
           <input type="text" id="manualName" placeholder="Nome (opcional)" />
           <input type="tel" id="manualPhone" placeholder="Telefone (ex.: 11 99999-8888)" inputmode="numeric" />
@@ -127,7 +136,7 @@
           <span id="syncChipStatus" class="status"></span>
         </div>
         <div id="savedPicker" class="saved-picker hidden">
-          <input type="text" id="savedSearch" placeholder="🔍 Buscar nome ou telefone" />
+          <input type="text" id="savedSearch" placeholder="Buscar nome ou telefone" />
           <p class="hint" id="savedCount" style="margin:8px 0 0"></p>
           <div id="savedList" class="dash-list"></div>
         </div>
@@ -147,7 +156,7 @@
       <div class="msg-block">
         <div class="msg-header">
           <h3>Mensagem <span class="msg-num"></span></h3>
-          <button class="btn-remove" type="button">✕ Remover</button>
+          <button class="btn-remove" type="button">Remover</button>
         </div>
 
         <div class="msg-toolbar">
@@ -226,7 +235,7 @@
     <section class="card">
       <h2>
         <span class="step"><i data-icon="megaphone" data-size="18"></i></span> Campanhas recentes
-        <button class="btn ghost" id="btnClearHistory" type="button" style="margin-left:auto">Limpar histórico</button>
+        <button class="btn ghost" id="btnClearHistory" type="button" style="margin-left:auto">Gerenciar histórico</button>
       </h2>
       <p class="hint">Tudo que foi enviado e agendado. Os pendentes podem ser cancelados;
         os concluídos mostram quantas mensagens saíram. Toque em um item para ver os números.</p>
@@ -239,7 +248,7 @@
   <div class="modal hidden" id="metricsModal">
     <div class="modal-box modal-wide">
       <div class="modal-head">
-        <h3>📊 Dashboard de métricas</h3>
+        <h3>Métricas</h3>
         <button class="modal-close" data-close="metricsModal" type="button">✕</button>
       </div>
       <div class="metrics-panels">

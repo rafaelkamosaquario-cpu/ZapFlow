@@ -213,16 +213,16 @@
 
     <!-- Clientes (CRM) -->
     <section class="dash-view hidden" data-view="clients">
-      <h2 class="dash-title">👥 Clientes</h2>
-      <p class="hint">Sua base cresce sozinha a cada disparo. Filtre, organize por etapa/tags e dispare para um segmento.</p>
+      <h2 class="dash-title">Clientes</h2>
+      <p class="hint">Sua base cresce a cada campanha. Filtre, organize por etapa/tags e crie uma campanha para o segmento.</p>
       <div class="crm-filters">
-        <input type="text" id="crmSearch" placeholder="🔍 Buscar nome ou telefone" />
+        <input type="text" id="crmSearch" placeholder="Buscar nome ou telefone" />
         <select id="crmStage"><option value="">Todas as etapas</option></select>
         <select id="crmTag"><option value="">Todas as tags</option></select>
       </div>
       <div class="crm-stagebar" id="crmStageBar"></div>
       <div class="row" style="margin:6px 0 0">
-        <button class="btn primary" id="btnCrmDispatch" type="button">🚀 Disparar para esta lista</button>
+        <button class="btn primary" id="btnCrmDispatch" type="button">Criar campanha para este grupo</button>
         <span class="hint" id="crmShown" style="margin:0"></span>
       </div>
       <div id="clientsList" class="dash-list"></div>
@@ -230,20 +230,20 @@
 
     <!-- Conversas -->
     <section class="dash-view hidden" data-view="conversas">
-      <h2 class="dash-title">💬 Conversas</h2>
+      <h2 class="dash-title">Conversas</h2>
       <p class="hint">Caixa de entrada de todas as conversas do seu número (campanhas e dia a dia).</p>
       <div class="conv-filters">
         <button class="conv-fbtn active" data-filter="all">Todas</button>
-        <button class="conv-fbtn" data-filter="campaign">📣 Campanhas</button>
-        <button class="conv-fbtn" data-filter="daily">💬 Dia a dia</button>
+        <button class="conv-fbtn" data-filter="campaign">Campanhas</button>
+        <button class="conv-fbtn" data-filter="daily">Dia a dia</button>
       </div>
-      <input type="text" id="convSearch" placeholder="🔍 Buscar nome ou telefone" />
+      <input type="text" id="convSearch" placeholder="Buscar nome ou telefone" />
       <div id="conversasList" class="dash-list" style="margin-top:12px"></div>
     </section>
 
     <!-- Agenda de contatos -->
     <section class="dash-view hidden" data-view="agenda">
-      <h2 class="dash-title">📇 Contatos salvos</h2>
+      <h2 class="dash-title">Contatos salvos</h2>
       <p class="hint">Sua agenda (como os contatos do celular). O nome daqui é usado em todo o app.</p>
 
       <div class="agenda-add">
@@ -260,7 +260,7 @@
         </div>
       </div>
 
-      <input type="text" id="agSearch" placeholder="🔍 Buscar nome ou telefone" style="margin-top:14px" />
+      <input type="text" id="agSearch" placeholder="Buscar nome ou telefone" style="margin-top:14px" />
       <p class="hint" id="agCount" style="margin:8px 0 0"></p>
       <div id="agendaList" class="dash-list"></div>
 
@@ -268,19 +268,19 @@
         <span id="agCartLabel">0 selecionado(s)</span>
         <div class="row" style="gap:8px;margin:0">
           <button class="btn ghost" id="btnAgCartClear" type="button">Limpar</button>
-          <button class="btn primary" id="btnAgCartGo" type="button">Ir para o disparo</button>
+          <button class="btn primary" id="btnAgCartGo" type="button">Ir para a campanha</button>
         </div>
       </div>
     </section>
 
     <!-- Campanhas -->
     <section class="dash-view hidden" data-view="campaigns">
-      <h2 class="dash-title">📣 Campanhas</h2>
+      <h2 class="dash-title">Campanhas</h2>
 
       <!-- Modelos / rascunhos de campanha -->
       <div class="draft-box">
         <div class="draft-box-head">
-          <h3>💾 Modelos de campanha</h3>
+          <h3>Modelos de campanha</h3>
           <span class="hint" id="draftsCount"></span>
         </div>
         <p class="hint">Salve até 10 modelos prontos (texto, imagem e link) para reenviar quando quiser.</p>
@@ -291,7 +291,7 @@
           <input type="text" id="draftLink" placeholder="Link (opcional) — ex.: https://rfpneus.com.br" />
           <input type="text" id="draftImg" placeholder="URL da imagem (opcional) — ex.: https://.../foto.jpg" />
           <div class="row">
-            <button class="btn primary" id="btnSaveDraft" type="button">💾 Salvar modelo</button>
+            <button class="btn primary" id="btnSaveDraft" type="button">Salvar modelo</button>
             <button class="btn ghost" id="btnCancelDraft" type="button">Cancelar</button>
             <span id="draftStatus" class="status"></span>
           </div>
@@ -302,20 +302,20 @@
       </div>
 
       <h3 class="dash-subtitle">📨 Campanhas enviadas</h3>
-      <p class="hint">Cada disparo é uma campanha. Toque para ver os contatos e quem respondeu.</p>
+      <p class="hint">Cada campanha enviada aparece aqui. Toque para ver os contatos e quem respondeu.</p>
       <div id="campaignsList" class="dash-list"></div>
     </section>
 
     <!-- Respostas -->
     <section class="dash-view hidden" data-view="responses">
-      <h2 class="dash-title">💬 Respostas dos clientes</h2>
+      <h2 class="dash-title">Respostas dos clientes</h2>
       <p class="hint">Mensagens recebidas dos seus clientes, mais recentes primeiro.</p>
       <div id="responsesList" class="dash-list"></div>
     </section>
 
     <!-- Chatbot / Automação -->
     <section class="dash-view hidden" data-view="chatbot">
-      <h2 class="dash-title">🤖 Respostas automáticas</h2>
+      <h2 class="dash-title">Respostas automáticas</h2>
       <p class="hint">Quando um cliente responde com uma palavra-chave, o ZapFlow responde sozinho.
         Use <code>{{nome}}</code> para personalizar. (Requer a integração de respostas ativa.)</p>
       <label class="switch-row"><input type="checkbox" id="botEnabled" /> <b>Ativar respostas automáticas</b></label>
@@ -336,8 +336,8 @@
 
     <!-- Follow-up -->
     <section class="dash-view hidden" data-view="followup">
-      <h2 class="dash-title">🔁 Follow-up de campanhas</h2>
-      <p class="hint">Reengaje quem <b>recebeu mas não respondeu</b>. Prepare um novo disparo só para eles.</p>
+      <h2 class="dash-title">Follow-up de campanhas</h2>
+      <p class="hint">Reengaje quem <b>recebeu mas não respondeu</b>. Prepare uma nova campanha só para eles.</p>
       <div id="followupList" class="dash-list"></div>
     </section>
   </main>
@@ -403,7 +403,7 @@
   </div>
 
   <footer class="footer">
-    <small>ZapFlow · Painel de campanhas</small>
+    <small>ZapFlow · Central de relacionamento</small>
   </footer>
 
   <!-- Barra de navegação inferior (celular/tablet) -->

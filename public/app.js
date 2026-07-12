@@ -33,28 +33,25 @@ function loadCreds() {
 }
 
 // Recolher / expandir o Passo 1
-function setConnCollapsed(collapsed) {
-  $("#connBody").classList.toggle("hidden", collapsed);
-  $("#connChevron").textContent = collapsed ? "▸" : "▾";
-}
-$("#connHeader").addEventListener("click", () => {
-  setConnCollapsed(!$("#connBody").classList.contains("hidden"));
-});
+// Compatibilidade: função mantida para chamadas antigas (não recolhe mais nada)
+function setConnCollapsed() { /* card de status não recolhe */ }
 
-function setConnBadge(text, cls) {
-  $("#connBadge").textContent = text;
-  $("#connBadge").className = "head-badge " + (cls || "");
-}
-function setConnTitle(text) {
-  $("#connTitle").textContent = text;
+let waConnected = null; // null=desconhecido, true/false
+function setConnState(state, title) {
+  const dot = $("#connDot"); if (dot) dot.className = "wa-dot " + state;
+  if (title) $("#connTitle").textContent = title;
+  waConnected = state === "on" ? true : state === "off" ? false : null;
 }
 
-async function runConnectionTest({ collapseOnSuccess = true } = {}) {
+async function runConnectionTest() {
   const status = $("#connStatus");
-  status.textContent = "Testando...";
-  status.className = "status";
-  setConnTitle("Conectando...");
-  setConnBadge("⏳ Verificando...", "");
+  const statusM = $("#connStatusModal");
+  const setBoth = (txt, cls) => {
+    if (status) { status.textContent = txt; status.className = "status " + (cls || ""); }
+    if (statusM) { statusM.textContent = txt; statusM.className = "status " + (cls || ""); }
+  };
+  setConnState("checking", "Verificando conexão…");
+  setBoth("Testando…", "");
   try {
     const res = await fetch("/api/test-connection", {
       method: "POST",
@@ -65,35 +62,25 @@ async function runConnectionTest({ collapseOnSuccess = true } = {}) {
     if (data.ok) {
       const connected = data.status?.connected ?? data.status?.value;
       if (connected === false) {
-        status.textContent = "⚠️ Instância encontrada, mas o WhatsApp não está conectado (leia o QR Code).";
-        status.className = "status err";
-        setConnTitle("Desconectado");
-        setConnBadge("⚠️ Sem WhatsApp", "err");
+        setConnState("off", "WhatsApp desconectado");
+        setBoth("Encontramos a conta, mas o WhatsApp não está conectado (leia o QR Code).", "err");
       } else {
-        status.textContent = "✅ Conexão OK!";
-        status.className = "status ok";
-        setConnTitle("Conectado");
-        setConnBadge("✅ Pronto", "ok");
-        if (collapseOnSuccess) setTimeout(() => setConnCollapsed(true), 800);
+        setConnState("on", "WhatsApp conectado");
+        setBoth("Conexão OK!", "ok");
       }
     } else {
-      status.textContent = "❌ " + (data.error || "Falha na conexão.");
-      status.className = "status err";
-      setConnTitle("Desconectado");
-      setConnBadge("❌ Erro", "err");
+      setConnState("off", "WhatsApp desconectado");
+      setBoth(data.error || "Falha na conexão.", "err");
     }
   } catch (err) {
-    status.textContent = "❌ " + err.message;
-    status.className = "status err";
-    setConnTitle("Desconectado");
-    setConnBadge("❌ Erro", "err");
+    setConnState("off", "WhatsApp desconectado");
+    setBoth(err.message, "err");
   }
 }
 
-$("#btnTest").addEventListener("click", (e) => {
-  e.stopPropagation();
-  runConnectionTest();
-});
+$("#btnTest").addEventListener("click", runConnectionTest);
+$("#btnTestModal")?.addEventListener("click", runConnectionTest);
+$("#btnConfig")?.addEventListener("click", () => openModal("settingsModal"));
 
 // ---------------------------------------------------------------------------
 // Upload da planilha
@@ -1177,11 +1164,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!savedDelay && cfg.defaultDelaySeconds) $("#delaySeconds").value = cfg.defaultDelaySeconds;
     if (cfg.authEnabled) $("#btnLogout").classList.remove("hidden");
     checkDelayWarning();
-    if (cfg.hasEnvCredentials) {
-      setConnCollapsed(true); // já vem minimizado quando há credenciais no servidor
-      // Testa a conexão automaticamente e mostra "Conectado" no cabeçalho
-      runConnectionTest({ collapseOnSuccess: false });
-    }
+    // Verifica a conexão automaticamente e mostra o status no card
+    runConnectionTest();
   } catch { /* ignore */ }
 });
 
