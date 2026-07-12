@@ -1,5 +1,5 @@
 // Service Worker do ZapFlow — cache do "app shell" para funcionar offline.
-const CACHE = "zapflow-v7";
+const CACHE = "zapflow-v8";
 const ASSETS = [
   "/",
   "/index.html",

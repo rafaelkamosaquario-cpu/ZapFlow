@@ -30,15 +30,64 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação" };
+
 function activateView(view) {
-  $$(".dash-tab, .side-tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+  $$(".side-tab, .mtab, .msheet-item").forEach((t) => { if (t.dataset.view) t.classList.toggle("active", t.dataset.view === view); });
   $$(".dash-view").forEach((v) => v.classList.toggle("hidden", v.dataset.view !== view));
+  const pn = $("#topPageName"); if (pn) pn.textContent = VIEW_NAMES[view] || "";
+  closeSheet();
   loadView(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
-$$(".dash-tab, .side-tab").forEach((tab) => {
-  tab.addEventListener("click", () => activateView(tab.dataset.view));
+$$(".side-tab, .mtab, .msheet-item").forEach((tab) => {
+  if (tab.dataset.view) tab.addEventListener("click", () => activateView(tab.dataset.view));
 });
+
+// Folha "Mais" (mobile)
+function openSheet() { $("#msheet").classList.remove("hidden"); $("#msheetBackdrop").classList.remove("hidden"); }
+function closeSheet() { $("#msheet")?.classList.add("hidden"); $("#msheetBackdrop")?.classList.add("hidden"); }
+$("#mtabMore")?.addEventListener("click", openSheet);
+$("#msheetBackdrop")?.addEventListener("click", closeSheet);
+
+// Recolher a sidebar (desktop) — preferência salva
+(function initSidebarCollapse() {
+  const saved = localStorage.getItem("zapflow_sidebar") === "collapsed";
+  if (saved) { $("#dashSidebar")?.classList.add("collapsed"); document.body.classList.add("side-collapsed"); }
+  $("#sideCollapse")?.addEventListener("click", () => {
+    const c = $("#dashSidebar").classList.toggle("collapsed");
+    document.body.classList.toggle("side-collapsed", c);
+    localStorage.setItem("zapflow_sidebar", c ? "collapsed" : "open");
+  });
+})();
+
+// Seletor de tema (claro/escuro/automático)
+function syncThemeButtons() {
+  const cur = window.ZapTheme ? ZapTheme.get() : "auto";
+  $$("[data-theme-set]").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === cur));
+}
+$$("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  if (window.ZapTheme) ZapTheme.set(b.dataset.themeSet);
+  syncThemeButtons();
+  // redesenha os gráficos com as novas cores do tema
+  if ($(".dash-view[data-view='overview']") && !$(".dash-view[data-view='overview']").classList.contains("hidden")) loadOverview();
+}));
+syncThemeButtons();
+
+// Logout (mostra se o login estiver ativo)
+fetch("/api/config").then((r) => r.json()).then((cfg) => {
+  if (cfg.authEnabled) { $("#sideLogout")?.classList.remove("hidden"); $("#msheetLogout")?.classList.remove("hidden"); }
+}).catch(() => {});
+[$("#sideLogout"), $("#msheetLogout")].forEach((b) => b?.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  window.location.href = "/login";
+}));
+
+// Abre uma view específica vinda de ?view= (navegação a partir da tela de campanha)
+(function initViewFromQuery() {
+  const v = new URLSearchParams(location.search).get("view");
+  if (v && VIEW_NAMES[v]) setTimeout(() => activateView(v), 0);
+})();
 
 function loadView(view) {
   if (view === "overview") loadOverview();

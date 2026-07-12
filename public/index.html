@@ -27,8 +27,8 @@
       </div>
     </div>
     <nav class="topnav">
-      <a class="navbtn" href="dashboard.html">📊 Painel</a>
-      <button class="navbtn hidden" id="btnLogout" type="button">Sair</button>
+      <a class="navbtn" href="dashboard.html"><i data-icon="house" data-size="16"></i> Painel</a>
+      <button class="navbtn hidden" id="btnLogout" type="button"><i data-icon="logout" data-size="16"></i> Sair</button>
     </nav>
   </header>
 
@@ -87,9 +87,9 @@
       <button class="btn secondary" id="btnAddMessage" type="button">➕ Adicionar mensagem</button>
     </section>
 
-    <!-- Passo 3: Lista de contatos -->
+    <!-- Passo 3: Destinatários -->
     <section class="card">
-      <h2><span class="step">3</span> Lista de contatos</h2>
+      <h2><span class="step">3</span> Destinatários</h2>
       <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code>, adicione contatos
         manualmente <b>ou</b> sincronize os contatos salvos no seu chip. A planilha deve ter uma coluna de telefone
         (aceita <em>Telefone</em>, <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
@@ -181,7 +181,7 @@
 
         <div class="row template-row">
           <button class="btn ghost m-save-template" type="button">💾 Salvar como modelo</button>
-          <button class="btn ghost m-load-template" type="button">📑 Meus Modelos</button>
+          <button class="btn ghost m-load-template" type="button"><i data-icon="template" data-size="16"></i> Modelos de mensagem</button>
         </div>
 
         <div class="row">
@@ -200,8 +200,8 @@
     <!-- Histórico de envios -->
     <section class="card">
       <h2>
-        <span class="step">📊</span> Histórico de envios
-        <button class="btn ghost" id="btnClearHistory" type="button" style="margin-left:auto">🧹 Limpar histórico</button>
+        <span class="step"><i data-icon="megaphone" data-size="18"></i></span> Campanhas recentes
+        <button class="btn ghost" id="btnClearHistory" type="button" style="margin-left:auto">Limpar histórico</button>
       </h2>
       <p class="hint">Tudo que foi enviado e agendado. Os pendentes podem ser cancelados;
         os concluídos mostram quantas mensagens saíram. Toque em um item para ver os números.</p>
@@ -229,7 +229,7 @@
   <div class="modal hidden" id="templatesModal">
     <div class="modal-box">
       <div class="modal-head">
-        <h3>📑 Meus Modelos</h3>
+        <h3>Modelos de mensagem</h3>
         <button class="modal-close" data-close="templatesModal" type="button">✕</button>
       </div>
       <p class="hint" id="templatesCount"></p>
@@ -260,8 +260,56 @@
     <small>Use com responsabilidade e respeite as regras do WhatsApp e a LGPD.</small>
   </footer>
 
+  <!-- Barra de navegação inferior (celular/tablet) -->
+  <nav class="mnav" aria-label="Navegação">
+    <a class="mtab" href="dashboard.html?view=overview"><i data-icon="house" data-size="22"></i><span>Início</span></a>
+    <a class="mtab" href="dashboard.html?view=conversas"><i data-icon="messages" data-size="22"></i><span>Conversas</span></a>
+    <a class="mtab mtab-plus active" href="/" aria-label="Nova campanha"><i data-icon="plus" data-size="26"></i></a>
+    <a class="mtab" href="dashboard.html?view=clients"><i data-icon="users" data-size="22"></i><span>Clientes</span></a>
+    <button class="mtab" id="mtabMore" type="button"><i data-icon="menu" data-size="22"></i><span>Mais</span></button>
+  </nav>
+
+  <div class="msheet-backdrop hidden" id="msheetBackdrop"></div>
+  <div class="msheet hidden" id="msheet" role="dialog" aria-label="Mais opções">
+    <div class="msheet-grip"></div>
+    <div class="msheet-grid">
+      <a class="msheet-item" href="dashboard.html?view=agenda"><i data-icon="contact" data-size="22"></i><span>Contatos</span></a>
+      <a class="msheet-item" href="dashboard.html?view=campaigns"><i data-icon="megaphone" data-size="22"></i><span>Campanhas</span></a>
+      <a class="msheet-item" href="dashboard.html?view=followup"><i data-icon="refresh" data-size="22"></i><span>Follow-up</span></a>
+      <a class="msheet-item" href="dashboard.html?view=responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></a>
+      <a class="msheet-item" href="dashboard.html?view=chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></a>
+      <a class="msheet-item" href="dashboard.html?view=overview"><i data-icon="chart" data-size="22"></i><span>Painel</span></a>
+    </div>
+    <div class="msheet-theme">
+      <span>Tema</span>
+      <div class="theme-switch">
+        <button type="button" data-theme-set="light" aria-label="Tema claro"><i data-icon="sun" data-size="18"></i></button>
+        <button type="button" data-theme-set="dark" aria-label="Tema escuro"><i data-icon="moon" data-size="18"></i></button>
+        <button type="button" data-theme-set="auto" aria-label="Tema automático"><i data-icon="monitor" data-size="18"></i></button>
+      </div>
+    </div>
+  </div>
+
   <script src="theme.js"></script>
   <script src="icons.js"></script>
   <script src="app.js"></script>
+  <script>
+    // Navegação inferior compartilhada (folha "Mais" + seletor de tema)
+    (function () {
+      var sheet = document.getElementById("msheet"), back = document.getElementById("msheetBackdrop");
+      function close() { sheet && sheet.classList.add("hidden"); back && back.classList.add("hidden"); }
+      var more = document.getElementById("mtabMore");
+      if (more) more.addEventListener("click", function () { sheet.classList.remove("hidden"); back.classList.remove("hidden"); });
+      if (back) back.addEventListener("click", close);
+      function sync() {
+        var cur = window.ZapTheme ? ZapTheme.get() : "auto";
+        document.querySelectorAll("[data-theme-set]").forEach(function (b) { b.classList.toggle("active", b.dataset.themeSet === cur); });
+      }
+      document.querySelectorAll("[data-theme-set]").forEach(function (b) {
+        b.addEventListener("click", function () { if (window.ZapTheme) ZapTheme.set(b.dataset.themeSet); sync(); });
+      });
+      sync();
+    })();
+  </script>
 </body>
 </html>

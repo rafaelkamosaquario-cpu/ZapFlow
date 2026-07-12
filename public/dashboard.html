@@ -15,45 +15,48 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
+  <!-- Menu lateral (desktop, recolhível) -->
+  <aside class="dash-sidebar" id="dashSidebar">
+    <div class="side-brand">
+      <img src="zappy.svg" alt="Zappy" />
+      <span class="side-brand-name">Zap<b>Flow</b></span>
+      <button class="side-collapse" id="sideCollapse" type="button" aria-label="Recolher menu"><i data-icon="menu" data-size="20"></i></button>
+    </div>
+    <nav class="side-nav">
+      <button class="side-tab active" data-view="overview"><i data-icon="house" data-size="20"></i> <span class="side-label">Início</span></button>
+      <button class="side-tab" data-view="conversas"><i data-icon="messages" data-size="20"></i> <span class="side-label">Conversas</span></button>
+      <button class="side-tab" data-view="clients"><i data-icon="users" data-size="20"></i> <span class="side-label">Clientes</span></button>
+      <button class="side-tab" data-view="agenda"><i data-icon="contact" data-size="20"></i> <span class="side-label">Contatos</span></button>
+      <button class="side-tab" data-view="campaigns"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Campanhas</span></button>
+      <button class="side-tab" data-view="followup"><i data-icon="refresh" data-size="20"></i> <span class="side-label">Follow-up</span></button>
+      <button class="side-tab" data-view="responses"><i data-icon="reply" data-size="20"></i> <span class="side-label">Respostas</span></button>
+      <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automação</span></button>
+    </nav>
+    <div class="side-foot">
+      <a class="side-tab" href="/"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Nova campanha</span></a>
+      <div class="side-theme">
+        <span class="side-label side-theme-label">Tema</span>
+        <div class="theme-switch">
+          <button type="button" data-theme-set="light" aria-label="Tema claro"><i data-icon="sun" data-size="18"></i></button>
+          <button type="button" data-theme-set="dark" aria-label="Tema escuro"><i data-icon="moon" data-size="18"></i></button>
+          <button type="button" data-theme-set="auto" aria-label="Tema automático"><i data-icon="monitor" data-size="18"></i></button>
+        </div>
+      </div>
+      <button class="side-tab side-logout hidden" id="sideLogout" type="button"><i data-icon="logout" data-size="20"></i> <span class="side-label">Sair</span></button>
+    </div>
+  </aside>
+
+  <!-- Cabeçalho superior (mobile/tablet) -->
+  <header class="topbar dash-topbar">
     <div class="brand">
       <img src="zappy.svg" alt="Zappy" class="logo-img" />
       <div>
-        <h1>Zap<span class="brand-accent">Flow</span> · Painel</h1>
-        <p>Acompanhe campanhas, respostas e follow-up</p>
+        <h1>Zap<span class="brand-accent">Flow</span></h1>
+        <p id="topPageName">Início</p>
       </div>
     </div>
-    <nav class="topnav">
-      <a class="navbtn" href="/">← Voltar ao disparo</a>
-    </nav>
+    <a class="navbtn" href="/"><i data-icon="plus" data-size="16"></i> Nova campanha</a>
   </header>
-
-  <!-- Menu lateral (apenas desktop) -->
-  <aside class="dash-sidebar">
-    <div class="side-brand"><img src="zappy.svg" alt="Zappy" /><span>Zap<b>Flow</b></span></div>
-    <nav class="side-nav">
-      <button class="side-tab active" data-view="overview"><span>🏠</span> Visão Geral</button>
-      <button class="side-tab" data-view="clients"><span>👥</span> Clientes</button>
-      <button class="side-tab" data-view="agenda"><span>📇</span> Contatos</button>
-      <button class="side-tab" data-view="conversas"><span>💬</span> Conversas</button>
-      <button class="side-tab" data-view="campaigns"><span>📣</span> Campanhas</button>
-      <button class="side-tab" data-view="responses"><span>↩️</span> Respostas</button>
-      <button class="side-tab" data-view="followup"><span>🔁</span> Follow-up</button>
-      <button class="side-tab" data-view="chatbot"><span>🤖</span> Automação</button>
-    </nav>
-    <a class="side-back" href="/">← Voltar ao disparo</a>
-  </aside>
-
-  <div class="dash-nav">
-    <button class="dash-tab active" data-view="overview">🏠 Visão Geral</button>
-    <button class="dash-tab" data-view="clients">👥 Clientes</button>
-    <button class="dash-tab" data-view="agenda">📇 Contatos</button>
-    <button class="dash-tab" data-view="conversas">💬 Conversas</button>
-    <button class="dash-tab" data-view="campaigns">📣 Campanhas</button>
-    <button class="dash-tab" data-view="responses">💬 Respostas</button>
-    <button class="dash-tab" data-view="followup">🔁 Follow-up</button>
-    <button class="dash-tab" data-view="chatbot">🤖 Auto</button>
-  </div>
 
   <main class="container">
     <!-- Visão Geral (Dashboard) -->
@@ -402,6 +405,38 @@
   <footer class="footer">
     <small>ZapFlow · Painel de campanhas</small>
   </footer>
+
+  <!-- Barra de navegação inferior (celular/tablet) -->
+  <nav class="mnav" aria-label="Navegação">
+    <button class="mtab active" data-view="overview"><i data-icon="house" data-size="22"></i><span>Início</span></button>
+    <button class="mtab" data-view="conversas"><i data-icon="messages" data-size="22"></i><span>Conversas</span></button>
+    <a class="mtab mtab-plus" href="/" aria-label="Nova campanha"><i data-icon="plus" data-size="26"></i></a>
+    <button class="mtab" data-view="clients"><i data-icon="users" data-size="22"></i><span>Clientes</span></button>
+    <button class="mtab" id="mtabMore" type="button"><i data-icon="menu" data-size="22"></i><span>Mais</span></button>
+  </nav>
+
+  <!-- Folha "Mais" -->
+  <div class="msheet-backdrop hidden" id="msheetBackdrop"></div>
+  <div class="msheet hidden" id="msheet" role="dialog" aria-label="Mais opções">
+    <div class="msheet-grip"></div>
+    <div class="msheet-grid">
+      <button class="msheet-item" data-view="agenda"><i data-icon="contact" data-size="22"></i><span>Contatos</span></button>
+      <button class="msheet-item" data-view="campaigns"><i data-icon="megaphone" data-size="22"></i><span>Campanhas</span></button>
+      <button class="msheet-item" data-view="followup"><i data-icon="refresh" data-size="22"></i><span>Follow-up</span></button>
+      <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>
+      <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></button>
+      <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
+    </div>
+    <div class="msheet-theme">
+      <span>Tema</span>
+      <div class="theme-switch">
+        <button type="button" data-theme-set="light" aria-label="Tema claro"><i data-icon="sun" data-size="18"></i></button>
+        <button type="button" data-theme-set="dark" aria-label="Tema escuro"><i data-icon="moon" data-size="18"></i></button>
+        <button type="button" data-theme-set="auto" aria-label="Tema automático"><i data-icon="monitor" data-size="18"></i></button>
+      </div>
+    </div>
+    <button class="btn ghost msheet-logout hidden" id="msheetLogout" type="button"><i data-icon="logout" data-size="18"></i> Sair</button>
+  </div>
 
   <script src="theme.js"></script>
   <script src="icons.js"></script>
