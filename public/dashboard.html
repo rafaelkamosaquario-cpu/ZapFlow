@@ -56,74 +56,142 @@
   </div>
 
   <main class="container">
-    <!-- Visão Geral (Dashboard BI) -->
+    <!-- Visão Geral (Dashboard) -->
     <section class="dash-view" data-view="overview">
-      <div class="ov-head">
-        <h2 class="dash-title" style="margin:0">🏠 Visão Geral</h2>
-        <div class="period-pills">
-          <button class="period-pill active" data-period="hoje">Hoje</button>
-          <button class="period-pill" data-period="7d">7 dias</button>
-          <button class="period-pill" data-period="mes">Este mês</button>
+      <!-- Cabeçalho -->
+      <div class="ov-topbar">
+        <div class="ov-greet">
+          <h2 id="ovGreeting">Olá</h2>
+          <p>Veja o que precisa da sua atenção hoje.</p>
+        </div>
+        <div class="ov-topactions">
+          <span class="wa-status" id="waStatus" title="Status do WhatsApp">
+            <span class="wa-dot checking"></span><span class="wa-text">Verificando conexão</span>
+          </span>
+          <a class="btn primary ov-newcamp" href="/"><i data-icon="megaphone" data-size="18"></i> Nova campanha</a>
         </div>
       </div>
 
-      <div id="ovEmpty" class="ov-empty hidden">Sem dados ainda — dispare sua primeira campanha 🚀</div>
+      <!-- Filtro de período -->
+      <div class="period-pills" role="tablist" aria-label="Período">
+        <button class="period-pill active" data-period="hoje">Hoje</button>
+        <button class="period-pill" data-period="7d">7 dias</button>
+        <button class="period-pill" data-period="mes">Este mês</button>
+      </div>
+
+      <!-- Estado vazio principal -->
+      <div id="ovEmpty" class="ov-empty-state hidden">
+        <img src="zappy.svg" alt="" class="ov-empty-mascot" />
+        <h3>Pronto para começar?</h3>
+        <p>Crie sua primeira campanha e acompanhe respostas, oportunidades e resultados neste painel.</p>
+        <div class="ov-empty-actions">
+          <a class="btn primary" href="/"><i data-icon="megaphone" data-size="18"></i> Criar primeira campanha</a>
+          <button class="btn secondary" type="button" data-go="agenda"><i data-icon="contact" data-size="18"></i> Adicionar contatos</button>
+        </div>
+        <ul class="ov-empty-benefits">
+          <li><i data-icon="messages" data-size="18"></i> Acompanhe quem respondeu</li>
+          <li><i data-icon="users" data-size="18"></i> Organize seus clientes</li>
+          <li><i data-icon="refresh" data-size="18"></i> Faça follow-up de quem não retornou</li>
+        </ul>
+      </div>
+
+      <!-- Erro -->
+      <div id="ovError" class="ov-error hidden">
+        <p>Não foi possível carregar os indicadores.</p>
+        <button class="btn secondary" type="button" id="ovRetry">Tentar novamente</button>
+      </div>
+
       <div id="ovBody">
-        <!-- LINHA 1 — KPIs -->
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kpi-ico">📤</div><div class="kpi-label">Mensagens enviadas</div><div class="kpi-num" id="kpiEnviadas">0</div></div>
-          <div class="kpi"><div class="kpi-ico">💬</div><div class="kpi-label">Conversas</div><div class="kpi-num" id="kpiConversas">0</div><div class="kpi-sub" id="kpiConversasSub"></div></div>
-          <div class="kpi"><div class="kpi-ico">↩️</div><div class="kpi-label">Taxa de resposta</div><div class="kpi-num" id="kpiTaxa">0%</div></div>
-          <div class="kpi"><div class="kpi-ico">👥</div><div class="kpi-label">Clientes na base</div><div class="kpi-num" id="kpiClientes">0</div><div class="kpi-sub ok" id="kpiClientesSub"></div></div>
+        <!-- Indicadores principais -->
+        <div class="kpi-grid" id="kpiGrid">
+          <button class="kpi" type="button" data-go="responses">
+            <span class="kpi-ico ico-green" data-icon="messages" data-size="20"></span>
+            <span class="kpi-label">Respostas recebidas</span>
+            <span class="kpi-num" id="kpiRespostas">0</span>
+            <span class="kpi-sub" id="kpiRespostasSub">no período</span>
+          </button>
+          <button class="kpi" type="button" data-go="conversas">
+            <span class="kpi-ico ico-amber" data-icon="messages" data-size="20"></span>
+            <span class="kpi-label">Conversas no período</span>
+            <span class="kpi-num" id="kpiConversas">0</span>
+            <span class="kpi-sub" id="kpiConversasSub"></span>
+          </button>
+          <button class="kpi" type="button" data-go="followup">
+            <span class="kpi-ico ico-blue" data-icon="refresh" data-size="20"></span>
+            <span class="kpi-label">Follow-ups pendentes</span>
+            <span class="kpi-num" id="kpiFollow">0</span>
+            <span class="kpi-sub">aguardando resposta</span>
+          </button>
+          <button class="kpi" type="button" data-go="clients">
+            <span class="kpi-ico ico-blue" data-icon="users" data-size="20"></span>
+            <span class="kpi-label">Clientes na base</span>
+            <span class="kpi-num" id="kpiClientes">0</span>
+            <span class="kpi-sub ok" id="kpiClientesSub"></span>
+          </button>
         </div>
 
-        <!-- LINHA 2 — Rosca + Barras -->
-        <div class="chart-row">
-          <div class="chart-card">
-            <h4>Taxa de resposta</h4>
-            <div class="donut-wrap">
-              <canvas id="donutChart" width="180" height="180"></canvas>
-              <div class="donut-center"><span id="donutPct">0%</span></div>
+        <!-- Próximas ações -->
+        <section class="ov-block">
+          <div class="ov-block-head">
+            <h3>Próximas ações</h3>
+            <span>O que merece sua atenção agora.</span>
+          </div>
+          <div id="ovActions" class="next-actions"></div>
+        </section>
+
+        <!-- Desempenho -->
+        <section class="ov-block">
+          <div class="ov-block-head"><h3>Desempenho</h3></div>
+          <div class="chart-row">
+            <div class="chart-card">
+              <h4>Mensagens e respostas <span class="hint" style="margin:0;font-weight:400">· últimos 30 dias</span></h4>
+              <canvas id="lineChart" width="600" height="190"></canvas>
+              <div class="line-legend">
+                <span><i style="background:var(--primary)"></i> Enviadas</span>
+                <span><i style="background:var(--success)"></i> Respostas</span>
+              </div>
             </div>
-            <div class="donut-legend">
-              <span><i style="background:var(--success)"></i> Responderam <b id="legResp">0</b></span>
-              <span><i style="background:#2A3B4D"></i> Sem resposta <b id="legNo">0</b></span>
+            <div class="chart-card">
+              <h4>Taxa de resposta</h4>
+              <div class="donut-wrap">
+                <canvas id="donutChart" width="180" height="180"></canvas>
+                <div class="donut-center"><span id="donutPct">0%</span></div>
+              </div>
+              <div class="donut-legend">
+                <span><i style="background:var(--success)"></i> Responderam <b id="legResp">0</b></span>
+                <span><i style="background:var(--muted)"></i> Aguardando <b id="legNo">0</b></span>
+              </div>
             </div>
           </div>
-          <div class="chart-card">
-            <h4>Mensagens por dia da semana</h4>
-            <div id="weekChart" class="week-chart"></div>
+        </section>
+
+        <!-- Campanhas com melhor resultado -->
+        <section class="ov-block">
+          <div class="ov-block-head"><h3>Campanhas com melhor resultado</h3></div>
+          <div id="rankingList" class="ranking"></div>
+        </section>
+
+        <!-- Melhor horário / melhor dia -->
+        <div class="ov-mini-row">
+          <div class="mini-card">
+            <span class="mini-ico" data-icon="clock" data-size="18"></span>
+            <span class="mini-label">Melhor horário</span>
+            <span class="mini-value" id="melhorHora">—</span>
+            <span class="mini-sub">período com mais respostas</span>
+          </div>
+          <div class="mini-card">
+            <span class="mini-ico" data-icon="calendar" data-size="18"></span>
+            <span class="mini-label">Melhor dia</span>
+            <span class="mini-value" id="melhorDia">—</span>
+            <span class="mini-sub">dia com mais respostas</span>
           </div>
         </div>
 
-        <!-- LINHA 3 — Evolução + Funil -->
-        <div class="chart-row">
-          <div class="chart-card">
-            <h4>Evolução (últimos 30 dias)</h4>
-            <canvas id="lineChart" width="600" height="200"></canvas>
-            <div class="line-legend">
-              <span><i style="background:var(--primary-light)"></i> Enviadas</span>
-              <span><i style="background:var(--accent)"></i> Respostas</span>
-            </div>
-          </div>
-          <div class="chart-card">
-            <h4>Funil do CRM</h4>
-            <div id="funilChart" class="funil"></div>
-          </div>
-        </div>
-
-        <!-- LINHA 4 — Ranking + Melhor horário -->
-        <div class="chart-row rank-row">
-          <div class="chart-card">
-            <h4>Ranking de campanhas</h4>
-            <div id="rankingList" class="ranking"></div>
-          </div>
-          <div class="chart-card besthour-card">
-            <h4>Melhor horário</h4>
-            <div class="besthour" id="melhorHora">—</div>
-            <p class="hint" style="margin:0">de retorno dos clientes</p>
-          </div>
-        </div>
+        <!-- Funil (secundário) -->
+        <section class="ov-block">
+          <div class="ov-block-head"><h3>Funil de clientes</h3><span>Toque numa etapa para filtrar.</span></div>
+          <div id="funilChart" class="funil"></div>
+        </section>
       </div>
     </section>
 

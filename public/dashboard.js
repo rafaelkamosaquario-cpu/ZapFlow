@@ -79,42 +79,144 @@ function countUp(el, target, suffix = "") {
   requestAnimationFrame(step);
 }
 
-async function loadOverview() {
+function saudacao() {
+  const h = new Date().getHours();
+  return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+}
+
+/** Melhor dia da semana por respostas, calculado da série de 30 dias (sem inventar). */
+function melhorDiaFromSerie(serie) {
+  const dias = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const n = serie.respostas.length;
+  for (let i = 0; i < n; i++) {
+    const d = new Date(today.getTime() - (n - 1 - i) * 864e5);
+    buckets[d.getDay()] += serie.respostas[i] || 0;
+  }
+  if (!buckets.reduce((a, b) => a + b, 0)) return null;
+  let mi = 0; for (let i = 1; i < 7; i++) if (buckets[i] > buckets[mi]) mi = i;
+  return dias[mi];
+}
+
+function setWa(state, text) {
+  const el = $("#waStatus"); if (!el) return;
+  el.querySelector(".wa-dot").className = "wa-dot " + state;
+  el.querySelector(".wa-text").textContent = text;
+}
+async function checkWaStatus() {
+  if (!$("#waStatus")) return null;
+  setWa("checking", "Verificando conexão");
+  const creds = {
+    instanceId: localStorage.getItem("frota_instanceId") || "",
+    instanceToken: localStorage.getItem("frota_instanceToken") || "",
+    clientToken: localStorage.getItem("frota_clientToken") || "",
+  };
   try {
-    const data = await (await fetch("/api/dashboard?period=" + ovPeriod)).json();
+    const res = await fetch("/api/test-connection", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds),
+    });
+    const data = await res.json();
+    const st = data.status || {};
+    const connected = res.ok && (st.connected === true || st.smartphoneConnected === true || st.value === true);
+    setWa(connected ? "on" : "off", connected ? "WhatsApp conectado" : "WhatsApp desconectado");
+    return connected;
+  } catch {
+    setWa("off", "WhatsApp desconectado");
+    return false;
+  }
+}
+
+function renderActions(data, jobs, waConnected) {
+  const wrap = $("#ovActions"); if (!wrap) return;
+  const acts = [];
+  const atend = data.kpis.conversas.total;
+  const follow = data.donut.semResposta;
+  const novos = data.kpis.clientesNovos;
+  const pend = jobs.filter((j) => j.status === "pendente");
+  const falhas = jobs.filter((j) => j.status === "concluido").reduce((a, j) => a + ((j.result && j.result.failed) || 0), 0);
+
+  if (waConnected === false)
+    acts.push({ pri: 1, icon: "wifioff", tone: "warn", title: "WhatsApp desconectado", info: "Reconecte para enviar e receber mensagens.", btn: "Reconectar", href: "/" });
+  if (atend > 0)
+    acts.push({ pri: 2, icon: "messages", tone: "blue", title: `${atend} conversa(s) no período`, info: "Veja quem falou com você e responda.", btn: "Responder", go: "conversas" });
+  if (falhas > 0)
+    acts.push({ pri: 3, icon: "x", tone: "warn", title: `${falhas} mensagem(ns) com falha`, info: "Confira as campanhas para reenviar.", btn: "Ver campanhas", go: "campaigns" });
+  if (follow > 0)
+    acts.push({ pri: 4, icon: "refresh", tone: "blue", title: `${follow} contato(s) para follow-up`, info: "Reengaje quem recebeu e não respondeu.", btn: "Criar acompanhamento", go: "followup" });
+  pend.forEach((j) => acts.push({ pri: 5, icon: "calendarclock", tone: "blue", title: "Campanha agendada", info: `Para ${fmtDate(j.scheduledAt)}.`, btn: "Ver campanha", go: "campaigns" }));
+  if (novos > 0)
+    acts.push({ pri: 6, icon: "users", tone: "green", title: `${novos} novo(s) contato(s) no período`, info: "Sua base de clientes cresceu.", btn: "Ver clientes", go: "clients" });
+
+  if (!acts.length) {
+    wrap.innerHTML = `<div class="all-clear"><span class="all-clear-ico">${ZapIcons.svg("check", 22)}</span><div><b>Tudo em dia por aqui.</b><span>Você não possui ações urgentes neste momento.</span></div></div>`;
+    return;
+  }
+  acts.sort((a, b) => a.pri - b.pri);
+  wrap.innerHTML = acts.map((a, i) => `
+    <div class="action-item tone-${a.tone}">
+      <span class="action-ico">${ZapIcons.svg(a.icon, 20)}</span>
+      <div class="action-txt"><b>${escapeHtml(a.title)}</b><span>${escapeHtml(a.info)}</span></div>
+      <button class="btn secondary action-btn" data-idx="${i}">${escapeHtml(a.btn)}</button>
+    </div>`).join("");
+  $$("#ovActions .action-btn").forEach((b) => b.addEventListener("click", () => {
+    const a = acts[+b.dataset.idx];
+    if (a.href) window.location.href = a.href;
+    else if (a.go) activateView(a.go);
+  }));
+}
+
+async function loadOverview() {
+  $("#ovGreeting").textContent = saudacao();
+  $("#ovError").classList.add("hidden");
+  try {
+    const [data, sched] = await Promise.all([
+      fetch("/api/dashboard?period=" + ovPeriod).then((r) => r.json()),
+      fetch("/api/schedules").then((r) => r.json()).catch(() => ({ jobs: [] })),
+    ]);
+    const jobs = sched.jobs || [];
     const k = data.kpis;
     const semDados = !k.enviadas && !k.conversas.total && !k.clientes;
     $("#ovEmpty").classList.toggle("hidden", !semDados);
     $("#ovBody").classList.toggle("hidden", semDados);
-    if (semDados) return;
+    if (semDados) { checkWaStatus(); return; }
 
-    // LINHA 1 — KPIs (com contagem crescente)
-    countUp($("#kpiEnviadas"), k.enviadas);
+    // Indicadores
+    countUp($("#kpiRespostas"), data.donut.responderam);
     countUp($("#kpiConversas"), k.conversas.total);
     $("#kpiConversasSub").textContent = `${k.conversas.campanha} de campanha · ${k.conversas.diaadia} dia a dia`;
-    const tx = $("#kpiTaxa"); tx.style.color = rateColor(k.taxa); countUp(tx, k.taxa, "%");
+    countUp($("#kpiFollow"), data.donut.semResposta);
     countUp($("#kpiClientes"), k.clientes);
-    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} novos no período` : "";
+    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} no período` : "";
 
-    // LINHA 2 — Donut + barras
-    drawDonut($("#donutChart"), data.donut.responderam, data.donut.responderam + data.donut.semResposta, k.taxa);
-    $("#donutPct").textContent = k.taxa + "%"; $("#donutPct").style.color = rateColor(k.taxa);
+    // Desempenho
+    drawLine($("#lineChart"), data.serie30);
+    drawDonut($("#donutChart"), data.donut.responderam, data.donut.responderam + data.donut.semResposta);
+    $("#donutPct").textContent = k.taxa + "%";
+    $("#donutPct").style.color = k.taxa >= 15 ? css("--success") : css("--muted");
     $("#legResp").textContent = data.donut.responderam;
     $("#legNo").textContent = data.donut.semResposta;
-    renderWeekBars(data.weekday);
 
-    // LINHA 3 — Linha + funil
-    drawLine($("#lineChart"), data.serie30);
+    // Campanhas + mini cards + funil
+    renderRanking(data.ranking);
+    $("#melhorHora").textContent = data.melhorHora === null ? "sem dados" : String(data.melhorHora).padStart(2, "0") + "h";
+    $("#melhorDia").textContent = melhorDiaFromSerie(data.serie30) || "sem dados";
     renderFunil(data.funil);
 
-    // LINHA 4 — Ranking + melhor horário
-    renderRanking(data.ranking);
-    $("#melhorHora").textContent = data.melhorHora === null ? "—" : String(data.melhorHora).padStart(2, "0") + "h";
+    // Próximas ações (WhatsApp entra assim que o status resolver)
+    renderActions(data, jobs, null);
+    checkWaStatus().then((ok) => renderActions(data, jobs, ok));
   } catch {
-    $("#ovEmpty").classList.remove("hidden");
-    $("#ovEmpty").textContent = "Erro ao carregar o painel.";
+    $("#ovBody").classList.add("hidden");
+    $("#ovEmpty").classList.add("hidden");
+    $("#ovError").classList.remove("hidden");
   }
 }
+
+// Cliques dos indicadores / estado vazio / repetir (uma vez)
+$$("#kpiGrid .kpi").forEach((b) => b.addEventListener("click", () => b.dataset.go && activateView(b.dataset.go)));
+$$("#ovEmpty [data-go]").forEach((b) => b.addEventListener("click", () => activateView(b.dataset.go)));
+$("#ovRetry")?.addEventListener("click", loadOverview);
 
 function renderWeekBars(week) {
   const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -141,16 +243,23 @@ function renderFunil(funil) {
 }
 
 function renderRanking(list) {
-  if (!list.length) { $("#rankingList").innerHTML = "<p class='hint'>Nenhuma campanha ainda.</p>"; return; }
+  if (!list.length) {
+    $("#rankingList").innerHTML = `<div class="mini-empty">${ZapIcons.svg("megaphone", 22)}<p>Nenhuma campanha ainda. Crie a primeira para ver o desempenho aqui.</p></div>`;
+    return;
+  }
   $("#rankingList").innerHTML = list.map((r) => `
     <div class="rank-item">
       <div class="rank-info">
         <span class="rank-name">${escapeHtml(r.name)}</span>
-        <span class="rank-stats">📤 ${r.enviadas} · ↩ ${r.respostas} · <b style="color:${rateColor(r.taxa)}">${r.taxa}%</b></span>
+        <span class="rank-stats">
+          <span title="Destinatários">${r.enviadas} enviadas</span> ·
+          <span title="Respostas" style="color:var(--success)">${r.respostas} respostas</span> ·
+          <b style="color:var(--primary)">${r.taxa}%</b>
+        </span>
       </div>
-      <button class="btn ghost rank-fu" data-id="${r.id}">🔁</button>
+      <button class="btn ghost rank-ver" data-id="${r.id}" aria-label="Ver campanha">Ver</button>
     </div>`).join("");
-  $$("#rankingList .rank-fu").forEach((b) => b.addEventListener("click", () => { activateView("campaigns"); setTimeout(() => openCampaign(b.dataset.id), 150); }));
+  $$("#rankingList .rank-ver").forEach((b) => b.addEventListener("click", () => { activateView("campaigns"); setTimeout(() => openCampaign(b.dataset.id), 150); }));
 }
 
 // --- Gráficos em canvas (sem lib) ---
@@ -161,17 +270,17 @@ function fitCanvas(c) {
   const ctx = c.getContext("2d"); ctx.scale(dpr, dpr);
   return { ctx, w, h };
 }
-function drawDonut(canvas, value, total, pct) {
+function drawDonut(canvas, value, total) {
   const { ctx, w, h } = fitCanvas(canvas);
-  const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 8, lw = r * 0.32;
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 8, lw = r * 0.30;
   const frac = total ? value / total : 0;
   ctx.clearRect(0, 0, w, h);
   ctx.lineWidth = lw; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = "#2A3B4D"; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = css("--border"); ctx.stroke();
   if (frac > 0) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-    ctx.strokeStyle = rateColor(pct); ctx.stroke();
+    ctx.strokeStyle = css("--success"); ctx.stroke();
   }
 }
 function drawLine(canvas, serie) {
@@ -194,9 +303,9 @@ function drawLine(canvas, serie) {
       ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.lineJoin = "round"; ctx.stroke();
     }
   };
-  line(env, css("--primary-light"), true);
-  line(env, css("--primary-light"), false);
-  line(resp, css("--accent"), false);
+  line(env, css("--primary"), true);
+  line(env, css("--primary"), false);
+  line(resp, css("--success"), false);
 }
 
 // ---------------------------------------------------------------------------
