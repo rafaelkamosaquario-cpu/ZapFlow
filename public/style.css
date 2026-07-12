@@ -371,6 +371,29 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .dash-detail { margin-top: 12px; max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .followup-banner { max-width: 900px; margin: 14px auto 0; padding: 12px 16px; background: rgba(245,166,35,.12); border: 1px solid var(--warn); border-radius: 10px; color: var(--warn); font-size: 14px; display: flex; align-items: center; gap: 10px; }
 
+/* ---------- Fase 4: etapas da campanha ---------- */
+.stepbar { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 6px; margin-bottom: 18px; overflow-x: auto; box-shadow: var(--shadow-card); }
+.stepbar-item { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; background: transparent; border: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 9px 12px; border-radius: 9px; cursor: pointer; min-height: 40px; }
+.stepbar-item:hover { background: var(--card-2); color: var(--text); }
+.stepbar-item.active { background: var(--soft-blue); color: var(--primary); }
+.stepbar-n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--border); color: var(--text); font-size: 11px; font-weight: 800; }
+.stepbar-item.active .stepbar-n { background: var(--primary); color: #fff; }
+
+.m-preview-toggle { display: none; margin-top: 10px; }
+.m-preview { margin: 10px 0 4px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--soft-green); }
+.wa-bubble { position: relative; max-width: 340px; background: var(--card); border-radius: 10px; border-top-left-radius: 2px; padding: 8px 10px 6px; box-shadow: var(--shadow-card); }
+.wa-imgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 4px; margin-bottom: 6px; }
+.wa-imgs img { width: 100%; border-radius: 6px; max-height: 150px; object-fit: cover; }
+.wa-text { font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.wa-time { display: block; text-align: right; font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+@media (max-width: 767px) { .m-preview-toggle { display: inline-flex; } .m-preview { display: none; } .m-preview.open { display: block; } }
+
+.m-review { margin: 14px 0 10px; padding: 12px 14px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; }
+.m-review-line { margin: 0 0 8px; font-size: 13px; color: var(--text); }
+.m-review-line b { color: var(--primary); }
+.m-confirm-label { display: flex; gap: 9px; align-items: flex-start; font-weight: 500; font-size: 13px; color: var(--muted); cursor: pointer; margin: 0; }
+.m-confirm-label input { width: 18px; height: 18px; min-height: 18px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--primary); }
+
 /* Aviso flutuante (toast) ao concluir o disparo */
 .toast-host { position: fixed; top: 14px; left: 0; right: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 12px; pointer-events: none; }
 .toast {

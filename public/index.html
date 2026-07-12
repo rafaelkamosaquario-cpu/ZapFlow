@@ -37,6 +37,14 @@
   </div>
 
   <main class="container">
+    <!-- Indicador de etapas da campanha -->
+    <div class="stepbar" id="stepbar">
+      <button class="stepbar-item active" type="button" data-target="secMensagens"><span class="stepbar-n">1</span> Mensagem</button>
+      <button class="stepbar-item" type="button" data-target="secDestinatarios"><span class="stepbar-n">2</span> Destinatários</button>
+      <button class="stepbar-item" type="button" data-target="secRevisar"><span class="stepbar-n">3</span> Revisar</button>
+      <button class="stepbar-item" type="button" data-target="secEnviar"><span class="stepbar-n">4</span> Enviar</button>
+    </div>
+
     <!-- Passo 1: Credenciais -->
     <section class="card" id="connCard">
       <h2 class="collapsible" id="connHeader">
@@ -66,7 +74,7 @@
     </section>
 
     <!-- Passo 2: Mensagens (até 5, cada uma independente) -->
-    <section class="card">
+    <section class="card" id="secMensagens">
       <h2><span class="step">2</span> Mensagens</h2>
       <p class="hint">Crie até <b>5 mensagens</b>. Cada uma tem seu próprio texto, imagem e
         horário — você pode disparar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
@@ -88,7 +96,7 @@
     </section>
 
     <!-- Passo 3: Destinatários -->
-    <section class="card">
+    <section class="card" id="secDestinatarios">
       <h2><span class="step">3</span> Destinatários</h2>
       <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code>, adicione contatos
         manualmente <b>ou</b> sincronize os contatos salvos no seu chip. A planilha deve ter uma coluna de telefone
@@ -167,6 +175,15 @@
         </div>
         <div class="m-images-strip images-strip"></div>
 
+        <button class="btn ghost m-preview-toggle" type="button"><i data-icon="image" data-size="16"></i> Visualizar mensagem</button>
+        <div class="wa-preview m-preview">
+          <div class="wa-bubble">
+            <div class="wa-imgs m-prev-imgs"></div>
+            <div class="wa-text m-prev-text">Sua mensagem aparece aqui…</div>
+            <span class="wa-time">agora ✓✓</span>
+          </div>
+        </div>
+
         <label>Quando enviar?</label>
         <div class="tabs when-tabs">
           <button class="tab active" data-when="now" type="button">▶️ Enviar agora</button>
@@ -184,9 +201,17 @@
           <button class="btn ghost m-load-template" type="button"><i data-icon="template" data-size="16"></i> Modelos de mensagem</button>
         </div>
 
+        <div class="m-review">
+          <div class="m-review-line hint">Adicione destinatários no Passo 3 para revisar.</div>
+          <label class="m-confirm-label">
+            <input type="checkbox" class="m-confirm" />
+            <span>Confirmo que estes contatos possuem relacionamento comigo ou autorizaram o recebimento das mensagens.</span>
+          </label>
+        </div>
+
         <div class="row">
-          <button class="btn primary m-send" type="button" disabled>🚀 Disparar</button>
-          <button class="btn ghost m-clear" type="button">🧹 Limpar</button>
+          <button class="btn primary m-send" type="button" disabled><i data-icon="send" data-size="18"></i> Enviar campanha</button>
+          <button class="btn ghost m-clear" type="button">Limpar</button>
           <span class="m-status status"></span>
         </div>
         <div class="progress-wrap hidden m-progressWrap">

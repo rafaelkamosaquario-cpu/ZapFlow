@@ -473,8 +473,7 @@ function addMessageBlock() {
       block._whenMode = tab.dataset.when;
       $(".when-content[data-when='schedule']", block)
         .classList.toggle("hidden", tab.dataset.when !== "schedule");
-      $(".m-send", block).textContent = tab.dataset.when === "schedule"
-        ? "📅 Agendar disparo" : "🚀 Disparar";
+      updateBlockSend(block);
     });
   });
 
@@ -509,12 +508,30 @@ function addMessageBlock() {
   // Botão limpar
   $(".m-clear", block).addEventListener("click", () => clearBlock(block));
 
+  // Prévia + revisão + confirmação de uso responsável (Fase 4)
+  $(".m-message", block).addEventListener("input", () => { updatePreview(block); updateReview(block); });
+  $(".m-confirm", block).addEventListener("change", () => updateBlockSend(block));
+  $(".m-preview-toggle", block).addEventListener("click", () => $(".m-preview", block).classList.toggle("open"));
+  $(".m-scheduledAt", block).addEventListener("input", () => updateBlockSend(block));
+
   container.appendChild(block);
+  if (window.ZapIcons) ZapIcons.hydrate(block); // ícones dentro do bloco clonado
   renumberMessages();
+  updatePreview(block);
   updateSendButtons();
 }
 
 $("#btnAddMessage").addEventListener("click", addMessageBlock);
+
+// Indicador de etapas (rola até a seção correspondente)
+$$("#stepbar .stepbar-item").forEach((it) => it.addEventListener("click", () => {
+  $$("#stepbar .stepbar-item").forEach((x) => x.classList.remove("active"));
+  it.classList.add("active");
+  const t = it.dataset.target;
+  let el = document.getElementById(t);
+  if (!el) el = t === "secRevisar" ? document.querySelector(".m-review") : t === "secEnviar" ? document.querySelector(".m-send") : null;
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+}));
 
 // ---------------------------------------------------------------------------
 // Intervalo entre envios (segundos) + aviso + localStorage
@@ -531,7 +548,48 @@ function checkDelayWarning() {
 $("#delaySeconds").addEventListener("input", checkDelayWarning);
 
 function updateSendButtons() {
-  $$(".m-send", container).forEach((b) => { b.disabled = contacts.length === 0; });
+  $$(".msg-block", container).forEach((block) => updateBlockSend(block));
+}
+
+const fmtWhen = (v) => v ? new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+
+/** Rótulo dinâmico do botão + trava de confirmação + linha de revisão. */
+function updateBlockSend(block) {
+  const btn = $(".m-send", block);
+  if (!btn || block._sending) return;
+  const confirmed = !!($(".m-confirm", block) && $(".m-confirm", block).checked);
+  const n = contacts.length;
+  btn.disabled = n === 0 || !confirmed;
+  const ico = (name) => (window.ZapIcons ? ZapIcons.svg(name, 18) : "");
+  if (block._whenMode === "schedule") {
+    const q = fmtWhen($(".m-scheduledAt", block).value);
+    btn.innerHTML = ico("calendarclock") + " " + (n ? `Agendar campanha${q ? " para " + q : ""}` : "Agendar campanha");
+  } else {
+    btn.innerHTML = ico("send") + " " + (n ? `Enviar campanha para ${n} contato${n > 1 ? "s" : ""}` : "Enviar campanha");
+  }
+  updateReview(block);
+}
+
+function updateReview(block) {
+  const line = $(".m-review-line", block);
+  if (!line) return;
+  const n = contacts.length;
+  if (n === 0) { line.textContent = "Adicione destinatários no Passo 3 para revisar."; return; }
+  const imgs = (block._images || []).length;
+  const when = block._whenMode === "schedule"
+    ? ("Agendada" + (fmtWhen($(".m-scheduledAt", block).value) ? " · " + fmtWhen($(".m-scheduledAt", block).value) : ""))
+    : "Enviar agora";
+  line.innerHTML = `<b>${n}</b> destinatário(s) · ${imgs} imagem(ns) · ${when} · ${Math.round(getDelayMs() / 1000)}s entre envios`;
+}
+
+function updatePreview(block) {
+  const prev = $(".m-prev-text", block);
+  if (!prev) return;
+  const sample = ($(".m-message", block).value || "").replace(/\{\{\s*nome\s*\}\}/gi, "Cliente");
+  prev.textContent = sample || "Sua mensagem aparece aqui…";
+  const wrap = $(".m-prev-imgs", block);
+  wrap.innerHTML = (block._images || []).map((im) => `<img src="${im.data}" alt="prévia" />`).join("");
+  wrap.classList.toggle("hidden", (block._images || []).length === 0);
 }
 
 /** Renderiza a tira de miniaturas das imagens do bloco (até 3) com botão de remover. */
@@ -557,6 +615,8 @@ function renderImagesStrip(block) {
     counter.textContent = `${block._images.length}/3`;
     strip.appendChild(counter);
   }
+  updatePreview(block);
+  updateReview(block);
 }
 
 /** Limpa só o que foi escrito (texto + imagens), mantendo o log visível. */
@@ -604,9 +664,10 @@ async function handleSend(block) {
 
 async function sendNowBlock(block, message, images) {
   const num = $(".msg-num", block).textContent;
-  if (!confirm(`Disparar a Mensagem ${num} para ${contacts.length} contato(s) agora?`)) return;
+  if (!confirm(`Enviar a Mensagem ${num} para ${contacts.length} contato(s) agora?`)) return;
 
   const btn = $(".m-send", block);
+  block._sending = true;
   btn.disabled = true;
   btn.textContent = "Enviando...";
 
@@ -648,8 +709,8 @@ async function sendNowBlock(block, message, images) {
   } catch (err) {
     addLog(block, "Erro: " + err.message, false);
   } finally {
-    btn.disabled = false;
-    btn.textContent = "🚀 Disparar";
+    block._sending = false;
+    updateBlockSend(block);
   }
 }
 
@@ -670,6 +731,7 @@ async function scheduleBlock(block, message, images) {
   if (!confirm(`Agendar a Mensagem ${num} para ${contacts.length} contato(s) em ${quando}?`)) return;
 
   const btn = $(".m-send", block);
+  block._sending = true;
   btn.disabled = true;
   btn.textContent = "Agendando...";
   const status = $(".m-status", block);
@@ -696,8 +758,8 @@ async function scheduleBlock(block, message, images) {
     status.textContent = "❌ " + err.message;
     status.className = "m-status status err";
   } finally {
-    btn.disabled = false;
-    btn.textContent = "📅 Agendar disparo";
+    block._sending = false;
+    updateBlockSend(block);
   }
 }
 
