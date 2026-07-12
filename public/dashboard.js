@@ -168,12 +168,17 @@ function renderActions(data, jobs, waConnected) {
 
 async function loadOverview() {
   $("#ovGreeting").textContent = saudacao();
+  // Estado de carregamento (skeleton): esconde corpo/vazio/erro
   $("#ovError").classList.add("hidden");
+  $("#ovEmpty").classList.add("hidden");
+  $("#ovBody").classList.add("hidden");
+  $("#ovSkeleton").classList.remove("hidden");
   try {
     const [data, sched] = await Promise.all([
       fetch("/api/dashboard?period=" + ovPeriod).then((r) => r.json()),
       fetch("/api/schedules").then((r) => r.json()).catch(() => ({ jobs: [] })),
     ]);
+    $("#ovSkeleton").classList.add("hidden");
     const jobs = sched.jobs || [];
     const k = data.kpis;
     const semDados = !k.enviadas && !k.conversas.total && !k.clientes;
@@ -207,6 +212,7 @@ async function loadOverview() {
     renderActions(data, jobs, null);
     checkWaStatus().then((ok) => renderActions(data, jobs, ok));
   } catch {
+    $("#ovSkeleton").classList.add("hidden");
     $("#ovBody").classList.add("hidden");
     $("#ovEmpty").classList.add("hidden");
     $("#ovError").classList.remove("hidden");

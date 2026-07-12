@@ -1027,6 +1027,7 @@ app.get("/api/dashboard", (req, res) => {
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   let from;
   if (period === "7d") { const t = new Date(dayStart); t.setDate(t.getDate() - 6); from = t.getTime(); }
+  else if (period === "30d") { const t = new Date(dayStart); t.setDate(t.getDate() - 29); from = t.getTime(); }
   else if (period === "mes") from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   else from = dayStart;
 

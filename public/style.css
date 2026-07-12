@@ -529,6 +529,22 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .ov-empty-benefits li { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .ov-empty-benefits svg { color: var(--primary); }
 
+/* Skeleton de carregamento */
+.ov-skel { display: flex; flex-direction: column; gap: 16px; }
+.ov-skel-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ov-skel-charts { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.skel { background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; position: relative; overflow: hidden; }
+.skel::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 6%, transparent), transparent); animation: skel 1.2s infinite; }
+.skel-card { height: 118px; }
+.skel-line { height: 56px; }
+.skel-chart { height: 220px; }
+@keyframes skel { 100% { transform: translateX(100%); } }
+@media (min-width: 1024px) {
+  .ov-skel-kpis { grid-template-columns: repeat(4, 1fr); }
+  .ov-skel-charts { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
+
 /* Erro do dashboard */
 .ov-error { background: var(--soft-red); border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 12px; padding: 20px; text-align: center; }
 .ov-error p { margin: 0 0 12px; color: var(--text); font-weight: 600; }
