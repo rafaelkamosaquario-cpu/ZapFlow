@@ -371,6 +371,22 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .dash-detail { margin-top: 12px; max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .followup-banner { max-width: 900px; margin: 14px auto 0; padding: 12px 16px; background: rgba(245,166,35,.12); border: 1px solid var(--warn); border-radius: 10px; color: var(--warn); font-size: 14px; display: flex; align-items: center; gap: 10px; }
 
+/* Wizard de campanha (etapas) */
+.wiz-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.wiz-nav .wiz-next, .wiz-nav #wizSend { margin-left: auto; }
+.wiz-summary { display: grid; gap: 8px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 10px 0; }
+.wiz-summary .row-item { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.wiz-summary .row-item span { color: var(--muted); }
+.wiz-summary .row-item b { color: var(--text); }
+.wiz-preview-box { margin: 8px 0; }
+.wiz-result { background: var(--soft-green); border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border)); border-radius: 12px; padding: 20px; text-align: center; }
+.wiz-result h3 { margin: 0 0 6px; font-size: 18px; }
+.wiz-result p { margin: 0; color: var(--text); }
+.wiz-result-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+.wiz-result-actions .btn { text-decoration: none; }
+/* No modo wizard, o envio fica centralizado na etapa Revisar */
+.msg-block .m-review, .msg-block .m-send { display: none; }
+
 /* Card de status da conexão (credenciais ficam no modal Configurar) */
 .conn-card { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .conn-card .wa-dot { width: 11px; height: 11px; }

@@ -82,11 +82,11 @@
       </div>
     </div>
 
-    <!-- Passo 2: Mensagens (até 5, cada uma independente) -->
-    <section class="card" id="secMensagens">
-      <h2><span class="step">2</span> Mensagens</h2>
-      <p class="hint">Crie até <b>5 mensagens</b>. Cada uma tem seu próprio texto, imagem e
-        horário — você pode enviar a Mensagem 1 agora e agendar a Mensagem 2 para mais tarde.</p>
+    <!-- Etapa 1: Mensagem -->
+    <section class="card wizard-step" id="secMensagens">
+      <h2><span class="step">1</span> Crie sua mensagem</h2>
+      <p class="hint">Escreva uma mensagem personalizada ou use um modelo. Você pode criar até <b>5 mensagens</b>
+        — enviar a primeira agora e agendar as próximas.</p>
 
       <div class="row">
         <label class="inline">Aguardar entre cada mensagem
@@ -102,11 +102,15 @@
       <div id="messagesContainer"></div>
 
       <button class="btn secondary" id="btnAddMessage" type="button">Adicionar mensagem</button>
+
+      <div class="wiz-nav">
+        <button class="btn primary wiz-next" type="button" data-next="secDestinatarios">Continuar para destinatários <i data-icon="chevronright" data-size="18"></i></button>
+      </div>
     </section>
 
-    <!-- Passo 3: Destinatários -->
-    <section class="card" id="secDestinatarios">
-      <h2><span class="step">3</span> Destinatários</h2>
+    <!-- Etapa 2: Destinatários -->
+    <section class="card wizard-step hidden" id="secDestinatarios">
+      <h2><span class="step">2</span> Escolha quem receberá</h2>
       <p class="hint">Envie um arquivo <code>.xlsx</code> ou <code>.csv</code>, adicione contatos
         manualmente <b>ou</b> sincronize os contatos salvos no seu chip. A planilha deve ter uma coluna de telefone
         (aceita <em>Telefone</em>, <em>Celular</em>, <em>WhatsApp</em>, <em>Número</em>...) e, opcionalmente, uma coluna <em>Nome</em>.</p>
@@ -148,6 +152,46 @@
           <thead><tr><th>#</th><th>Nome</th><th>Número (normalizado)</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div class="wiz-nav">
+        <button class="btn ghost wiz-back" type="button" data-back="secMensagens"><i data-icon="chevronleft" data-size="18"></i> Voltar</button>
+        <button class="btn primary wiz-next" type="button" data-next="secRevisar">Continuar para revisão <i data-icon="chevronright" data-size="18"></i></button>
+      </div>
+    </section>
+
+    <!-- Etapa 3: Revisar -->
+    <section class="card wizard-step hidden" id="secRevisar">
+      <h2><span class="step">3</span> Revise sua campanha</h2>
+      <p class="hint">Confira as informações antes de confirmar.</p>
+
+      <label>Nome da campanha
+        <input type="text" id="campaignName" placeholder="Ex.: Promoção de julho" maxlength="60" />
+      </label>
+
+      <div id="wizSummary" class="wiz-summary"></div>
+
+      <div id="wizPreview" class="wiz-preview-box"></div>
+
+      <div class="m-review" style="margin-top:16px">
+        <label class="m-confirm-label">
+          <input type="checkbox" id="wizConfirm" />
+          <span>Confirmo que estes contatos possuem relacionamento com a empresa ou autorizaram o recebimento destas mensagens.</span>
+        </label>
+        <p class="hint" style="margin:8px 0 0">Envie conteúdo relevante, identifique sua empresa e respeite pedidos de descadastramento.</p>
+      </div>
+
+      <div id="wizStatus" class="status" style="display:block;margin-top:6px"></div>
+      <div class="progress-wrap hidden" id="wizProgressWrap">
+        <div class="progress"><div class="progress-bar" id="wizProgressBar"></div></div>
+        <p id="wizProgressText"></p>
+      </div>
+
+      <div id="wizResult" class="wiz-result hidden"></div>
+
+      <div class="wiz-nav" id="wizSendNav">
+        <button class="btn ghost wiz-back" type="button" data-back="secDestinatarios"><i data-icon="chevronleft" data-size="18"></i> Voltar</button>
+        <button class="btn primary" id="wizSend" type="button" disabled><i data-icon="send" data-size="18"></i> Enviar campanha</button>
       </div>
     </section>
 

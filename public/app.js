@@ -510,15 +510,144 @@ function addMessageBlock() {
 
 $("#btnAddMessage").addEventListener("click", addMessageBlock);
 
-// Indicador de etapas (rola até a seção correspondente)
-$$("#stepbar .stepbar-item").forEach((it) => it.addEventListener("click", () => {
-  $$("#stepbar .stepbar-item").forEach((x) => x.classList.remove("active"));
-  it.classList.add("active");
-  const t = it.dataset.target;
-  let el = document.getElementById(t);
-  if (!el) el = t === "secRevisar" ? document.querySelector(".m-review") : t === "secEnviar" ? document.querySelector(".m-send") : null;
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+// ---------------------------------------------------------------------------
+// Wizard de campanha (Mensagem → Destinatários → Revisar → Enviar)
+// ---------------------------------------------------------------------------
+const WIZ_STEPS = ["secMensagens", "secDestinatarios", "secRevisar"];
+
+function contentBlocks() {
+  return $$(".msg-block", container).filter((b) => {
+    const { message, images } = readBlock(b);
+    return message || images.length;
+  });
+}
+
+function showStep(id) {
+  if (id === "secEnviar") id = "secRevisar";
+  if (!WIZ_STEPS.includes(id)) return;
+  $$(".wizard-step").forEach((s) => s.classList.toggle("hidden", s.id !== id));
+  $$("#stepbar .stepbar-item").forEach((it) => it.classList.toggle("active", it.dataset.target === id || (id === "secRevisar" && it.dataset.target === "secEnviar")));
+  if (id === "secRevisar") populateReview();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function canLeave(from) {
+  if (from === "secMensagens" && !contentBlocks().length) {
+    alert("Escreva ao menos uma mensagem (texto ou imagem) para continuar.");
+    return false;
+  }
+  if (from === "secDestinatarios" && contacts.length === 0) {
+    alert("Adicione ao menos um destinatário para continuar.");
+    return false;
+  }
+  return true;
+}
+
+$$(".wiz-next").forEach((b) => b.addEventListener("click", () => {
+  const cur = b.closest(".wizard-step").id;
+  if (canLeave(cur)) showStep(b.dataset.next);
 }));
+$$(".wiz-back").forEach((b) => b.addEventListener("click", () => showStep(b.dataset.back)));
+$$("#stepbar .stepbar-item").forEach((it) => it.addEventListener("click", () => showStep(it.dataset.target)));
+
+function populateReview() {
+  const blocks = contentBlocks();
+  const totalImgs = blocks.reduce((a, b) => a + (b._images || []).length, 0);
+  const anySchedule = blocks.some((b) => b._whenMode === "schedule");
+  const nome = $("#campaignName").value.trim();
+  $("#wizSummary").innerHTML = `
+    <div class="row-item"><span>Nome da campanha</span><b>${nome ? escapeHtml(nome) : "—"}</b></div>
+    <div class="row-item"><span>Destinatários</span><b>${contacts.length}</b></div>
+    <div class="row-item"><span>Mensagens</span><b>${blocks.length}</b></div>
+    <div class="row-item"><span>Imagens</span><b>${totalImgs}</b></div>
+    <div class="row-item"><span>Envio</span><b>${anySchedule ? "Inclui agendamento" : "Imediato"}</b></div>
+    <div class="row-item"><span>Intervalo</span><b>${Math.round(getDelayMs() / 1000)}s entre contatos</b></div>`;
+  const first = blocks[0];
+  if (first) {
+    const txt = ($(".m-message", first).value || "").replace(/\{\{\s*nome\s*\}\}/gi, "Rafael");
+    const imgs = (first._images || []).map((im) => `<img src="${im.data}" alt="prévia" />`).join("");
+    $("#wizPreview").innerHTML = `<div class="m-preview" style="display:block"><div class="wa-bubble">${imgs ? `<div class="wa-imgs">${imgs}</div>` : ""}<div class="wa-text">${escapeHtml(txt) || "(sem texto)"}</div><span class="wa-time">agora ✓✓</span></div></div>`;
+  } else $("#wizPreview").innerHTML = "";
+  updateWizSend(blocks, anySchedule);
+}
+
+function updateWizSend(blocks, anySchedule) {
+  const btn = $("#wizSend"); if (!btn) return;
+  const n = contacts.length;
+  btn.disabled = !$("#wizConfirm").checked || n === 0 || !blocks.length;
+  const ico = window.ZapIcons ? ZapIcons.svg(anySchedule ? "calendarclock" : "send", 18) : "";
+  btn.innerHTML = ico + " " + (anySchedule ? "Agendar campanha" : `Enviar campanha para ${n} contato${n > 1 ? "s" : ""}`);
+}
+
+$("#campaignName")?.addEventListener("input", () => { if (!$("#secRevisar").classList.contains("hidden")) populateReview(); });
+$("#wizConfirm")?.addEventListener("change", () => populateReview());
+$("#wizSend")?.addEventListener("click", handleSendAll);
+
+async function handleSendAll() {
+  if (!$("#wizConfirm").checked || contacts.length === 0) return;
+  const blocks = contentBlocks();
+  if (!blocks.length) { showStep("secMensagens"); return; }
+  if (!confirm(`Confirmar campanha para ${contacts.length} contato(s)?`)) return;
+
+  const btn = $("#wizSend"); btn.disabled = true; btn.textContent = "Enviando…";
+  $("#wizProgressWrap").classList.remove("hidden");
+  const bar = $("#wizProgressBar"), ptext = $("#wizProgressText");
+  const name = $("#campaignName").value.trim();
+  let sent = 0, failed = 0, scheduled = 0;
+  try {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const { message, images } = readBlock(block);
+      ptext.textContent = `Mensagem ${i + 1} de ${blocks.length}…`;
+      if (block._whenMode === "schedule") {
+        const at = new Date($(".m-scheduledAt", block).value).getTime();
+        const res = await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...getCredentials(), contacts, message, images, delayMs: getDelayMs(), scheduledAt: at, name }) });
+        if (res.ok) scheduled++;
+      } else {
+        const res = await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...getCredentials(), contacts, message, images, delayMs: getDelayMs(), name }) });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Falha ao enviar."); }
+        const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
+        while (true) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const evt = JSON.parse(line);
+            if (evt.done) { sent += evt.success || 0; failed += evt.failed || 0; }
+            else { bar.style.width = Math.round(((evt.index + 1) / contacts.length) * 100) + "%"; }
+          }
+        }
+      }
+      bar.style.width = Math.round(((i + 1) / blocks.length) * 100) + "%";
+    }
+    loadSchedules();
+    notifyDisparoDone(sent, failed, sent + failed);
+    showWizResult({ sent, failed, scheduled, name });
+  } catch (err) {
+    $("#wizStatus").textContent = "❌ " + err.message;
+    $("#wizStatus").className = "status err";
+    btn.disabled = false;
+    populateReview();
+  }
+}
+
+function showWizResult({ sent, failed, scheduled, name }) {
+  $("#wizSendNav").classList.add("hidden");
+  $("#wizProgressWrap").classList.add("hidden");
+  $("#wizStatus").textContent = "";
+  const box = $("#wizResult"); box.classList.remove("hidden");
+  const titulo = scheduled && !sent ? "Campanha agendada" : "Campanha enviada";
+  box.innerHTML = `
+    <h3>${titulo}</h3>
+    <p>${name ? "“" + escapeHtml(name) + "” · " : ""}${sent} enviada(s)${failed ? ` · ${failed} falha(s)` : ""}${scheduled ? ` · ${scheduled} agendada(s)` : ""}.</p>
+    <div class="wiz-result-actions">
+      <a class="btn secondary" href="dashboard.html?view=campaigns">Ver campanhas</a>
+      <a class="btn secondary" href="dashboard.html?view=responses">Acompanhar respostas</a>
+      <button class="btn primary" type="button" id="wizNewCampaign">Criar nova campanha</button>
+    </div>`;
+  $("#wizNewCampaign").addEventListener("click", () => location.reload());
+}
 
 // ---------------------------------------------------------------------------
 // Intervalo entre envios (segundos) + aviso + localStorage
