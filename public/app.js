@@ -960,7 +960,7 @@ function renderSchedules(list) {
   empty.classList.toggle("hidden", list.length > 0);
   wrap.innerHTML = "";
 
-  for (const job of list) {
+  for (const job of list.slice(0, 3)) {
     const st = statusLabel(job);
     const quando = new Date(job.scheduledAt).toLocaleString("pt-BR");
     const icon = "";
@@ -988,6 +988,15 @@ function renderSchedules(list) {
       </div>
       <div class="sched-detail hidden" data-detail="${job.id}"></div>`;
     wrap.appendChild(div);
+  }
+
+  if (list.length > 3) {
+    const link = document.createElement("a");
+    link.className = "btn ghost sched-all";
+    link.href = "dashboard.html?view=campaigns";
+    link.style.marginTop = "10px";
+    link.textContent = `Ver todas as campanhas (${list.length})`;
+    wrap.appendChild(link);
   }
 
   wrap.querySelectorAll(".btn-cancel").forEach((b) => {

@@ -371,6 +371,9 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .dash-detail { margin-top: 12px; max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .followup-banner { max-width: 900px; margin: 14px auto 0; padding: 12px 16px; background: rgba(245,166,35,.12); border: 1px solid var(--warn); border-radius: 10px; color: var(--warn); font-size: 14px; display: flex; align-items: center; gap: 10px; }
 
+.chip-btn { display: inline-flex; align-items: center; gap: 5px; }
+.file-btn { cursor: pointer; display: inline-flex; }
+
 /* Wizard de campanha (etapas) */
 .wiz-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .wiz-nav .wiz-next, .wiz-nav #wizSend { margin-left: auto; }

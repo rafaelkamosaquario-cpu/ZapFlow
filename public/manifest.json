@@ -1,13 +1,13 @@
 {
   "name": "ZapFlow",
   "short_name": "ZapFlow",
-  "description": "Disparo de mensagens de texto e imagem via Z-API",
+  "description": "Central de relacionamento e campanhas no WhatsApp",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0d1117",
-  "theme_color": "#25D366",
+  "background_color": "#172033",
+  "theme_color": "#1D4ED8",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

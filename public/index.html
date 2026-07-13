@@ -20,7 +20,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <img src="zappy.svg" alt="Zappy" class="logo-img" />
+      <img src="logo.svg" alt="ZapFlow" class="logo-img" />
       <div>
         <h1>Zap<span class="brand-accent">Flow</span></h1>
         <p>Sua central de relacionamento no WhatsApp</p>
@@ -41,8 +41,7 @@
     <div class="stepbar" id="stepbar">
       <button class="stepbar-item active" type="button" data-target="secMensagens"><span class="stepbar-n">1</span> Mensagem</button>
       <button class="stepbar-item" type="button" data-target="secDestinatarios"><span class="stepbar-n">2</span> Destinatários</button>
-      <button class="stepbar-item" type="button" data-target="secRevisar"><span class="stepbar-n">3</span> Revisar</button>
-      <button class="stepbar-item" type="button" data-target="secEnviar"><span class="stepbar-n">4</span> Enviar</button>
+      <button class="stepbar-item" type="button" data-target="secRevisar"><span class="stepbar-n">3</span> Revisar e enviar</button>
     </div>
 
     <!-- Status da conexão (credenciais ficam em Configurar) -->
@@ -220,10 +219,10 @@
 
         <div class="msg-toolbar">
           <label style="margin:0">Texto da mensagem</label>
-          <button class="chip-btn m-insert-name" type="button" title="Inserir nome do contato">+ nome</button>
+          <button class="chip-btn m-insert-name" type="button" title="Inserir nome do contato"><i data-icon="userplus" data-size="16"></i> Inserir nome</button>
         </div>
         <textarea class="m-message" rows="4" placeholder="Olá {{nome}}, tudo bem? ..."></textarea>
-        <p class="hint">Use o botão <b>+ nome</b> (ou digite <code>{{nome}}</code>) para inserir o nome do contato.</p>
+        <p class="hint">O campo <code>{{nome}}</code> será substituído automaticamente pelo nome de cada contato.</p>
 
         <label>Imagens (até 3, opcional)</label>
         <div class="tabs img-tabs">
@@ -231,8 +230,10 @@
           <button class="tab" data-tab="url" type="button">URL</button>
         </div>
         <div class="tab-content" data-tab="upload">
-          <input type="file" class="m-imageFile" accept="image/*" multiple />
-          <p class="hint">Toque para escolher até <b>3 fotos</b> da galeria ou tirar na hora.</p>
+          <label class="btn secondary file-btn"><i data-icon="imageplus" data-size="18"></i> Adicionar imagens
+            <input type="file" class="m-imageFile" accept="image/*" multiple hidden />
+          </label>
+          <p class="hint">Selecione até <b>3 imagens</b> da galeria ou tire uma foto.</p>
         </div>
         <div class="tab-content hidden" data-tab="url">
           <div class="url-row">

@@ -245,11 +245,18 @@ async function loadOverview() {
 
     // Desempenho
     drawLine($("#lineChart"), data.serie30);
-    drawDonut($("#donutChart"), data.donut.responderam, data.donut.responderam + data.donut.semResposta);
-    $("#donutPct").textContent = k.taxa + "%";
-    $("#donutPct").style.color = k.taxa >= 15 ? css("--success") : css("--muted");
-    $("#legResp").textContent = data.donut.responderam;
-    $("#legNo").textContent = data.donut.semResposta;
+    // Taxa de resposta só faz sentido com envios de campanha no período.
+    // Sem base válida, evita números contraditórios (ex.: 1 resposta e 0%).
+    const temBaseTaxa = k.enviadas > 0;
+    $("#donutArea").hidden = !temBaseTaxa;
+    $("#donutNote").hidden = temBaseTaxa;
+    if (temBaseTaxa) {
+      drawDonut($("#donutChart"), data.donut.responderam, data.donut.responderam + data.donut.semResposta);
+      $("#donutPct").textContent = k.taxa + "%";
+      $("#donutPct").style.color = k.taxa >= 15 ? css("--success") : css("--muted");
+      $("#legResp").textContent = data.donut.responderam;
+      $("#legNo").textContent = data.donut.semResposta;
+    }
 
     // Campanhas + mini cards + funil
     renderRanking(data.ranking);
