@@ -141,11 +141,11 @@ function addManualContact() {
   const err = $("#manualError");
   const phone = normalizePhone(phoneEl.value);
   if (!phone) {
-    err.textContent = "⚠️ Telefone inválido. Inclua o DDD (ex.: 11 99999-8888).";
+    err.textContent = "Telefone inválido. Inclua o DDD (ex.: 11 99999-8888).";
     return;
   }
   if (contacts.some((c) => c.phone === phone)) {
-    err.textContent = "⚠️ Esse número já está na lista.";
+    err.textContent = "Esse número já está na lista.";
     return;
   }
   err.textContent = "";
@@ -163,7 +163,7 @@ if (btnSyncChip) {
     const status = $("#syncChipStatus");
     btnSyncChip.disabled = true;
     status.className = "status";
-    status.textContent = "🔄 Sincronizando...";
+    status.textContent = "Sincronizando…";
     try {
       const res = await fetch("/api/agenda/sync-chip", {
         method: "POST",
@@ -186,10 +186,10 @@ if (btnSyncChip) {
       });
       rebuildContacts();
       status.className = "status ok";
-      status.textContent = `✅ ${data.imported} do chip · ${added} adicionado(s) à lista`;
+      status.textContent = `${data.imported} do chip · ${added} adicionado(s) à lista`;
     } catch (err) {
       status.className = "status err";
-      status.textContent = "❌ " + err.message;
+      status.textContent = err.message;
     } finally {
       btnSyncChip.disabled = false;
     }
@@ -237,17 +237,17 @@ async function loadSavedContacts() {
       div.style.cursor = "default";
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="resp-phone">📇 ${escapeHtml(c.name || "(sem nome)")}</span>
-          <button class="btn ghost saved-add ${inList ? "in-cart" : ""}" type="button">${inList ? "✓ Inserido" : "➕ Inserir"}</button>
+          <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
+          <button class="btn ghost saved-add ${inList ? "in-cart" : ""}" type="button">${inList ? "Inserido" : "Inserir"}</button>
         </div>
-        <div class="dash-card-body"><span>📱 ${escapeHtml(c.phone)}</span></div>`;
+        <div class="dash-card-body"><span>${escapeHtml(c.phone)}</span></div>`;
       div.querySelector(".saved-add").addEventListener("click", (e) => {
         const btn = e.currentTarget;
         const idx = manualContacts.findIndex((x) => x.phone === phone);
         if (idx >= 0) {
           manualContacts.splice(idx, 1);
           btn.classList.remove("in-cart");
-          btn.textContent = "➕ Inserir";
+          btn.textContent = "Inserir";
         } else {
           if (!contacts.some((x) => x.phone === phone)) {
             manualContacts.push({ phone, name: c.name || "", rawPhone: String(c.phone || ""), manual: true });
@@ -583,11 +583,26 @@ $("#campaignName")?.addEventListener("input", () => { if (!$("#secRevisar").clas
 $("#wizConfirm")?.addEventListener("change", () => populateReview());
 $("#wizSend")?.addEventListener("click", handleSendAll);
 
+function confirmModal(title, body) {
+  return new Promise((resolve) => {
+    $("#confirmTitle").textContent = title;
+    $("#confirmBody").textContent = body;
+    openModal("confirmModal");
+    const ok = $("#confirmOk"), cancel = $("#confirmCancel");
+    const done = (val) => { closeModal("confirmModal"); ok.onclick = null; cancel.onclick = null; resolve(val); };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+  });
+}
+
 async function handleSendAll() {
   if (!$("#wizConfirm").checked || contacts.length === 0) return;
   const blocks = contentBlocks();
   if (!blocks.length) { showStep("secMensagens"); return; }
-  if (!confirm(`Confirmar campanha para ${contacts.length} contato(s)?`)) return;
+  const nome = $("#campaignName").value.trim();
+  const anySchedule = blocks.some((b) => b._whenMode === "schedule");
+  const resumo = `${nome ? "“" + nome + "” · " : ""}${blocks.length} mensagem(ns) para ${contacts.length} contato(s)` + (anySchedule ? " (inclui agendamento)." : ".");
+  if (!(await confirmModal(anySchedule ? "Confirmar agendamento?" : "Confirmar campanha?", resumo))) return;
 
   const btn = $("#wizSend"); btn.disabled = true; btn.textContent = "Enviando…";
   $("#wizProgressWrap").classList.remove("hidden");
@@ -625,7 +640,7 @@ async function handleSendAll() {
     notifyDisparoDone(sent, failed, sent + failed);
     showWizResult({ sent, failed, scheduled, name });
   } catch (err) {
-    $("#wizStatus").textContent = "❌ " + err.message;
+    $("#wizStatus").textContent = err.message;
     $("#wizStatus").className = "status err";
     btn.disabled = false;
     populateReview();
@@ -806,7 +821,7 @@ async function sendNowBlock(block, message, images) {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Falha ao iniciar o disparo.");
+      throw new Error(data.error || "Falha ao iniciar o envio.");
     }
 
     const reader = res.body.getReader();
@@ -867,11 +882,11 @@ async function scheduleBlock(block, message, images) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha ao agendar.");
-    status.textContent = `✅ Agendada para ${quando}`;
+    status.textContent = `Agendada para ${quando}`;
     status.className = "m-status status ok";
     loadSchedules();
   } catch (err) {
-    status.textContent = "❌ " + err.message;
+    status.textContent = err.message;
     status.className = "m-status status err";
   } finally {
     block._sending = false;
@@ -896,9 +911,9 @@ function handleProgress(block, evt) {
 
   const name = evt.contact?.name || evt.contact?.phone || "?";
   if (evt.ok) {
-    addLog(block, `✅ ${name} (${evt.contact.phone}) — enviado`, true);
+    addLog(block, `${name} (${evt.contact.phone}) — enviado`, true);
   } else {
-    addLog(block, `❌ ${name} (${evt.contact?.phone || evt.contact?.rawPhone}) — ${evt.error}`, false);
+    addLog(block, `${name} (${evt.contact?.phone || evt.contact?.rawPhone}) — ${evt.error}`, false);
   }
 }
 
@@ -919,11 +934,11 @@ function addLog(block, text, ok) {
 // Agendamentos (lista)
 // ---------------------------------------------------------------------------
 const STATUS_LABELS = {
-  pendente: { txt: "⏳ Pendente", cls: "pend" },
-  enviando: { txt: "📤 Enviando...", cls: "sending" },
-  concluido: { txt: "✅ Concluído", cls: "ok" },
-  erro: { txt: "❌ Erro", cls: "err" },
-  cancelado: { txt: "🚫 Cancelado", cls: "cancel" },
+  pendente: { txt: "Pendente", cls: "pend" },
+  enviando: { txt: "Enviando…", cls: "sending" },
+  concluido: { txt: "Concluído", cls: "ok" },
+  erro: { txt: "Erro", cls: "err" },
+  cancelado: { txt: "Cancelado", cls: "cancel" },
 };
 
 async function loadSchedules() {
@@ -935,7 +950,7 @@ async function loadSchedules() {
 }
 
 function statusLabel(job) {
-  if (job.immediate && job.status === "concluido") return { txt: "✅ Enviada", cls: "ok" };
+  if (job.immediate && job.status === "concluido") return { txt: "Enviada", cls: "ok" };
   return STATUS_LABELS[job.status] || { txt: job.status, cls: "" };
 }
 
@@ -948,7 +963,7 @@ function renderSchedules(list) {
   for (const job of list) {
     const st = statusLabel(job);
     const quando = new Date(job.scheduledAt).toLocaleString("pt-BR");
-    const icon = job.status === "pendente" ? "📅" : "🕒";
+    const icon = "";
     const preview = (job.message || (job.hasImage ? "[imagem]" : "")).slice(0, 60);
     const result = job.result
       ? `<small>${job.result.success} enviada(s), ${job.result.failed} falha(s)</small>`
@@ -966,7 +981,7 @@ function renderSchedules(list) {
         ${cancelBtn}
       </div>
       <div class="sched-body">
-        <span>${job.contactsCount} contato(s)${job.hasImage ? ` · 🖼️ ${job.imageCount > 1 ? job.imageCount + " imagens" : "imagem"}` : ""}</span>
+        <span>${job.contactsCount} contato(s)${job.hasImage ? ` · ${job.imageCount > 1 ? job.imageCount + " imagens" : "imagem"}` : ""}</span>
         ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}${preview.length >= 60 ? "..." : ""}"</span>` : ""}
         ${result}
         <a class="sched-detail-link" data-id="${job.id}">▸ ver números</a>
@@ -1010,8 +1025,8 @@ async function toggleDetail(link) {
     }
     box.innerHTML = logs.map((l) => {
       const nome = l.name ? escapeHtml(l.name) + " — " : "";
-      const status = l.ok ? '<span class="d-ok">✅</span>' : `<span class="d-err">❌ ${escapeHtml(l.error || "")}</span>`;
-      const replied = l.replied ? ' <span class="d-replied">↩ respondeu</span>' : "";
+      const status = l.ok ? '<span class="d-ok">OK</span>' : `<span class="d-err">${escapeHtml(l.error || "")}</span>`;
+      const replied = l.replied ? ' <span class="d-replied">respondeu</span>' : "";
       return `<div class="d-line">${status} ${nome}${escapeHtml(l.phone || "")}${replied}</div>`;
     }).join("");
   } catch {
@@ -1104,7 +1119,7 @@ function renderTemplates(list) {
     const preview = (t.message || (urls.length ? "[imagem]" : "")).slice(0, 80);
     div.innerHTML = `
       <div class="t-name">${escapeHtml(t.name)}</div>
-      <div class="t-preview">${escapeHtml(preview)}${urls.length ? ` · 🖼️ ${urls.length}` : ""}</div>
+      <div class="t-preview">${escapeHtml(preview)}${urls.length ? ` · ${urls.length} img` : ""}</div>
       <div class="t-actions">
         <button class="btn primary t-load" data-id="${t.id}">Usar</button>
         <button class="btn ghost t-del" data-id="${t.id}">Excluir</button>
@@ -1216,7 +1231,7 @@ function showToast(title, body, kind = "ok", timeout = 6000) {
   const el = document.createElement("div");
   el.className = "toast toast-" + kind;
   el.innerHTML = `
-    <div class="toast-ico">${kind === "err" ? "⚠️" : "✅"}</div>
+    <div class="toast-ico">${kind === "err" ? "!" : "✓"}</div>
     <div class="toast-txt">
       <b>${escapeHtml(title)}</b>
       <span>${escapeHtml(body)}</span>
@@ -1237,7 +1252,7 @@ function showToast(title, body, kind = "ok", timeout = 6000) {
 function notifyDisparoDone(success, failed, total) {
   const ok = Number(success) || 0;
   const fail = Number(failed) || 0;
-  const title = fail ? "Disparo concluído com avisos" : "Disparo concluído! 🚀";
+  const title = fail ? "Campanha concluída com avisos" : "Campanha concluída";
   const body = `${ok} enviada(s)` + (fail ? ` · ${fail} falha(s)` : "") + ` de ${total} contato(s).`;
   showToast(title, body, fail ? "err" : "ok", 8000);
 
@@ -1267,7 +1282,7 @@ function applyLoadedTemplate() {
     $(".m-message", block).value = t.message || "";
     block._images = templateUrls(t).slice(0, 3).map((url) => ({ kind: "url", data: url }));
     renderImagesStrip(block);
-    showToast("Modelo carregado 💾", `"${t.name || "modelo"}" pronto. Escolha os contatos e dispare.`, "ok", 6000);
+    showToast("Modelo carregado", `"${t.name || "modelo"}" pronto. Escolha os contatos e envie.`, "ok", 6000);
   } catch { /* ignore */ }
 }
 

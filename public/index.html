@@ -82,6 +82,21 @@
       </div>
     </div>
 
+    <!-- Modal: confirmar campanha -->
+    <div class="modal hidden" id="confirmModal">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h3 id="confirmTitle">Confirmar campanha?</h3>
+          <button class="modal-close" data-close="confirmModal" type="button" aria-label="Fechar">✕</button>
+        </div>
+        <p id="confirmBody" class="hint"></p>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button class="btn ghost" id="confirmCancel" type="button">Voltar e revisar</button>
+          <button class="btn primary" id="confirmOk" type="button">Confirmar envio</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Etapa 1: Mensagem -->
     <section class="card wizard-step" id="secMensagens">
       <h2><span class="step">1</span> Crie sua mensagem</h2>

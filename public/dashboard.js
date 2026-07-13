@@ -18,14 +18,14 @@ function escapeHtml(str) {
 const fmtDate = (ts) => new Date(ts).toLocaleString("pt-BR");
 
 const STATUS = {
-  pendente: { txt: "⏳ Pendente", cls: "pend" },
-  enviando: { txt: "📤 Enviando", cls: "sending" },
-  concluido: { txt: "✅ Concluído", cls: "ok" },
-  erro: { txt: "❌ Erro", cls: "err" },
-  cancelado: { txt: "🚫 Cancelado", cls: "cancel" },
+  pendente: { txt: "Pendente", cls: "pend" },
+  enviando: { txt: "Enviando", cls: "sending" },
+  concluido: { txt: "Concluído", cls: "ok" },
+  erro: { txt: "Erro", cls: "err" },
+  cancelado: { txt: "Cancelado", cls: "cancel" },
 };
 const statusOf = (job) =>
-  (job.immediate && job.status === "concluido") ? { txt: "✅ Enviada", cls: "ok" } : (STATUS[job.status] || { txt: job.status, cls: "" });
+  (job.immediate && job.status === "concluido") ? { txt: "Enviada", cls: "ok" } : (STATUS[job.status] || { txt: job.status, cls: "" });
 
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
@@ -418,17 +418,17 @@ function clientCard(c) {
   const div = document.createElement("div");
   div.className = "dash-card " + (STAGE_CLS[c.stage] || "");
   const tags = (c.tags || []).map((t) => `<span class="badge manual">${escapeHtml(t)}</span>`).join(" ");
-  const last = c.lastReplyAt ? `↩ respondeu ${fmtDate(c.lastReplyAt)}`
-    : c.lastSentAt ? `📤 enviado ${fmtDate(c.lastSentAt)}` : "novo";
+  const last = c.lastReplyAt ? `respondeu ${fmtDate(c.lastReplyAt)}`
+    : c.lastSentAt ? `enviado ${fmtDate(c.lastSentAt)}` : "novo";
   const nome = c.displayName || c.name || "(sem nome)";
-  const agenda = c.inAgenda ? ' <span title="Na sua agenda">📇</span>' : "";
+  const agenda = c.inAgenda ? ' <span class="badge" title="Na sua agenda">agenda</span>' : "";
   div.innerHTML = `
     <div class="dash-card-head">
       <span class="resp-phone">${escapeHtml(nome)}${agenda}</span>
       <span class="stage-pill ${STAGE_CLS[c.stage] || ""}">${escapeHtml(c.stage)}</span>
     </div>
     <div class="dash-card-body">
-      <span>📱 ${escapeHtml(c.phone)} · ${last}</span>
+      <span>${escapeHtml(c.phone)} · ${last}</span>
       ${tags ? `<span>${tags}</span>` : ""}
     </div>`;
   div.addEventListener("click", () => openClient(c));
@@ -438,7 +438,7 @@ function clientCard(c) {
 function openClient(c) {
   crmCurrent = c;
   $("#clientTitle").textContent = c.displayName || c.name || "Cliente";
-  $("#clientPhone").textContent = "📱 " + c.phone + (c.inAgenda ? "  📇 na agenda" : "");
+  $("#clientPhone").textContent = c.phone + (c.inAgenda ? "  · na agenda" : "");
   $("#clientName").value = c.name || "";
   $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
   $("#clientTags").value = (c.tags || []).join(", ");
@@ -466,7 +466,7 @@ $("#btnSaveClient").addEventListener("click", async () => {
     closeModal("clientModal");
     loadClients();
   } catch {
-    $("#clientStatus").textContent = "❌ Erro ao salvar";
+    $("#clientStatus").textContent = "Erro ao salvar";
     $("#clientStatus").className = "status err";
   }
 });
@@ -483,7 +483,7 @@ $("#btnCrmDispatch").addEventListener("click", () => {
   if (!crmList.length) { alert("Não há clientes nesse filtro."); return; }
   const contacts = crmList.map((c) => ({ phone: c.phone, name: c.name || "" }));
   sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "lista do CRM", contacts }));
-  alert(`${contacts.length} cliente(s) preparados para disparo.\nVocê será levado ao disparo para montar a mensagem.`);
+  alert(`${contacts.length} cliente(s) preparados.\nVocê será levado à Nova campanha para montar a mensagem.`);
   window.location.href = "/";
 });
 
@@ -516,8 +516,8 @@ async function loadConversas() {
       div.className = "dash-card conv-item";
       const nome = t.name || t.phone;
       const badge = t.origem === "campaign"
-        ? `<span class="conv-badge camp">📣 ${escapeHtml(t.campaignName || "Campanha")}</span>`
-        : `<span class="conv-badge daily">💬 Dia a dia</span>`;
+        ? `<span class="conv-badge camp">${escapeHtml(t.campaignName || "Campanha")}</span>`
+        : `<span class="conv-badge daily">Dia a dia</span>`;
       const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
       div.innerHTML = `
         <div class="dash-card-head">
@@ -584,7 +584,7 @@ async function sendReply() {
     status.textContent = "";
     openChat(chatKey, $("#chatTitle").textContent); // recarrega o histórico
   } catch (err) {
-    status.textContent = "❌ " + err.message;
+    status.textContent = err.message;
     status.className = "status err";
   } finally {
     $("#chatSend").disabled = false;
@@ -596,7 +596,7 @@ $("#chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") send
 // ---------------------------------------------------------------------------
 // Agenda de contatos
 // ---------------------------------------------------------------------------
-const ORIGEM_LABEL = { planilha: "📄 Planilha", manual: "✍️ Manual", chip: "📱 Chip" };
+const ORIGEM_LABEL = { planilha: "Planilha", manual: "Manual", chip: "Chip" };
 
 async function loadAgenda() {
   const wrap = $("#agendaList");
@@ -617,14 +617,14 @@ async function loadAgenda() {
       div.style.cursor = "default";
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="resp-phone">📇 ${escapeHtml(c.name || "(sem nome)")}</span>
+          <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
           <div class="row" style="gap:6px;margin:0">
-            <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "✓ Inserido" : "➕ Inserir"}</button>
+            <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "Inserido" : "Inserir"}</button>
             <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
           </div>
         </div>
         <div class="dash-card-body">
-          <span>📱 ${escapeHtml(c.phone)} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
+          <span>${escapeHtml(c.phone)} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
         </div>`;
       div.querySelector(".ag-add").addEventListener("click", (e) => {
         toggleCart(c, e.currentTarget);
@@ -651,7 +651,7 @@ function toggleCart(c, btn) {
   if (idx >= 0) {
     agendaCart.splice(idx, 1);
     btn.classList.remove("in-cart");
-    btn.textContent = "➕ Inserir";
+    btn.textContent = "Inserir";
   } else {
     agendaCart.push({ phone: c.phone, name: c.name || "" });
     btn.classList.add("in-cart");
@@ -686,8 +686,8 @@ $("#btnAgAdd").addEventListener("click", async () => {
   if (!phone) { status.textContent = "Informe o telefone."; status.className = "status err"; return; }
   const res = await fetch("/api/agenda", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }) });
   const data = await res.json();
-  if (!res.ok) { status.textContent = "❌ " + (data.error || "Erro"); status.className = "status err"; return; }
-  status.textContent = "✅ Salvo!"; status.className = "status ok";
+  if (!res.ok) { status.textContent = (data.error || "Erro"); status.className = "status err"; return; }
+  status.textContent = "Salvo!"; status.className = "status ok";
   $("#agName").value = ""; $("#agPhone").value = "";
   loadAgenda();
 });
@@ -703,10 +703,10 @@ $("#agFile").addEventListener("change", async (e) => {
     const res = await fetch("/api/agenda/upload", { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha");
-    status.textContent = `✅ ${data.imported} contato(s) importado(s)!`; status.className = "status ok";
+    status.textContent = `${data.imported} contato(s) importado(s)!`; status.className = "status ok";
     loadAgenda();
   } catch (err) {
-    status.textContent = "❌ " + err.message; status.className = "status err";
+    status.textContent = err.message; status.className = "status err";
   }
   e.target.value = "";
 });
@@ -720,10 +720,10 @@ $("#btnAgSync").addEventListener("click", async () => {
     const res = await fetch("/api/agenda/sync-chip", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha");
-    status.textContent = `✅ ${data.imported} contato(s) sincronizado(s)!`; status.className = "status ok";
+    status.textContent = `${data.imported} contato(s) sincronizado(s)!`; status.className = "status ok";
     loadAgenda();
   } catch (err) {
-    status.textContent = "❌ " + err.message; status.className = "status err";
+    status.textContent = err.message; status.className = "status err";
   }
 });
 
@@ -755,14 +755,14 @@ function campaignCard(job) {
   const div = document.createElement("div");
   div.className = "dash-card " + st.cls;
   const preview = (job.message || (job.hasImage ? "[imagem]" : "")).slice(0, 70);
-  const reply = job.result ? ` · ↩ ${job.repliedCount} responderam` : "";
+  const reply = job.result ? ` · ${job.repliedCount} responderam` : "";
   div.innerHTML = `
     <div class="dash-card-head">
       <span class="sched-status ${st.cls}">${st.txt}</span>
-      <span class="dash-when">🕒 ${fmtDate(job.scheduledAt)}</span>
+      <span class="dash-when">${fmtDate(job.scheduledAt)}</span>
     </div>
     <div class="dash-card-body">
-      <span>${job.contactsCount} contato(s)${job.hasImage ? ` · 🖼️ ${job.imageCount}` : ""}${reply}</span>
+      <span>${job.contactsCount} contato(s)${job.hasImage ? ` · ${job.imageCount} img` : ""}${reply}</span>
       ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}"</span>` : ""}
     </div>`;
   div.addEventListener("click", () => openCampaign(job.id));
@@ -783,7 +783,7 @@ async function loadDrafts() {
     const data = await (await fetch("/api/templates")).json();
     const list = data.templates || [];
     $("#draftsCount").textContent = `${list.length}/10`;
-    if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhum modelo salvo ainda. Crie um acima ou use “Salvar como modelo” na tela de disparo.</p>"; return; }
+    if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhum modelo salvo ainda. Crie um acima ou use “Salvar como modelo” na Nova campanha.</p>"; return; }
     wrap.innerHTML = "";
     list.forEach((t) => {
       const urls = draftUrls(t);
@@ -793,15 +793,15 @@ async function loadDrafts() {
       div.style.cursor = "default";
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="resp-phone">💾 ${escapeHtml(t.name || "(sem nome)")}</span>
+          <span class="resp-phone">${escapeHtml(t.name || "(sem nome)")}</span>
           <div class="row" style="gap:6px;margin:0">
-            <button class="btn ghost draft-use">🚀 Usar no disparo</button>
+            <button class="btn ghost draft-use">Usar na campanha</button>
             <button class="btn-cancel draft-del">Excluir</button>
           </div>
         </div>
         <div class="dash-card-body">
           ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}"</span>` : ""}
-          ${urls.length ? `<span>🖼️ ${urls.length} imagem(ns)</span>` : ""}
+          ${urls.length ? `<span>${urls.length} imagem(ns)</span>` : ""}
         </div>`;
       div.querySelector(".draft-use").addEventListener("click", () => {
         sessionStorage.setItem("zapflow_loadtemplate", JSON.stringify(t));
@@ -850,12 +850,12 @@ $("#btnSaveDraft")?.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
-    status.textContent = "✅ Modelo salvo!"; status.className = "status ok";
+    status.textContent = "Modelo salvo!"; status.className = "status ok";
     clearDraftForm();
     $("#draftForm").classList.add("hidden");
     loadDrafts();
   } catch (err) {
-    status.textContent = "❌ " + err.message; status.className = "status err";
+    status.textContent = err.message; status.className = "status err";
   }
 });
 
@@ -880,8 +880,8 @@ async function openCampaign(id) {
       <div class="metric-row"><span>Responderam</span><b style="color:var(--primary)">${responderam}</b></div>
       ${job.message ? `<div class="campaign-msg">"${escapeHtml(job.message)}"</div>` : ""}`;
     $("#campaignContacts").innerHTML = logs.map((l) => {
-      const icon = l.ok ? '<span class="d-ok">✅</span>' : `<span class="d-err">❌</span>`;
-      const rep = l.replied ? ' <span class="d-replied">↩ respondeu</span>' : "";
+      const icon = l.ok ? '<span class="d-ok">OK</span>' : '<span class="d-err">falhou</span>';
+      const rep = l.replied ? ' <span class="d-replied">respondeu</span>' : "";
       const name = l.name ? escapeHtml(l.name) + " — " : "";
       const err = (!l.ok && l.error) ? ` <span class="d-err">(${escapeHtml(l.error)})</span>` : "";
       return `<div class="d-line">${icon} ${name}${escapeHtml(l.phone || "")}${rep}${err}</div>`;
@@ -902,7 +902,7 @@ $("#btnPrepareFollowup").addEventListener("click", () => {
     return;
   }
   sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "follow-up", contacts: naoResponderam }));
-  alert(`${naoResponderam.length} contato(s) que não responderam foram preparados.\nVocê será levado ao disparo para montar a mensagem de follow-up.`);
+  alert(`${naoResponderam.length} contato(s) que não responderam foram preparados.\nVocê será levado à Nova campanha para montar o acompanhamento.`);
   window.location.href = "/";
 });
 
@@ -923,11 +923,11 @@ async function loadResponses() {
     list.forEach((r) => {
       const div = document.createElement("div");
       div.className = "dash-card";
-      const titulo = r.name ? `${escapeHtml(r.name)} · ${escapeHtml(r.phone)}` : `📱 ${escapeHtml(r.phone)}`;
+      const titulo = r.name ? `${escapeHtml(r.name)} · ${escapeHtml(r.phone)}` : `${escapeHtml(r.phone)}`;
       div.innerHTML = `
         <div class="dash-card-head">
           <span class="resp-phone">${titulo}</span>
-          <span class="dash-when">🕒 ${fmtDate(r.ts)}</span>
+          <span class="dash-when">${fmtDate(r.ts)}</span>
         </div>
         ${r.content ? `<div class="dash-card-body"><span class="sched-msg">"${escapeHtml(r.content)}"</span></div>` : ""}`;
       wrap.appendChild(div);
@@ -955,14 +955,14 @@ async function loadFollowup() {
       const preview = (job.message || "[imagem]").slice(0, 60);
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="dash-when">🕒 ${fmtDate(job.scheduledAt)}</span>
+          <span class="dash-when">${fmtDate(job.scheduledAt)}</span>
           <span class="followup-badge">${naoResp} sem resposta</span>
         </div>
         <div class="dash-card-body">
-          <span>${job.result.success} enviadas · ↩ ${job.repliedCount} responderam</span>
+          <span>${job.result.success} enviadas · ${job.repliedCount} responderam</span>
           <span class="sched-msg">"${escapeHtml(preview)}"</span>
         </div>
-        <button class="btn primary fu-btn" ${naoResp ? "" : "disabled"}>🔁 Preparar follow-up (${naoResp})</button>`;
+        <button class="btn primary fu-btn" ${naoResp ? "" : "disabled"}>Criar acompanhamento (${naoResp})</button>`;
       div.querySelector(".fu-btn").addEventListener("click", () => openCampaign(job.id));
       wrap.appendChild(div);
     });
@@ -1033,10 +1033,10 @@ $("#btnSaveBot").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/chatbot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error();
-    status.textContent = "✅ Automação salva!";
+    status.textContent = "Automação salva!";
     status.className = "status ok";
   } catch {
-    status.textContent = "❌ Erro ao salvar";
+    status.textContent = "Erro ao salvar";
     status.className = "status err";
   }
 });
