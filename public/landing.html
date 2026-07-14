@@ -258,9 +258,90 @@
   .foot-grid{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}
 
   /* reveal animation */
-  .reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
   .reveal.in{opacity:1;transform:none}
-  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
+  .reveal[data-d="1"]{transition-delay:.07s}.reveal[data-d="2"]{transition-delay:.14s}.reveal[data-d="3"]{transition-delay:.21s}.reveal[data-d="4"]{transition-delay:.28s}
+  /* microinterações */
+  .card .ico svg,.flow .fx .ci svg{transition:transform .25s ease}
+  .card:hover .ico svg{transform:scale(1.12) rotate(-3deg)}
+  .flow .fx:hover .ci svg{transform:scale(1.12)}
+  .btn.primary{position:relative;overflow:hidden}
+  .btn.primary::after{content:"";position:absolute;top:0;left:-120%;width:60%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-18deg);transition:left .6s ease}
+  .btn.primary:hover::after{left:140%}
+  .btn.primary:hover{transform:translateY(-2px)}
+  .plan.pop{transform:translateY(-6px)}
+  @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @keyframes pulseDot{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
+
+  /* ===== Identidade ZapFlow: padrões de fundo e fluxo ===== */
+  .bubbles-bg{position:relative;overflow:hidden}
+  .bubbles-bg::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.5;
+    background-image:radial-gradient(circle at 1px 1px,color-mix(in srgb,var(--blue) 22%,transparent) 1.4px,transparent 0);
+    background-size:26px 26px;
+    -webkit-mask-image:radial-gradient(60% 60% at 50% 20%,#000,transparent);mask-image:radial-gradient(60% 60% at 50% 20%,#000,transparent)}
+  .flowline{height:2px;background:linear-gradient(90deg,transparent,var(--blue),transparent);opacity:.35;margin:0 auto;max-width:220px}
+
+  /* ===== Selo de confiança / hero trial ===== */
+  .hero-trial{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft-green);border:1px solid color-mix(in srgb,var(--green) 30%,var(--border));color:#15803d;font-weight:700;font-size:13px;padding:7px 14px;border-radius:20px;margin-bottom:6px}
+  :root[data-theme="dark"] .hero-trial{color:#7ee2a8}
+  .hero-trial b{color:inherit}
+  .hero-trial .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulseDot 2.2s infinite}
+  .microtrust{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:14px}
+  .microtrust span{display:inline-flex;align-items:center;gap:6px}
+  .microtrust svg{width:15px;height:15px;color:var(--green)}
+
+  /* ===== Seção "Seu escritório cabe no bolso" (notebook + phone) ===== */
+  .pocket-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:36px;align-items:center}
+  @media(max-width:900px){.pocket-grid{grid-template-columns:1fr;gap:24px}}
+  .devices{position:relative;min-height:300px;display:flex;align-items:center;justify-content:center}
+  .laptop{width:100%;max-width:440px}
+  .laptop .lid{background:var(--ink);border-radius:14px 14px 0 0;padding:8px;box-shadow:var(--shadow-lg)}
+  .laptop .lid .scr{background:var(--card);border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+  .laptop .base{height:14px;background:linear-gradient(#c7ced8,#aab3bf);border-radius:0 0 14px 14px;margin:0 -14px;position:relative}
+  :root[data-theme="dark"] .laptop .base{background:linear-gradient(#39465a,#222c3a)}
+  .laptop .base::after{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:80px;height:6px;background:rgba(0,0,0,.18);border-radius:0 0 8px 8px}
+  .pocket-phone{position:absolute;right:2%;bottom:-8%;width:150px;background:var(--ink);border-radius:24px;padding:8px;box-shadow:var(--shadow-lg);border:1px solid var(--border);animation:floaty 5s ease-in-out infinite}
+  @media(max-width:520px){.pocket-phone{width:120px;right:0}}
+  .pwa-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+  .pwa-badges span{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:7px 13px;font-size:12.5px;font-weight:700;color:var(--text)}
+  .pwa-badges svg{width:15px;height:15px;color:var(--blue)}
+  .pwa-strip{display:inline-flex;gap:8px;align-items:center;background:var(--soft-blue);color:var(--blue);font-weight:800;font-size:12.5px;letter-spacing:.02em;padding:7px 14px;border-radius:20px}
+
+  /* ===== Vídeo demonstrativo ===== */
+  .video{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow);background:
+    linear-gradient(135deg,color-mix(in srgb,var(--blue) 14%,var(--card)),var(--card));min-height:340px;display:grid;place-items:center;text-align:center}
+  .video .frame{position:absolute;inset:0;background:radial-gradient(400px 200px at 50% 40%,color-mix(in srgb,var(--blue) 16%,transparent),transparent 70%)}
+  .video .play{position:relative;width:76px;height:76px;border-radius:50%;background:#fff;color:var(--blue);display:grid;place-items:center;box-shadow:0 14px 34px rgba(29,78,216,.35);cursor:pointer;transition:transform .2s}
+  .video .play:hover{transform:scale(1.08)}
+  .video .play svg{width:30px;height:30px;margin-left:4px}
+  .video .cap{position:relative;margin-top:16px;color:var(--text)}
+  .video .cap b{display:block;font-size:18px}
+  .video .cap span{color:var(--muted);font-size:13.5px}
+
+  /* ===== Planos: toggle mensal/anual ===== */
+  .plan-toggle{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:24px;padding:4px;margin:18px auto 0;gap:2px}
+  .plan-toggle button{border:none;background:none;cursor:pointer;font-weight:700;font-size:13.5px;color:var(--muted);padding:9px 16px;border-radius:20px}
+  .plan-toggle button.on{background:var(--grad);color:#fff}
+  .plan-toggle .save{font-size:11px;color:var(--green);font-weight:800;margin-left:4px}
+  .plan .price .per-y{display:none}
+  .annual .plan .price .per-m{display:none}
+  .annual .plan .price .per-y{display:inline}
+  .plan .save-note{display:none;font-size:12px;color:var(--green);font-weight:700;margin-top:-8px;margin-bottom:8px}
+  .annual .plan .save-note{display:block}
+
+  /* ===== Métricas "em breve" / depoimento reservado ===== */
+  .metric-soon{background:var(--card);border:1px dashed var(--border);border-radius:16px;padding:22px;text-align:center}
+  .metric-soon .mi{width:40px;height:40px;border-radius:11px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;margin:0 auto 10px}
+  .metric-soon .mi svg{width:20px;height:20px}
+  .metric-soon .l{font-weight:800;color:var(--ink);font-size:15px}
+  .metric-soon .s{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .reserved{background:var(--card);border:1px dashed color-mix(in srgb,var(--blue) 35%,var(--border));border-radius:18px;padding:40px 24px;text-align:center;max-width:720px;margin:0 auto}
+  .reserved .mi{width:52px;height:52px;border-radius:14px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;margin:0 auto 12px}
+  .reserved .mi svg{width:26px;height:26px}
+  .reserved p{color:var(--muted);font-size:15px;margin:0}
+  .reserved .stars{font-size:20px;margin-bottom:8px}
+
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}.pocket-phone{animation:none}.hero-trial .dot{animation:none}.btn.primary::after{display:none}}
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 </head>
@@ -298,16 +379,18 @@
 <section class="hero">
   <div class="wrap hero-grid">
     <div class="reveal in">
-      <span class="eyebrow">CRM &amp; Central de Relacionamento no WhatsApp</span>
+      <span class="hero-trial"><span class="dot"></span> <b>Teste grátis por 7 dias</b> · sem cartão</span>
+      <span class="eyebrow" style="display:block;margin-top:10px">CRM &amp; Central de Relacionamento no WhatsApp</span>
       <h1>Organize seus clientes, automatize seu relacionamento e <span class="hl">venda mais</span> usando apenas o WhatsApp.</h1>
       <p class="lead">O ZapFlow reúne campanhas, conversas, CRM, follow-up e resultados em um só lugar — simples o bastante para usar no celular, poderoso o bastante para crescer o seu negócio.</p>
       <div class="cta-row">
-        <a class="btn primary lg" href="#planos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg> Começar agora</a>
-        <a class="btn ghost lg" href="#como">Ver como funciona</a>
+        <a class="btn primary lg" href="#planos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg> Começar teste gratuito</a>
+        <a class="btn ghost lg" href="#video">Assistir demonstração</a>
       </div>
-      <div class="trust">
-        <div class="avatars"><span>RF</span><span>AC</span><span>MZ</span><span>JS</span></div>
-        <div><span class="stars">★★★★★</span> <b>4,9</b> — comerciantes que vendem mais pelo WhatsApp</div>
+      <div class="microtrust">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Sem cartão de crédito</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Sem fidelidade</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Cancele quando quiser</span>
       </div>
     </div>
 
@@ -396,6 +479,60 @@
   </div>
 </section>
 
+<!-- ============ SEU ESCRITÓRIO CABE NO BOLSO ============ -->
+<section class="section bubbles-bg" id="mobile">
+  <div class="wrap pocket-grid">
+    <div class="devices reveal">
+      <div class="laptop">
+        <div class="lid">
+          <div class="scr">
+            <div class="app" style="min-height:200px">
+              <div class="side">
+                <div class="dot on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+                <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div>
+                <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/></svg></div>
+              </div>
+              <div class="main">
+                <div class="h">Campanhas</div>
+                <div class="s">Melhor resultado da semana</div>
+                <div class="bars"><b style="height:42%"></b><b class="g" style="height:70%"></b><b style="height:55%"></b><b class="g" style="height:86%"></b><b style="height:60%"></b><b class="g" style="height:74%"></b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="base"></div>
+      </div>
+      <div class="pocket-phone">
+        <div class="screen">
+          <div class="pt"><div class="t">Bom dia, Rafael</div><div class="st">3 clientes aguardando</div></div>
+          <div class="pb">
+            <div class="bubble" style="margin-bottom:8px">Oi! Ainda tem o pneu 175/70?</div>
+            <div class="pbtn">Responder agora</div>
+          </div>
+          <div class="navm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg>
+            <div class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal" data-d="1">
+      <span class="pwa-strip">PWA • Android • iPhone • Desktop</span>
+      <h2 style="margin:16px 0 10px">Seu escritório cabe no bolso</h2>
+      <p class="sub">Gerencie campanhas, acompanhe conversas, organize clientes e responda mensagens de qualquer lugar — usando apenas o seu celular. O ZapFlow instala como aplicativo e funciona igual no computador.</p>
+      <div class="pwa-badges">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg> Instala como app</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01"/><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5 12.9a10 10 0 0 1 14 0"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/></svg> Funciona offline</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Igual no desktop</span>
+      </div>
+      <div class="cta-row" style="margin-top:22px"><a class="btn primary lg" href="#planos">Começar teste gratuito</a></div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ BENEFÍCIOS ============ -->
 <section class="section" id="beneficios">
   <div class="wrap center">
@@ -459,6 +596,23 @@
 </section>
 
 <!-- ============ CASOS DE USO ============ -->
+<section class="section" id="video">
+  <div class="wrap center">
+    <span class="eyebrow reveal">Demonstração</span>
+    <h2 class="reveal">Veja o ZapFlow em ação</h2>
+    <p class="sub reveal">Um tour rápido de 2 minutos pela criação de campanha, CRM e acompanhamento de resultados.</p>
+  </div>
+  <div class="wrap reveal" style="margin-top:30px;max-width:880px">
+    <div class="video" role="button" tabindex="0" aria-label="Assistir demonstração">
+      <div class="frame"></div>
+      <div style="position:relative;text-align:center">
+        <div class="play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="cap"><b>Assistir demonstração</b><span>Vídeo em breve — 2 minutos</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="section" id="casos">
   <div class="wrap center">
     <span class="eyebrow reveal">Para o seu negócio</span>
@@ -470,7 +624,7 @@
 <!-- ============ ESTATÍSTICAS ============ -->
 <section class="section stats-wrap">
   <div class="wrap grid g3" id="stats"></div>
-  <p class="wrap center" style="color:var(--muted);font-size:12.5px;margin-top:16px">*Números ilustrativos, atualizados conforme a base cresce.</p>
+  <p class="wrap center" style="color:var(--muted);font-size:12.5px;margin-top:16px">Os números reais serão exibidos aqui conforme a base cresce.</p>
 </section>
 
 <!-- ============ PROVA SOCIAL ============ -->
@@ -480,10 +634,12 @@
     <h2 class="reveal">Quem organiza o WhatsApp, vende mais</h2>
     <p class="sub reveal">Espaço reservado para depoimentos, cases e avaliações reais. <span class="soon">Em breve</span></p>
   </div>
-  <div class="wrap grid g3" style="margin-top:30px">
-    <div class="quote reveal"><div class="stars">★★★★★</div><p>"Parei de perder cliente. Agora sei exatamente quem chamar de volta e minha recompra subiu."</p><div class="who"><span class="av">A</span><div><b>Autopeças</b><span>Cliente ZapFlow</span></div></div></div>
-    <div class="quote reveal"><div class="stars">★★★★★</div><p>"Montar uma campanha leva minutos. O follow-up automático sozinho já pagou o sistema."</p><div class="who"><span class="av">R</span><div><b>Recapadora</b><span>Cliente ZapFlow</span></div></div></div>
-    <div class="quote reveal"><div class="stars">★★★★★</div><p>"Tudo no celular, simples. Minha equipe aprendeu no primeiro dia e a organização mudou o jogo."</p><div class="who"><span class="av">M</span><div><b>Mecânica</b><span>Cliente ZapFlow</span></div></div></div>
+  <div class="wrap reveal" style="margin-top:26px">
+    <div class="reserved">
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></div>
+      <div class="stars">★★★★★</div>
+      <p>Este espaço será preenchido com avaliações reais dos primeiros clientes.</p>
+    </div>
   </div>
 </section>
 
@@ -492,35 +648,42 @@
   <div class="wrap center">
     <span class="eyebrow reveal">Planos</span>
     <h2 class="reveal">Escolha o plano e comece hoje</h2>
-    <p class="sub reveal">Sem fidelidade complicada. Cancele quando quiser.</p>
+    <p class="sub reveal">7 dias grátis para testar. Sem cartão, sem fidelidade — cancele quando quiser.</p>
+    <div class="plan-toggle reveal" id="planToggle">
+      <button type="button" class="on" data-cycle="m">Mensal</button>
+      <button type="button" data-cycle="y">Anual <span class="save">-2 meses</span></button>
+    </div>
   </div>
-  <div class="wrap grid g3" style="margin-top:36px;align-items:stretch">
+  <div class="wrap grid g3" id="plansGrid" style="margin-top:36px;align-items:stretch">
     <div class="plan reveal">
       <h3>Starter</h3><div class="desc">Para começar a organizar e vender</div>
-      <div class="price">R$97<small>/mês</small></div>
+      <div class="price"><span class="per-m">R$97<small>/mês</small></span><span class="per-y">R$81<small>/mês</small></span></div>
+      <div class="save-note">no plano anual · 2 meses grátis</div>
       <ul>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Campanhas personalizadas</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Agendamento e modelos</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Importação de planilhas</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Histórico e dashboard</li>
       </ul>
-      <a class="btn ghost" href="#" style="justify-content:center">Começar agora</a>
+      <a class="btn ghost" href="#" style="justify-content:center">Começar teste gratuito</a>
     </div>
     <div class="plan pop reveal">
       <div class="pop-tag">Mais popular</div>
       <h3>Pro</h3><div class="desc">Para vender com relacionamento e CRM</div>
-      <div class="price">R$197<small>/mês</small></div>
+      <div class="price"><span class="per-m">R$197<small>/mês</small></span><span class="per-y">R$164<small>/mês</small></span></div>
+      <div class="save-note">no plano anual · 2 meses grátis</div>
       <ul>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Tudo do Starter</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> CRM completo + funil</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Conversas centralizadas</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Follow-up e automação</li>
       </ul>
-      <a class="btn primary" href="#" style="justify-content:center">Começar agora</a>
+      <a class="btn primary" href="#" style="justify-content:center">Começar teste gratuito</a>
     </div>
     <div class="plan reveal">
       <h3>Business</h3><div class="desc">Para escalar equipe e resultados</div>
-      <div class="price">R$297<small>/mês</small></div>
+      <div class="price"><span class="per-m">R$297<small>/mês</small></span><span class="per-y">R$247<small>/mês</small></span></div>
+      <div class="save-note">no plano anual · 2 meses grátis</div>
       <ul>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Tudo do Pro</li>
         <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Relatórios avançados</li>
@@ -641,10 +804,10 @@
   }).join('');
 
   // ------- estatísticas (count-up) -------
-  var stats=[['1200','+','Empresas atendidas'],['3.4','M','Mensagens processadas'],['42','%','Taxa média de resposta'],['85','k','Campanhas enviadas'],['9','h','Economizadas por semana'],['4.9','★','Nota média dos clientes']];
-  document.getElementById('stats').innerHTML=stats.map(function(s){return '<div class="stat reveal"><div class="n"><span class="cu" data-to="'+s[0]+'">0</span>'+s[1]+'</div><div class="l">'+s[2]+'</div></div>';}).join('');
+  var stats=['Empresas atendidas','Mensagens processadas','Campanhas enviadas','Respostas recebidas','Clientes ativos','Horas economizadas'];
+  document.getElementById('stats').innerHTML=stats.map(function(s){return '<div class="metric-soon reveal"><div class="mi">'+svg('<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>')+'</div><div class="l">'+s+'</div><div class="s">Em breve · dados reais aqui</div></div>';}).join('');
 
-  // ------- FAQ (20) -------
+  // ------- FAQ (26) -------
   var faq=[
     ['O ZapFlow funciona no celular?','Sim. Ele foi feito para o celular e pode ser instalado como aplicativo (PWA) direto pela tela inicial, além de funcionar perfeitamente no computador.'],
     ['Preciso instalar algum programa?','Não. É só abrir no navegador. No celular, você pode "Adicionar à tela inicial" para usar como um app.'],
@@ -665,7 +828,13 @@
     ['É difícil de aprender?','Não. A interface é simples e o fluxo é guiado em poucas etapas — sua equipe aprende no primeiro dia.'],
     ['Meus dados ficam seguros?','Seus contatos e históricos ficam guardados na sua conta. Recomendamos usar sempre com responsabilidade e respeitar a LGPD.'],
     ['Preciso de conhecimento técnico?','Não. Se você usa o WhatsApp, você usa o ZapFlow.'],
-    ['Posso cancelar quando quiser?','Sim. Sem fidelidade complicada. Você começa em minutos e cancela quando quiser.']
+    ['Posso cancelar quando quiser?','Sim. Sem fidelidade complicada. Você começa em minutos e cancela quando quiser.'],
+    ['Como funciona o teste grátis de 7 dias?','Você usa todos os recursos por 7 dias sem cobrar nada e sem cartão. Se gostar, escolhe um plano; se não, é só não continuar.'],
+    ['Preciso cadastrar cartão para testar?','Não. O teste é liberado sem cartão de crédito. Você só informa a forma de pagamento se decidir assinar.'],
+    ['Qual a diferença entre o plano mensal e o anual?','No plano anual você paga o equivalente a 10 meses e ganha 2 meses grátis. É a forma mais econômica de usar o ZapFlow.'],
+    ['O ZapFlow serve para qualquer tipo de negócio?','Sim. Ele é usado por autopeças, recapadoras, mecânicas, lojas, prestadores de serviço e qualquer negócio que se relaciona com clientes pelo WhatsApp.'],
+    ['Quantos contatos eu posso ter?','Você pode importar e organizar sua base de clientes por planilha ou sincronização, mantendo tudo separado por etapa no CRM.'],
+    ['Vou ficar sozinho ou tenho suporte?','Você tem suporte para tirar dúvidas e começar rápido. Nos planos superiores o atendimento é prioritário.']
   ];
   document.getElementById('faq-list').innerHTML=faq.map(function(q){
     return '<div class="qa reveal"><button aria-expanded="false">'+q[0]+'<span class="chev">'+svg('<path d="m6 9 6 6 6-6"/>')+'</span></button><div class="a"><div>'+q[1]+'</div></div></div>';
@@ -673,6 +842,28 @@
   document.querySelectorAll('.qa button').forEach(function(b){
     b.addEventListener('click',function(){var qa=b.parentElement;var open=qa.classList.toggle('open');b.setAttribute('aria-expanded',open);});
   });
+
+  // ------- alternância de planos (mensal/anual) -------
+  (function(){
+    var pt=document.getElementById('planToggle'),grid=document.getElementById('plansGrid');
+    if(!pt||!grid)return;
+    pt.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click',function(){
+        pt.querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
+        b.classList.add('on');
+        grid.classList.toggle('annual',b.dataset.cycle==='y');
+      });
+    });
+  })();
+
+  // ------- vídeo (placeholder — rola para a seção) -------
+  (function(){
+    var v=document.querySelector('.video');
+    if(!v)return;
+    function go(){var s=document.getElementById('video');if(s)s.scrollIntoView({behavior:'smooth',block:'center'});}
+    v.addEventListener('click',go);
+    v.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+  })();
 
   // ------- reveal + count-up -------
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);e.target.querySelectorAll&&e.target.querySelectorAll('.cu').forEach(cu);}});},{threshold:.12});
