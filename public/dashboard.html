@@ -26,7 +26,7 @@
       <button class="side-tab active" data-view="overview"><i data-icon="house" data-size="20"></i> <span class="side-label">Início</span></button>
       <button class="side-tab" data-view="conversas"><i data-icon="messages" data-size="20"></i> <span class="side-label">Conversas</span></button>
       <button class="side-tab" data-view="clients"><i data-icon="users" data-size="20"></i> <span class="side-label">Clientes</span></button>
-      <button class="side-tab" data-view="agenda"><i data-icon="contact" data-size="20"></i> <span class="side-label">Contatos</span></button>
+      <button class="side-tab" data-view="agenda"><i data-icon="contact" data-size="20"></i> <span class="side-label">Agenda de contatos</span></button>
       <button class="side-tab" data-view="campaigns"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Campanhas</span></button>
       <button class="side-tab" data-view="followup"><i data-icon="refresh" data-size="20"></i> <span class="side-label">Follow-up</span></button>
       <button class="side-tab" data-view="responses"><i data-icon="reply" data-size="20"></i> <span class="side-label">Respostas</span></button>
@@ -140,9 +140,9 @@
           </button>
           <button class="kpi" type="button" data-go="clients">
             <span class="kpi-ico ico-blue" data-icon="users" data-size="20"></span>
-            <span class="kpi-label">Clientes na base</span>
+            <span class="kpi-label">Clientes identificados</span>
             <span class="kpi-num" id="kpiClientes">0</span>
-            <span class="kpi-sub ok" id="kpiClientesSub"></span>
+            <span class="kpi-sub" id="kpiClientesSub">pessoas encontradas nas conversas</span>
           </button>
         </div>
 
@@ -216,8 +216,8 @@
 
     <!-- Clientes (CRM) -->
     <section class="dash-view hidden" data-view="clients">
-      <h2 class="dash-title">Clientes</h2>
-      <p class="hint">Sua base cresce a cada campanha. Filtre, organize por etapa/tags e crie uma campanha para o segmento.</p>
+      <h2 class="dash-title">Clientes identificados</h2>
+      <p class="hint">Pessoas encontradas nas conversas do WhatsApp. Filtre, organize por etapa/tags e crie uma campanha para o segmento.</p>
       <div class="crm-filters">
         <input type="text" id="crmSearch" placeholder="Buscar nome ou telefone" />
         <select id="crmStage"><option value="">Todas as etapas</option></select>
@@ -246,8 +246,8 @@
 
     <!-- Agenda de contatos -->
     <section class="dash-view hidden" data-view="agenda">
-      <h2 class="dash-title">Contatos salvos</h2>
-      <p class="hint">Sua agenda (como os contatos do celular). O nome daqui é usado em todo o app.</p>
+      <h2 class="dash-title">Agenda de contatos</h2>
+      <p class="hint">Contatos cadastrados, importados ou sincronizados por você. O nome daqui é usado em todo o app.</p>
 
       <div class="agenda-add">
         <div class="manual-row">
@@ -352,6 +352,11 @@
         <h3 id="chatTitle">Conversa</h3>
         <button class="modal-close" data-close="chatModal" type="button">✕</button>
       </div>
+      <p class="hint chat-sub" id="chatSub"></p>
+      <div class="row" style="gap:8px;margin:0 0 8px">
+        <button class="btn secondary" id="btnChatToAgenda" type="button">Salvar na agenda</button>
+      </div>
+      <div class="stage-mover" id="chatStageMover" aria-label="Mover para etapa"></div>
       <div id="chatMessages" class="chat-messages"></div>
       <div class="chat-reply">
         <input type="text" id="chatInput" placeholder="Digite uma resposta rápida..." />
@@ -369,6 +374,10 @@
         <button class="modal-close" data-close="clientModal" type="button">✕</button>
       </div>
       <p class="hint" id="clientPhone"></p>
+      <div class="row" style="gap:8px;margin:0 0 10px">
+        <button class="btn secondary" id="btnClientToAgenda" type="button">Salvar na agenda</button>
+      </div>
+      <div class="stage-mover" id="clientStageMover" aria-label="Mover para etapa"></div>
       <label>Nome
         <input type="text" id="clientName" />
       </label>
@@ -386,6 +395,26 @@
         <button class="btn primary" id="btnSaveClient" type="button">Salvar</button>
         <button class="btn ghost" id="btnDeleteClient" type="button">Excluir</button>
         <span id="clientStatus" class="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Salvar contato na agenda (reutilizado em Conversas, Respostas e Clientes) -->
+  <div class="modal hidden" id="saveAgendaModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Salvar na agenda</h3>
+        <button class="modal-close" data-close="saveAgendaModal" type="button">✕</button>
+      </div>
+      <p class="hint">Confirme ou ajuste o nome deste contato.</p>
+      <label>Nome
+        <input type="text" id="saveAgName" placeholder="Nome do contato" />
+      </label>
+      <p class="hint" id="saveAgPhone"></p>
+      <div class="row">
+        <button class="btn primary" id="btnSaveAgConfirm" type="button">Salvar</button>
+        <button class="btn ghost" data-close="saveAgendaModal" type="button">Cancelar</button>
+        <span id="saveAgStatus" class="status"></span>
       </div>
     </div>
   </div>
@@ -423,7 +452,7 @@
   <div class="msheet hidden" id="msheet" role="dialog" aria-label="Mais opções">
     <div class="msheet-grip"></div>
     <div class="msheet-grid">
-      <button class="msheet-item" data-view="agenda"><i data-icon="contact" data-size="22"></i><span>Contatos</span></button>
+      <button class="msheet-item" data-view="agenda"><i data-icon="contact" data-size="22"></i><span>Agenda de contatos</span></button>
       <button class="msheet-item" data-view="campaigns"><i data-icon="megaphone" data-size="22"></i><span>Campanhas</span></button>
       <button class="msheet-item" data-view="followup"><i data-icon="refresh" data-size="22"></i><span>Follow-up</span></button>
       <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>

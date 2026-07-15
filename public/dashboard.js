@@ -30,7 +30,10 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação" };
+// Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
+const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
+const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
 
 function activateView(view) {
   $$(".side-tab, .mtab, .msheet-item").forEach((t) => { if (t.dataset.view) t.classList.toggle("active", t.dataset.view === view); });
@@ -241,7 +244,7 @@ async function loadOverview() {
     $("#kpiConversasSub").textContent = `${k.conversas.campanha} de campanha · ${k.conversas.diaadia} dia a dia`;
     countUp($("#kpiFollow"), data.donut.semResposta);
     countUp($("#kpiClientes"), k.clientes);
-    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} no período` : "";
+    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} no período` : "pessoas encontradas nas conversas";
 
     // Desempenho
     drawLine($("#lineChart"), data.serie30);
@@ -421,13 +424,85 @@ async function loadCrmMeta() {
   } catch { /* ignore */ }
 }
 
+// ---------------------------------------------------------------------------
+// Identidade do contato: nome com fallback + origem real (reutilizado nas telas)
+// ---------------------------------------------------------------------------
+function displayNameOf(obj) {
+  return (obj.name || obj.displayName || "").trim() || "Contato não identificado";
+}
+function sourceBadge(src) {
+  const label = SOURCE_LABEL[src];
+  return label ? `<span class="badge src-badge">${label}</span>` : "";
+}
+
+// ---------------------------------------------------------------------------
+// Salvar contato na agenda (modal reutilizável em Conversas, Respostas, Clientes)
+// ---------------------------------------------------------------------------
+let saveAgCtx = null; // { phone, onDone }
+function openSaveAgenda(phone, suggestedName, onDone) {
+  saveAgCtx = { phone, onDone };
+  $("#saveAgName").value = suggestedName && suggestedName !== "Contato não identificado" ? suggestedName : "";
+  $("#saveAgPhone").textContent = phone;
+  $("#saveAgStatus").textContent = "";
+  openModal("saveAgendaModal");
+  setTimeout(() => $("#saveAgName").focus(), 50);
+}
+$("#btnSaveAgConfirm").addEventListener("click", async () => {
+  if (!saveAgCtx) return;
+  const status = $("#saveAgStatus");
+  status.textContent = "Salvando..."; status.className = "status";
+  try {
+    const res = await fetch("/api/agenda", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: saveAgCtx.phone, name: $("#saveAgName").value.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
+    closeModal("saveAgendaModal");
+    const cb = saveAgCtx.onDone; saveAgCtx = null;
+    if (cb) cb();
+  } catch (err) {
+    status.textContent = err.message; status.className = "status err";
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mover para etapa do funil pelo telefone (Conversas e cadastro do cliente)
+// ---------------------------------------------------------------------------
+function renderStageMover(container, phone, currentStage, onDone) {
+  if (!container) return;
+  container.innerHTML = '<span class="stage-mover-label">Mover para:</span>' +
+    CRM_STAGES_UI.map((s) =>
+      `<button type="button" class="stage-move-btn ${STAGE_CLS[s] || ""} ${s === currentStage ? "active" : ""}" data-stage="${s}">${s}</button>`
+    ).join("");
+  container.querySelectorAll(".stage-move-btn").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const stage = b.dataset.stage;
+      if (stage === currentStage) return;
+      container.querySelectorAll(".stage-move-btn").forEach((x) => (x.disabled = true));
+      try {
+        const res = await fetch("/api/clients/stage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, stage }),
+        });
+        if (!res.ok) throw new Error();
+        currentStage = stage;
+        renderStageMover(container, phone, stage, onDone);
+        if (onDone) onDone(stage);
+      } catch {
+        container.querySelectorAll(".stage-move-btn").forEach((x) => (x.disabled = false));
+      }
+    });
+  });
+}
+
 function clientCard(c) {
   const div = document.createElement("div");
   div.className = "dash-card " + (STAGE_CLS[c.stage] || "");
   const tags = (c.tags || []).map((t) => `<span class="badge manual">${escapeHtml(t)}</span>`).join(" ");
   const last = c.lastReplyAt ? `respondeu ${fmtDate(c.lastReplyAt)}`
     : c.lastSentAt ? `enviado ${fmtDate(c.lastSentAt)}` : "novo";
-  const nome = c.displayName || c.name || "(sem nome)";
+  const nome = displayNameOf(c);
   const agenda = c.inAgenda ? ' <span class="badge" title="Na sua agenda">agenda</span>' : "";
   div.innerHTML = `
     <div class="dash-card-head">
@@ -435,8 +510,8 @@ function clientCard(c) {
       <span class="stage-pill ${STAGE_CLS[c.stage] || ""}">${escapeHtml(c.stage)}</span>
     </div>
     <div class="dash-card-body">
-      <span>${escapeHtml(c.phone)} · ${last}</span>
-      ${tags ? `<span>${tags}</span>` : ""}
+      <span class="resp-sub">${escapeHtml(c.phone)} · ${last}</span>
+      <span>${sourceBadge(c.nameSource)}${tags}</span>
     </div>`;
   div.addEventListener("click", () => openClient(c));
   return div;
@@ -444,8 +519,8 @@ function clientCard(c) {
 
 function openClient(c) {
   crmCurrent = c;
-  $("#clientTitle").textContent = c.displayName || c.name || "Cliente";
-  $("#clientPhone").textContent = c.phone + (c.inAgenda ? "  · na agenda" : "");
+  $("#clientTitle").textContent = displayNameOf(c) === "Contato não identificado" ? "Contato não identificado" : (c.displayName || c.name);
+  $("#clientPhone").textContent = c.phone + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.nameSource] ? `  · origem: ${SOURCE_LABEL[c.nameSource]}` : "");
   $("#clientName").value = c.name || "";
   $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
   $("#clientTags").value = (c.tags || []).join(", ");
@@ -454,6 +529,17 @@ function openClient(c) {
     (c.lastSentAt ? `Último envio: ${fmtDate(c.lastSentAt)}. ` : "") +
     (c.lastReplyAt ? `Última resposta: ${fmtDate(c.lastReplyAt)}.` : "");
   $("#clientStatus").textContent = "";
+  // Botão "Salvar na agenda" (só quando ainda não está na agenda)
+  const agBtn = $("#btnClientToAgenda");
+  agBtn.classList.toggle("hidden", !!c.inAgenda);
+  agBtn.onclick = () => openSaveAgenda(c.phone, c.displayName || c.name, () => { closeModal("clientModal"); loadClients(); });
+  // Ação rápida "Mover para" (atualiza etapa, funil e card imediatamente)
+  renderStageMover($("#clientStageMover"), c.phone, c.stage, (stage) => {
+    c.stage = stage;
+    $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === stage ? "selected" : ""}>${s}</option>`).join("");
+    loadCrmMeta();
+    loadClients();
+  });
   openModal("clientModal");
 }
 
@@ -521,10 +607,12 @@ async function loadConversas() {
     threads.forEach((t) => {
       const div = document.createElement("div");
       div.className = "dash-card conv-item";
-      const nome = t.name || t.phone;
+      const nome = displayNameOf(t);
       const badge = t.origem === "campaign"
         ? `<span class="conv-badge camp">${escapeHtml(t.campaignName || "Campanha")}</span>`
         : `<span class="conv-badge daily">Dia a dia</span>`;
+      const tags = (t.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
+      const agenda = t.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
       const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
       div.innerHTML = `
         <div class="dash-card-head">
@@ -532,10 +620,11 @@ async function loadConversas() {
           <span class="dash-when">${fmtDate(t.lastTs)}</span>
         </div>
         <div class="dash-card-body">
+          <span class="resp-sub">${escapeHtml(t.phone)}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
           <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
-          ${badge}
+          <span>${badge}${sourceBadge(t.nameSource)}${agenda}${tags}</span>
         </div>`;
-      div.addEventListener("click", () => openChat(t.key, nome));
+      div.addEventListener("click", () => openChat(t.key, nome, t));
       wrap.appendChild(div);
     });
   } catch {
@@ -552,14 +641,29 @@ $$(".conv-fbtn").forEach((b) => b.addEventListener("click", () => {
 let convTimer = null;
 $("#convSearch").addEventListener("input", () => { clearTimeout(convTimer); convTimer = setTimeout(loadConversas, 350); });
 
-async function openChat(key, nome) {
+let chatPhone = null;
+async function openChat(key, nome, thread) {
   chatKey = key;
+  chatPhone = thread?.phone || null;
   $("#chatTitle").textContent = nome || "Conversa";
+  $("#chatSub").textContent = "";
   $("#chatStatus").textContent = "";
+  $("#btnChatToAgenda").classList.add("hidden");
+  $("#chatStageMover").innerHTML = "";
   $("#chatMessages").innerHTML = "<p class='hint'>Carregando...</p>";
   openModal("chatModal");
   try {
     const data = await (await fetch("/api/conversas/" + key)).json();
+    chatPhone = data.phone || chatPhone;
+    // Identidade do contato (telefone menor, origem, etapa)
+    const src = SOURCE_LABEL[data.nameSource];
+    $("#chatSub").textContent = [data.phone, src ? `origem: ${src}` : "", data.stage].filter(Boolean).join(" · ");
+    // Botão "Salvar na agenda"
+    const agBtn = $("#btnChatToAgenda");
+    agBtn.classList.toggle("hidden", !!data.inAgenda);
+    agBtn.onclick = () => openSaveAgenda(data.phone, data.name, () => { loadConversas(); openChat(key, data.name || nome, { phone: data.phone }); });
+    // Ação rápida "Mover para" (atualiza etapa e funil imediatamente)
+    renderStageMover($("#chatStageMover"), data.phone, data.stage, () => { loadConversas(); });
     const box = $("#chatMessages");
     box.innerHTML = (data.messages || []).map((m) =>
       `<div class="bubble ${m.dir === "out" ? "out" : "in"}">
@@ -930,13 +1034,22 @@ async function loadResponses() {
     list.forEach((r) => {
       const div = document.createElement("div");
       div.className = "dash-card";
-      const titulo = r.name ? `${escapeHtml(r.name)} · ${escapeHtml(r.phone)}` : `${escapeHtml(r.phone)}`;
+      const nome = displayNameOf(r);
+      const tags = (r.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
+      const agenda = r.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
+      const saveBtn = r.inAgenda ? "" : `<button class="btn ghost sm resp-save" type="button">Salvar na agenda</button>`;
       div.innerHTML = `
         <div class="dash-card-head">
-          <span class="resp-phone">${titulo}</span>
+          <span class="resp-phone">${escapeHtml(nome)}</span>
           <span class="dash-when">${fmtDate(r.ts)}</span>
         </div>
-        ${r.content ? `<div class="dash-card-body"><span class="sched-msg">"${escapeHtml(r.content)}"</span></div>` : ""}`;
+        <div class="dash-card-body">
+          <span class="resp-sub">${escapeHtml(r.phone)}${r.stage ? ` · ${escapeHtml(r.stage)}` : ""}</span>
+          ${r.content ? `<span class="sched-msg">"${escapeHtml(r.content)}"</span>` : ""}
+          <span>${sourceBadge(r.nameSource)}${agenda}${tags}${saveBtn}</span>
+        </div>`;
+      const sb = div.querySelector(".resp-save");
+      if (sb) sb.addEventListener("click", () => openSaveAgenda(r.phone, r.name, loadResponses));
       wrap.appendChild(div);
     });
   } catch {

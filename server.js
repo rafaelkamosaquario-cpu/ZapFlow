@@ -637,6 +637,36 @@ function resolveName(phone, fallback) {
   return (a && a.name) || (fallback || "").trim() || "";
 }
 function inAgenda(phone) { return Boolean(findAgenda(phone)); }
+/** Extrai o nome do contato vindo do WhatsApp/Z-API a partir do payload do webhook. */
+function waNameFrom(b) {
+  return String(
+    b.senderName || b.chatName || b.notify || b.pushName || b.contactName || b.senderNotify || ""
+  ).trim().slice(0, 80);
+}
+/** Guarda o nome recebido do WhatsApp no cliente (sem tocar em etapa ou nome de campanha). */
+function setWaName(phone, waName) {
+  if (!waName) return;
+  const c = findClient(phone);
+  if (c && c.waName !== waName) {
+    c.waName = waName;
+    c.updatedAt = Date.now();
+    saveClients();
+  }
+}
+/**
+ * Resolve a identidade de um número seguindo a ordem de prioridade:
+ * 1º nome salvo na agenda → 2º nome recebido do WhatsApp → 3º nome usado na campanha → "".
+ * Devolve { name, source } onde source indica a origem real do nome.
+ */
+function bestName(phone, campaignFallback) {
+  const a = findAgenda(phone);
+  if (a && a.name) return { name: a.name, source: a.origem || "agenda" };
+  const c = findClient(phone);
+  if (c && c.waName) return { name: c.waName, source: "whatsapp" };
+  const camp = String(campaignFallback || (c && c.name) || "").trim();
+  if (camp) return { name: camp, source: "campanha" };
+  return { name: "", source: "" };
+}
 loadAgenda();
 
 // ---------------------------------------------------------------------------
@@ -1016,7 +1046,18 @@ app.get("/api/responses", (req, res) => {
   const list = [...metrics.responses]
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 300)
-    .map((r) => ({ ...r, name: resolveName(r.phone, "") }));
+    .map((r) => {
+      const id = bestName(r.phone, "");
+      const c = findClient(r.phone);
+      return {
+        ...r,
+        name: id.name,
+        nameSource: id.source,
+        inAgenda: inAgenda(r.phone),
+        tags: c?.tags || [],
+        stage: c?.stage || "",
+      };
+    });
   res.json({ responses: list, total: metrics.responses.length });
 });
 
@@ -1132,8 +1173,11 @@ app.get("/api/clients", (req, res) => {
     return true;
   });
   list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 1000);
-  // Enriquece com nome resolvido (agenda → campanha) e flag de agenda
-  const enriched = list.map((c) => ({ ...c, displayName: resolveName(c.phone, c.name), inAgenda: inAgenda(c.phone) }));
+  // Enriquece com nome resolvido (agenda → WhatsApp → campanha), origem e flag de agenda
+  const enriched = list.map((c) => {
+    const id = bestName(c.phone, c.name);
+    return { ...c, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(c.phone) };
+  });
   res.json({ clients: enriched, total: clients.length, shown: enriched.length });
 });
 
@@ -1165,6 +1209,21 @@ app.delete("/api/clients/:id", (req, res) => {
   clients = clients.filter((c) => c.id !== req.params.id);
   saveClients();
   res.json({ ok: before !== clients.length });
+});
+
+// Move a etapa do funil pelo telefone (usado nas Conversas/Respostas, onde o
+// cliente pode ainda não ter card). Cria o cliente se necessário. Mudança manual.
+app.post("/api/clients/stage", (req, res) => {
+  const { phone, stage } = req.body || {};
+  if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido." });
+  if (!CRM_STAGES.includes(stage)) return res.status(400).json({ error: "Etapa inválida." });
+  const c = upsertClient(phone);
+  if (!c) return res.status(400).json({ error: "Não foi possível registrar o cliente." });
+  c.stage = stage;
+  c.stageManual = true;
+  c.updatedAt = Date.now();
+  saveClients();
+  res.json({ ok: true, client: { ...c, displayName: bestName(c.phone, c.name).name, inAgenda: inAgenda(c.phone) } });
 });
 
 // --- Agenda de contatos salvos ---
@@ -1243,7 +1302,18 @@ app.get("/api/conversas", (req, res) => {
   }
   let threads = [...byKey.values()].map((t) => {
     const camp = isCampaignOrigin(t.key);
-    return { ...t, name: resolveName(t.phone, ""), origem: camp ? "campaign" : "daily", campaignName: camp ? campaignNameOf(t.key) : "" };
+    const id = bestName(t.phone, camp ? campaignNameOf(t.key) : "");
+    const c = clients.find((x) => (x.key || phoneKey(x.phone)) === t.key);
+    return {
+      ...t,
+      name: id.name,
+      nameSource: id.source,
+      inAgenda: inAgenda(t.phone),
+      tags: c?.tags || [],
+      stage: c?.stage || "",
+      origem: camp ? "campaign" : "daily",
+      campaignName: camp ? campaignNameOf(t.key) : "",
+    };
   });
   if (filter === "campaign") threads = threads.filter((t) => t.origem === "campaign");
   if (filter === "daily") threads = threads.filter((t) => t.origem === "daily");
@@ -1256,7 +1326,20 @@ app.get("/api/conversas/:key", (req, res) => {
   const key = req.params.key;
   const messages = conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts);
   const phone = messages[0]?.phone || key;
-  res.json({ key, phone, name: resolveName(phone, ""), origem: isCampaignOrigin(key) ? "campaign" : "daily", campaignName: campaignNameOf(key), messages });
+  const camp = isCampaignOrigin(key);
+  const id = bestName(phone, camp ? campaignNameOf(key) : "");
+  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  res.json({
+    key, phone,
+    name: id.name,
+    nameSource: id.source,
+    inAgenda: inAgenda(phone),
+    tags: c?.tags || [],
+    stage: c?.stage || "",
+    origem: camp ? "campaign" : "daily",
+    campaignName: campaignNameOf(key),
+    messages,
+  });
 });
 
 app.post("/api/conversas/:key/reply", async (req, res) => {
@@ -1311,6 +1394,7 @@ app.post("/api/webhook", (req, res) => {
       // Mensagem RECEBIDA (resposta do contato)
       recordResponse(phone, Date.now(), content);
       recordClientReply(phone); // atualiza a etapa do cliente no CRM
+      setWaName(phone, waNameFrom(b)); // guarda o nome recebido do WhatsApp
       if (content) recordMessage(phone, content, "in"); // caixa de conversas
       // Resposta automática (chatbot por regras), personalizada com {{nome}}
       const reply = findChatbotReply(content);

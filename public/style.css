@@ -724,6 +724,25 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .stage-pill.st-cliente { color: var(--accent); border-color: rgba(255,140,66,.5); }
 .stage-pill.st-perdido { color: var(--muted); }
 
+/* ---------- Identidade do contato (Conversas / Respostas / Clientes) ---------- */
+.resp-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.badge.src-badge { background: var(--card-2); color: var(--muted); border: 1px solid var(--border); }
+.chat-sub { margin: -4px 0 8px; font-size: 12.5px; color: var(--muted); }
+.btn.sm { padding: 4px 12px; font-size: 12.5px; }
+
+/* ---------- Ação rápida: mover para etapa do funil ---------- */
+.stage-mover { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
+.stage-mover:empty { display: none; }
+.stage-mover-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-right: 2px; }
+.stage-move-btn {
+  font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 20px;
+  background: var(--card-2); border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.stage-move-btn:hover:not(:disabled) { border-color: var(--primary-light); color: var(--text); }
+.stage-move-btn:disabled { opacity: .55; cursor: default; }
+.stage-move-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
 /* ---------- Chatbot ---------- */
 .switch-row { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 10px 0; cursor: pointer; }
 .switch-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary-light); margin-top: 0; }
