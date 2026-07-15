@@ -10,8 +10,19 @@
 // ============================================================================
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+// Normaliza a URL: remove espaços e barra(s) no final (evita caminho inválido
+// como ".../supabase.co//rest/v1" que causa "Invalid path specified in request URL").
+let SUPABASE_URL = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+// Aviso claro se a URL não parecer a "Project URL" da API (ex.: colaram a URL do
+// painel por engano). A URL correta é https://<ref>.supabase.co
+if (SUPABASE_URL && !/^https:\/\/[a-z0-9-]+\.supabase\.(co|in|net)$/i.test(SUPABASE_URL)) {
+  console.warn(
+    `[Supabase] Atenção: SUPABASE_URL="${SUPABASE_URL}" não parece a Project URL da API.\n` +
+    `           O valor correto é algo como https://<seu-projeto>.supabase.co (sem caminho, sem barra no final).`
+  );
+}
 
 export const supabaseEnabled = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 

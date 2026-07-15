@@ -1517,10 +1517,25 @@ app.get("/api/config", (req, res) => {
 // Inicialização: carrega os dados (Supabase ou arquivos), corrige jobs
 // interrompidos, liga o agendador e sobe o servidor.
 // ---------------------------------------------------------------------------
+// Carrega tudo do Supabase, tentando novamente algumas vezes caso o banco
+// esteja "frio" (ex.: acabou de sair do modo pausado) ou a rede oscile.
+async function loadFromSupabaseWithRetry() {
+  const tentativas = 6;
+  for (let i = 1; i <= tentativas; i++) {
+    try {
+      return await repo.loadEverything();
+    } catch (err) {
+      console.error(`[Supabase] Tentativa ${i}/${tentativas} de conectar falhou: ${err.message}`);
+      if (i === tentativas) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(2000 * i, 10000)));
+    }
+  }
+}
+
 async function bootstrap() {
   if (USE_SUPABASE) {
     console.log("  Persistência: Supabase (banco central).");
-    const all = await repo.loadEverything();
+    const all = await loadFromSupabaseWithRetry();
     jobs = all.jobs;
     agenda = all.agenda;
     clients = all.clients;
@@ -1561,6 +1576,10 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  console.error("[Falha na inicialização do ZapFlow]", err);
+  console.error("\n[Falha na inicialização do ZapFlow] Não foi possível iniciar usando o Supabase.");
+  console.error("Verifique no Railway:");
+  console.error("  • SUPABASE_URL = https://<seu-projeto>.supabase.co (sem barra no final)");
+  console.error("  • SUPABASE_SERVICE_ROLE_KEY = a chave secreta COMPLETA (service_role / sb_secret_...)");
+  console.error("Detalhe do erro:", err && err.message ? err.message : err);
   process.exit(1);
 });
