@@ -7,14 +7,19 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
-import { supabaseEnabled } from "./db/supabase.js";
+import { supabaseEnabled, projectRef } from "./db/supabase.js";
 import * as repo from "./db/repositories.js";
+import { checkDatabase } from "./db/health.js";
 
 dotenv.config();
 
 // Modo de persistência: Supabase (quando as variáveis estão configuradas) ou
 // arquivos locais (comportamento anterior, enquanto o Supabase não é ativado).
 const USE_SUPABASE = supabaseEnabled;
+// Estado da base: em modo arquivos já está pronto; em modo Supabase só fica
+// pronto após carregar os dados. Usado pelo health check e pelo agendador.
+let dbReady = !USE_SUPABASE;
+let dbLastError = null;
 
 // Blindagem: um erro isolado (webhook estranho, falha de rede, agendador)
 // NÃO pode derrubar o servidor inteiro e travar o deploy. Apenas registra.
@@ -85,7 +90,7 @@ const PUBLIC_PATHS = new Set([
 app.use((req, res, next) => {
   if (!AUTH_ENABLED) return next();
   const p = req.path;
-  if (PUBLIC_PATHS.has(p) || p === "/api/login" || p === "/api/logout" || p === "/api/webhook") {
+  if (PUBLIC_PATHS.has(p) || p === "/api/login" || p === "/api/logout" || p === "/api/webhook" || p === "/api/health/database") {
     return next();
   }
   if (isAuthed(req)) return next();
@@ -380,7 +385,7 @@ async function runJob(job) {
 // Verifica periodicamente se há agendamentos vencidos para disparar.
 let schedulerRunning = false;
 async function schedulerTick() {
-  if (schedulerRunning) return;
+  if (schedulerRunning || !dbReady) return;
   const now = Date.now();
   const due = jobs.filter((j) => j.status === "pendente" && j.scheduledAt <= now);
   if (due.length === 0) return;
@@ -1510,76 +1515,104 @@ app.get("/api/config", (req, res) => {
     hasEnvCredentials: Boolean(process.env.ZAPI_INSTANCE_ID && process.env.ZAPI_INSTANCE_TOKEN),
     defaultDelaySeconds: Math.max(1, Math.round(DEFAULT_DELAY_MS / 1000)) || 3,
     authEnabled: AUTH_ENABLED,
+    persistence: USE_SUPABASE ? "supabase" : "arquivos",
+    dbReady,
   });
 });
 
-// ---------------------------------------------------------------------------
-// Inicialização: carrega os dados (Supabase ou arquivos), corrige jobs
-// interrompidos, liga o agendador e sobe o servidor.
-// ---------------------------------------------------------------------------
-// Carrega tudo do Supabase, tentando novamente algumas vezes caso o banco
-// esteja "frio" (ex.: acabou de sair do modo pausado) ou a rede oscile.
-async function loadFromSupabaseWithRetry() {
-  const tentativas = 6;
-  for (let i = 1; i <= tentativas; i++) {
-    try {
-      return await repo.loadEverything();
-    } catch (err) {
-      console.error(`[Supabase] Tentativa ${i}/${tentativas} de conectar falhou: ${err.message}`);
-      if (i === tentativas) throw err;
-      await new Promise((r) => setTimeout(r, Math.min(2000 * i, 10000)));
-    }
+// Health check da base de dados (sem expor credenciais).
+app.get("/api/health/database", async (req, res) => {
+  if (!USE_SUPABASE) {
+    return res.json({ connected: false, mode: "arquivos", projectRef: null, schema: null, tables: [] });
   }
-}
-
-async function bootstrap() {
-  if (USE_SUPABASE) {
-    console.log("  Persistência: Supabase (banco central).");
-    const all = await loadFromSupabaseWithRetry();
-    jobs = all.jobs;
-    agenda = all.agenda;
-    clients = all.clients;
-    conversas = all.conversas;
-    templates = all.templates;
-    chatbot = all.chatbot;
-    metrics = { sends: all.sends, responses: all.responses, campaigns: all.sends.length };
-  } else {
-    console.log("  Persistência: arquivos locais (Supabase não configurado).");
-    await loadJobs();
-    await loadMetrics();
-    await loadClients();
-    await loadTemplates();
-    await loadAgenda();
-    await loadConversas();
-    await loadChatbot();
+  try {
+    const result = await checkDatabase();
+    res.status(result.connected ? 200 : 503).json({ mode: "supabase", dbReady, ...result });
+  } catch (err) {
+    res.status(503).json({ mode: "supabase", connected: false, dbReady, projectRef, error: String(err.message || err) });
   }
-  await migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
+});
 
-  // Marca como "erro" jobs que ficaram "enviando" por causa de um reinício.
-  let mexeu = false;
+// ---------------------------------------------------------------------------
+// Inicialização crash-safe:
+//   1) o servidor HTTP sobe IMEDIATAMENTE (health sempre disponível, sem loop
+//      de reinício);
+//   2) os dados são carregados do Supabase em segundo plano, com novas
+//      tentativas até conseguir (nunca volta para arquivos quando o Supabase
+//      está configurado).
+// ---------------------------------------------------------------------------
+function marcarJobsInterrompidos() {
+  const alterados = [];
   for (const j of jobs) {
     if (j.status === "enviando") {
       j.status = "erro";
       j.error = "Interrompido por reinício do servidor.";
-      mexeu = true;
-      if (USE_SUPABASE) await saveJobs(j);
+      alterados.push(j);
     }
   }
-  if (mexeu && !USE_SUPABASE) await saveJobs();
-
-  setInterval(schedulerTick, 15000);
-
-  app.listen(PORT, () => {
-    console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
-      (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)") + "\n");
-  });
+  return alterados;
 }
 
-bootstrap().catch((err) => {
-  console.error("\n[Falha na inicialização do ZapFlow] Não foi possível iniciar usando o Supabase.");
-  console.error("Verifique no Railway:");
-  console.error("  • SUPABASE_URL = https://<seu-projeto>.supabase.co (sem barra no final)");
-  console.error("  • SUPABASE_SERVICE_ROLE_KEY = a chave secreta COMPLETA (service_role / sb_secret_...)");
-  console.error("Detalhe do erro:", err && err.message ? err.message : err);
-  process.exit(1);
+async function loadFromFiles() {
+  await loadJobs();
+  await loadMetrics();
+  await loadClients();
+  await loadTemplates();
+  await loadAgenda();
+  await loadConversas();
+  await loadChatbot();
+}
+
+async function initPersistence() {
+  if (!USE_SUPABASE) {
+    console.log("  Persistência: arquivos locais (Supabase não configurado).");
+    await loadFromFiles();
+    await migrateClients();
+    if (marcarJobsInterrompidos().length) await saveJobs();
+    dbReady = true;
+    return;
+  }
+
+  // Modo Supabase: tenta carregar continuamente até conseguir (sem crashar).
+  for (let i = 1; ; i++) {
+    try {
+      const all = await repo.loadEverything();
+      jobs = all.jobs;
+      agenda = all.agenda;
+      clients = all.clients;
+      conversas = all.conversas;
+      templates = all.templates;
+      chatbot = all.chatbot;
+      metrics = { sends: all.sends, responses: all.responses, campaigns: all.sends.length };
+      await migrateClients();
+      for (const j of marcarJobsInterrompidos()) await saveJobs(j);
+      dbReady = true;
+      dbLastError = null;
+      console.log("  Persistência: Supabase (banco central). Dados carregados.");
+      return;
+    } catch (err) {
+      dbReady = false;
+      dbLastError = err.message;
+      console.error(`[Supabase] Tentativa ${i} de carregar os dados falhou: ${err.message}`);
+      if (err.supabase?.code) console.error(`[Supabase] Código: ${err.supabase.code}`);
+      if (i === 3) {
+        console.error("[Supabase] As tabelas podem não estar visíveis na Data API (schema cache) ou faltam permissões ao service_role.");
+        console.error("[Supabase] Rode a migration supabase/migrations/002_grants_and_reload.sql (grants + NOTIFY pgrst).");
+      }
+      await new Promise((r) => setTimeout(r, Math.min(3000 * i, 30000)));
+    }
+  }
+}
+
+// Sobe o servidor primeiro; carrega os dados em seguida (em segundo plano).
+app.listen(PORT, () => {
+  console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
+    (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)"));
+  console.log(`  Persistência: ${USE_SUPABASE ? "Supabase (banco central)" : "arquivos locais"}\n`);
+  setInterval(schedulerTick, 15000);
+  initPersistence().catch((err) => {
+    dbReady = false;
+    dbLastError = err.message;
+    console.error("[Falha ao carregar dados]", err.message);
+  });
 });
