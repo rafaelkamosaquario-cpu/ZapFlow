@@ -7,8 +7,14 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import { supabaseEnabled } from "./db/supabase.js";
+import * as repo from "./db/repositories.js";
 
 dotenv.config();
+
+// Modo de persistência: Supabase (quando as variáveis estão configuradas) ou
+// arquivos locais (comportamento anterior, enquanto o Supabase não é ativado).
+const USE_SUPABASE = supabaseEnabled;
 
 // Blindagem: um erro isolado (webhook estranho, falha de rede, agendador)
 // NÃO pode derrubar o servidor inteiro e travar o deploy. Apenas registra.
@@ -253,7 +259,8 @@ function normalizeImages(images, imageUrl, imageBase64) {
 // ---------------------------------------------------------------------------
 let jobs = [];
 
-function loadJobs() {
+async function loadJobs() {
+  if (USE_SUPABASE) { jobs = await repo.campanhasRepo.loadAll(); return; }
   try {
     if (fs.existsSync(JOBS_FILE)) {
       jobs = JSON.parse(fs.readFileSync(JOBS_FILE, "utf8"));
@@ -264,7 +271,13 @@ function loadJobs() {
   }
 }
 
-function saveJobs() {
+// `one` (opcional): grava só aquele job (mais leve durante o disparo).
+async function saveJobs(one) {
+  if (USE_SUPABASE) {
+    if (one) await repo.campanhasRepo.upsertOne(one);
+    else await repo.campanhasRepo.upsertMany(jobs);
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2));
@@ -324,7 +337,10 @@ async function runJob(job) {
   job.logs = [];
   let success = 0;
   let failed = 0;
-  saveJobs();
+  // Credenciais: as do job (envio imediato) ou, se ausentes (ex.: agendamento
+  // retomado após novo deploy), as do ambiente. Tokens não ficam no banco.
+  const creds = job.credentials || resolveCredentials({});
+  await saveJobs(job);
 
   for (let i = 0; i < job.contacts.length; i++) {
     const contact = job.contacts[i];
@@ -333,7 +349,7 @@ async function runJob(job) {
       job.logs.push({ phone: contact.rawPhone, name: contact.name, ok: false, error: "Número inválido" });
     } else {
       try {
-        await sendOne(job.credentials, contact, job);
+        await sendOne(creds, contact, job);
         success++;
         job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
       } catch (err) {
@@ -343,7 +359,7 @@ async function runJob(job) {
       }
     }
     job.result = { success, failed, total: job.contacts.length };
-    saveJobs();
+    await saveJobs(job);
     if (i < job.contacts.length - 1 && job.delayMs > 0) {
       await sleep(job.delayMs);
     }
@@ -352,10 +368,12 @@ async function runJob(job) {
   job.status = "concluido";
   job.finishedAt = Date.now();
   const label = campaignLabel(job.message, job.hadImage || job.images?.length);
-  recordClientsSent(job.contacts, label);
+  job.label = label;
+  await recordClientsSent(job.contacts, label);
   trimFinishedJob(job);
-  saveJobs();
-  recordCampaign(success, failed, label);
+  await saveJobs(job);
+  if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(job.id, job.logs);
+  await recordCampaign(success, failed, label);
   console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
 }
 
@@ -374,36 +392,33 @@ async function schedulerTick() {
     } catch (err) {
       job.status = "erro";
       job.error = err.message;
-      saveJobs();
+      await saveJobs(job);
     }
   }
   schedulerRunning = false;
 }
-
-loadJobs();
-// Marca como "erro" jobs que ficaram "enviando" por causa de um reinício do servidor.
-jobs.forEach((j) => {
-  if (j.status === "enviando") {
-    j.status = "erro";
-    j.error = "Interrompido por reinício do servidor.";
-  }
-});
-saveJobs();
-setInterval(schedulerTick, 15000);
 
 // ---------------------------------------------------------------------------
 // Métricas (data/metrics.json)
 // ---------------------------------------------------------------------------
 let metrics = { sends: [], responses: [], campaigns: 0 };
 
-function loadMetrics() {
+async function loadMetrics() {
+  if (USE_SUPABASE) {
+    const [sends, responses] = await Promise.all([repo.metricasRepo.loadAll(), repo.respostasRepo.loadAll()]);
+    metrics = { sends, responses, campaigns: sends.length };
+    return;
+  }
   try {
     if (fs.existsSync(METRICS_FILE)) metrics = JSON.parse(fs.readFileSync(METRICS_FILE, "utf8"));
   } catch {
     metrics = { sends: [], responses: [], campaigns: 0 };
   }
 }
-function saveMetrics() {
+// Modo arquivo: grava o metrics.json. Modo Supabase: no-op (os inserts pontuais
+// em recordCampaign/recordResponse já persistiram cada registro).
+function saveMetricsFile() {
+  if (USE_SUPABASE) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics));
@@ -417,19 +432,23 @@ function campaignLabel(message, hasImage) {
   if (t) return t.slice(0, 40);
   return hasImage ? "Campanha com imagem" : "Campanha";
 }
-function recordCampaign(sent, failed, name = "Campanha", ts = Date.now()) {
-  metrics.sends.push({ ts, sent, failed, name });
+async function recordCampaign(sent, failed, name = "Campanha", ts = Date.now()) {
+  const row = { ts, sent, failed, name };
+  metrics.sends.push(row);
   metrics.campaigns = (metrics.campaigns || 0) + 1;
-  saveMetrics();
+  if (USE_SUPABASE) await repo.metricasRepo.insertOne(row);
+  else saveMetricsFile();
 }
-function recordResponse(phone, ts = Date.now(), content = "") {
-  metrics.responses.push({
+async function recordResponse(phone, ts = Date.now(), content = "", externalId = null) {
+  const row = {
     phone: String(phone || "").replace(/\D/g, ""),
     key: phoneKey(phone),
     ts,
     content: String(content || "").slice(0, 200),
-  });
-  saveMetrics();
+  };
+  metrics.responses.push(row);
+  if (USE_SUPABASE) await repo.respostasRepo.insertOne(row, externalId);
+  else saveMetricsFile();
 }
 function summarizeMetrics(from) {
   const sends = metrics.sends.filter((s) => s.ts >= from);
@@ -458,22 +477,26 @@ function summarizeMetrics(from) {
   return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week, campanhaNomes };
 }
 
-loadMetrics();
-
 // ---------------------------------------------------------------------------
 // Modelos de mensagem (data/templates.json)
 // ---------------------------------------------------------------------------
 let templates = [];
 const MAX_TEMPLATES = 10;
 
-function loadTemplates() {
+async function loadTemplates() {
+  if (USE_SUPABASE) { templates = await repo.modelosRepo.loadAll(); return; }
   try {
     if (fs.existsSync(TEMPLATES_FILE)) templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8"));
   } catch {
     templates = [];
   }
 }
-function saveTemplates() {
+async function saveTemplates(one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.modelosRepo.deleteById(removedId);
+    else if (one) await repo.modelosRepo.upsertOne(one);
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
@@ -481,7 +504,6 @@ function saveTemplates() {
     console.error("Não foi possível salvar os modelos:", err.message);
   }
 }
-loadTemplates();
 
 // ---------------------------------------------------------------------------
 // CRM-lite: base de clientes (data/clients.json)
@@ -490,20 +512,31 @@ const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
 const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
 let clients = [];
 
-function loadClients() {
+async function loadClients() {
+  if (USE_SUPABASE) { clients = await repo.clientesRepo.loadAll(); return; }
   try {
     if (fs.existsSync(CLIENTS_FILE)) clients = JSON.parse(fs.readFileSync(CLIENTS_FILE, "utf8"));
   } catch {
     clients = [];
   }
 }
-function saveClients() {
+function saveClientsFile() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
   } catch (err) {
     console.error("Não foi possível salvar os clientes:", err.message);
   }
+}
+// `one`: grava só um cliente. `removedId`: remove um cliente. Sem args: grava todos.
+async function saveClients(one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.clientesRepo.deleteById(removedId);
+    else if (one) await repo.clientesRepo.upsertOne(one);
+    else await repo.clientesRepo.upsertMany(clients);
+    return;
+  }
+  saveClientsFile();
 }
 function onlyDigits(p) { return String(p || "").replace(/\D/g, ""); }
 /** Telefone "discável" para exibir/enviar (com DDI 55, preserva o nono dígito). */
@@ -533,7 +566,7 @@ function upsertClient(phone, name) {
 }
 
 /** Mescla clientes duplicados pela chave canônica (migração do nono dígito). */
-function migrateClients() {
+async function migrateClients() {
   const byKey = new Map();
   const merged = [];
   const stageRank = (s) => Math.max(0, CRM_STAGES.indexOf(s));
@@ -560,15 +593,15 @@ function migrateClients() {
   }
   if (changed || merged.length !== clients.length) {
     clients = merged;
-    saveClients();
-    if (merged.length !== clients.length) { /* noop */ }
+    await saveClients();
     console.log(`CRM: base normalizada (${clients.length} clientes únicos).`);
   }
 }
 /** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
-function recordClientsSent(list, campaignName) {
+async function recordClientsSent(list, campaignName) {
   if (!Array.isArray(list)) return;
   const now = Date.now();
+  const touched = [];
   list.forEach((ct) => {
     const c = upsertClient(ct.phone, ct.name);
     if (c) {
@@ -576,21 +609,21 @@ function recordClientsSent(list, campaignName) {
       c.updatedAt = now;
       if (campaignName) c.lastCampaignName = campaignName;
       if (!c.stage || c.stage === "Novo") c.stage = "Contatado";
+      touched.push(c);
     }
   });
-  saveClients();
+  if (USE_SUPABASE) await repo.clientesRepo.upsertMany(touched);
+  else saveClientsFile();
 }
 /** Registra que um cliente respondeu (avança a etapa). */
-function recordClientReply(phone) {
+async function recordClientReply(phone) {
   const c = upsertClient(phone);
   if (!c) return;
   c.lastReplyAt = Date.now();
   c.updatedAt = Date.now();
   if (c.stage === "Novo" || c.stage === "Contatado") c.stage = "Respondeu";
-  saveClients();
+  await saveClients(c);
 }
-loadClients();
-migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
 
 // ---------------------------------------------------------------------------
 // Agenda de contatos salvos (data/agenda.json)
@@ -598,14 +631,22 @@ migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
 const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
 let agenda = [];
 
-function loadAgenda() {
+async function loadAgenda() {
+  if (USE_SUPABASE) { agenda = await repo.contatosRepo.loadAll(); return; }
   try {
     if (fs.existsSync(AGENDA_FILE)) agenda = JSON.parse(fs.readFileSync(AGENDA_FILE, "utf8"));
   } catch {
     agenda = [];
   }
 }
-function saveAgenda() {
+// `one`: grava só um contato. `removedId`: remove. Sem args: grava todos.
+async function saveAgenda(one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.contatosRepo.deleteById(removedId);
+    else if (one) await repo.contatosRepo.upsertOne(one);
+    else for (const c of agenda) await repo.contatosRepo.upsertOne(c);
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(AGENDA_FILE, JSON.stringify(agenda, null, 2));
@@ -644,13 +685,13 @@ function waNameFrom(b) {
   ).trim().slice(0, 80);
 }
 /** Guarda o nome recebido do WhatsApp no cliente (sem tocar em etapa ou nome de campanha). */
-function setWaName(phone, waName) {
+async function setWaName(phone, waName) {
   if (!waName) return;
   const c = findClient(phone);
   if (c && c.waName !== waName) {
     c.waName = waName;
     c.updatedAt = Date.now();
-    saveClients();
+    await saveClients(c);
   }
 }
 /**
@@ -667,7 +708,6 @@ function bestName(phone, campaignFallback) {
   if (camp) return { name: camp, source: "campanha" };
   return { name: "", source: "" };
 }
-loadAgenda();
 
 // ---------------------------------------------------------------------------
 // Conversas (caixa de entrada do dia a dia — data/conversas.json)
@@ -677,14 +717,16 @@ const CONV_MAX = 5000;
 const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
 let conversas = [];
 
-function loadConversas() {
+async function loadConversas() {
+  if (USE_SUPABASE) { conversas = await repo.mensagensRepo.loadAll(); return; }
   try {
     if (fs.existsSync(CONVERSAS_FILE)) conversas = JSON.parse(fs.readFileSync(CONVERSAS_FILE, "utf8"));
   } catch {
     conversas = [];
   }
 }
-function saveConversas() {
+function saveConversasFile() {
+  if (USE_SUPABASE) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CONVERSAS_FILE, JSON.stringify(conversas, null, 2));
@@ -693,7 +735,7 @@ function saveConversas() {
   }
 }
 /** Registra uma mensagem na conversa (dir: "in" recebida | "out" enviada). */
-function recordMessage(phone, text, dir) {
+async function recordMessage(phone, text, dir, externalId = null) {
   const key = phoneKey(phone);
   if (!key) return;
   const t = String(text || "").slice(0, 1000);
@@ -703,9 +745,26 @@ function recordMessage(phone, text, dir) {
     const dup = conversas.some((m) => m.dir === "out" && m.key === key && m.text === t && now - m.ts < 60000);
     if (dup) return;
   }
-  conversas.push({ key, phone: canonPhone(phone), text: t, ts: now, dir });
+  const msg = { key, phone: canonPhone(phone), text: t, ts: now, dir };
+  conversas.push(msg);
   if (conversas.length > CONV_MAX) conversas = conversas.slice(-CONV_MAX);
-  saveConversas();
+  if (USE_SUPABASE) {
+    let conversaId = null;
+    try {
+      conversaId = await repo.conversasRepo.upsertThread({
+        key, phone: msg.phone, text: t, dir, ts: now,
+        origem: isCampaignOrigin(key) ? "campaign" : "daily",
+      });
+    } catch (e) { console.error("[Supabase] thread:", e.message); }
+    const inserted = await repo.mensagensRepo.insertOne(msg, externalId, conversaId);
+    if (inserted === false) {
+      // Mensagem já existente (external_id duplicado): desfaz na memória
+      const idx = conversas.lastIndexOf(msg);
+      if (idx >= 0) conversas.splice(idx, 1);
+    }
+  } else {
+    saveConversasFile();
+  }
 }
 /** A conversa é de campanha? (o contato recebeu disparo nos últimos 30 dias) */
 function isCampaignOrigin(key) {
@@ -731,7 +790,6 @@ function conversasSummaryToday() {
   const start = new Date(); start.setHours(0, 0, 0, 0);
   return conversasSummary(start.getTime());
 }
-loadConversas();
 
 // ---------------------------------------------------------------------------
 // Chatbot por regras (data/chatbot.json)
@@ -740,14 +798,16 @@ const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
 let chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
 const autoReplyCooldown = new Map(); // anti-spam por número
 
-function loadChatbot() {
+async function loadChatbot() {
+  if (USE_SUPABASE) { chatbot = await repo.automacoesRepo.load(); return; }
   try {
     if (fs.existsSync(CHATBOT_FILE)) chatbot = JSON.parse(fs.readFileSync(CHATBOT_FILE, "utf8"));
   } catch {
     chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
   }
 }
-function saveChatbot() {
+async function saveChatbot() {
+  if (USE_SUPABASE) { await repo.automacoesRepo.save(chatbot); return; }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CHATBOT_FILE, JSON.stringify(chatbot, null, 2));
@@ -755,7 +815,6 @@ function saveChatbot() {
     console.error("Não foi possível salvar o chatbot:", err.message);
   }
 }
-loadChatbot();
 
 /** Encontra a resposta automática para um texto recebido (ou null). */
 function findChatbotReply(text) {
@@ -790,7 +849,7 @@ async function sendAutoReply(phone, text) {
       { phone: p, message: text },
       { headers: zapiHeaders(creds), timeout: 20000 }
     );
-    recordMessage(p, text, "out"); // registra na caixa de conversas
+    await recordMessage(p, text, "out"); // registra na caixa de conversas
   } catch (err) {
     console.error("Falha na resposta automática:", err.response?.data?.error || err.message);
   }
@@ -903,7 +962,7 @@ app.post("/api/send", async (req, res) => {
     logs: [],
   };
   jobs.push(job);
-  saveJobs();
+  await saveJobs(job);
 
   let success = 0;
   let failed = 0;
@@ -938,16 +997,24 @@ app.post("/api/send", async (req, res) => {
   job.status = "concluido";
   job.finishedAt = Date.now();
   job.result = { success, failed, total: contacts.length };
-  saveJobs();
-  recordCampaign(success, failed, campaignLabel(message, images.length));
-  recordClientsSent(contacts, campaignLabel(message, images.length));
+  const label = campaignLabel(message, images.length);
+  job.label = label;
+  trimFinishedJob(job);
+  try {
+    await saveJobs(job);
+    if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(job.id, job.logs);
+    await recordCampaign(success, failed, label);
+    await recordClientsSent(contacts, label);
+  } catch (err) {
+    console.error("[persistência] Falha ao salvar o envio:", err.message);
+  }
 
   res.write(JSON.stringify({ done: true, success, failed, total: contacts.length }) + "\n");
   res.end();
 });
 
 // Cria um agendamento de disparo
-app.post("/api/schedule", (req, res) => {
+app.post("/api/schedule", async (req, res) => {
   const creds = resolveCredentials(req.body);
   const { contacts, message, imageUrl, imageBase64, scheduledAt } = req.body;
   const images = normalizeImages(req.body.images, imageUrl, imageBase64);
@@ -983,7 +1050,7 @@ app.post("/api/schedule", (req, res) => {
     delayMs,
   };
   jobs.push(job);
-  saveJobs();
+  await saveJobs(job);
   res.json({ ok: true, job: publicJob(job) });
 });
 
@@ -1010,22 +1077,24 @@ app.get("/api/schedules/:id", (req, res) => {
 });
 
 // Limpa o histórico (remove os já finalizados; mantém pendentes/em andamento)
-app.delete("/api/schedules", (req, res) => {
+app.delete("/api/schedules", async (req, res) => {
   const before = jobs.length;
+  const removidos = jobs.filter((j) => j.status !== "pendente" && j.status !== "enviando");
   jobs = jobs.filter((j) => j.status === "pendente" || j.status === "enviando");
-  saveJobs();
+  if (USE_SUPABASE) { for (const j of removidos) await repo.campanhasRepo.deleteById(j.id); }
+  else await saveJobs();
   res.json({ ok: true, removed: before - jobs.length });
 });
 
 // Cancela um agendamento pendente
-app.delete("/api/schedules/:id", (req, res) => {
+app.delete("/api/schedules/:id", async (req, res) => {
   const job = jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
   if (job.status !== "pendente") {
     return res.status(400).json({ error: "Só é possível cancelar agendamentos pendentes." });
   }
   job.status = "cancelado";
-  saveJobs();
+  await saveJobs(job);
   res.json({ ok: true });
 });
 
@@ -1132,7 +1201,7 @@ app.get("/api/dashboard", (req, res) => {
 // --- Modelos de mensagem ---
 app.get("/api/templates", (req, res) => res.json({ templates }));
 
-app.post("/api/templates", (req, res) => {
+app.post("/api/templates", async (req, res) => {
   const { name, message, imageUrl } = req.body || {};
   // Até 3 URLs de imagem (compatível com o campo antigo imageUrl)
   let imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : (imageUrl ? [imageUrl] : []);
@@ -1149,14 +1218,14 @@ app.post("/api/templates", (req, res) => {
     imageUrls,
   };
   templates.push(template);
-  saveTemplates();
+  await saveTemplates(template);
   res.json({ ok: true, template });
 });
 
-app.delete("/api/templates/:id", (req, res) => {
+app.delete("/api/templates/:id", async (req, res) => {
   const before = templates.length;
   templates = templates.filter((t) => t.id !== req.params.id);
-  saveTemplates();
+  await saveTemplates(null, req.params.id);
   res.json({ ok: before !== templates.length });
 });
 
@@ -1191,29 +1260,30 @@ app.get("/api/clients/meta", (req, res) => {
   res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: clients.length });
 });
 
-app.patch("/api/clients/:id", (req, res) => {
+app.patch("/api/clients/:id", async (req, res) => {
   const c = clients.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
   const { name, stage, tags, notes } = req.body || {};
   if (typeof name === "string") c.name = name.slice(0, 80);
-  if (typeof stage === "string" && stage) c.stage = stage.slice(0, 40);
+  if (typeof stage === "string" && stage) { c.stage = stage.slice(0, 40); c.stageManual = true; }
   if (Array.isArray(tags)) c.tags = tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (typeof notes === "string") c.notes = notes.slice(0, 1000);
   c.updatedAt = Date.now();
-  saveClients();
+  await saveClients(c);
   res.json({ ok: true, client: c });
 });
 
-app.delete("/api/clients/:id", (req, res) => {
+app.delete("/api/clients/:id", async (req, res) => {
   const before = clients.length;
+  const removed = clients.find((c) => c.id === req.params.id);
   clients = clients.filter((c) => c.id !== req.params.id);
-  saveClients();
+  if (removed) await saveClients(null, removed.id);
   res.json({ ok: before !== clients.length });
 });
 
 // Move a etapa do funil pelo telefone (usado nas Conversas/Respostas, onde o
 // cliente pode ainda não ter card). Cria o cliente se necessário. Mudança manual.
-app.post("/api/clients/stage", (req, res) => {
+app.post("/api/clients/stage", async (req, res) => {
   const { phone, stage } = req.body || {};
   if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido." });
   if (!CRM_STAGES.includes(stage)) return res.status(400).json({ error: "Etapa inválida." });
@@ -1222,7 +1292,7 @@ app.post("/api/clients/stage", (req, res) => {
   c.stage = stage;
   c.stageManual = true;
   c.updatedAt = Date.now();
-  saveClients();
+  await saveClients(c);
   res.json({ ok: true, client: { ...c, displayName: bestName(c.phone, c.name).name, inAgenda: inAgenda(c.phone) } });
 });
 
@@ -1234,23 +1304,24 @@ app.get("/api/agenda", (req, res) => {
   res.json({ contacts: list, total: agenda.length, shown: list.length });
 });
 
-app.post("/api/agenda", (req, res) => {
+app.post("/api/agenda", async (req, res) => {
   const { name, phone } = req.body || {};
   if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido. Inclua o DDD." });
   const contact = upsertAgenda(phone, name || "", "manual");
-  saveAgenda();
+  await saveAgenda(contact);
   res.json({ ok: true, contact });
 });
 
 // Importa contatos de uma planilha (reaproveita o parser do Passo 2)
-app.post("/api/agenda/upload", upload.single("file"), (req, res) => {
+app.post("/api/agenda/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
   try {
     const contacts = parseContactsFromBuffer(req.file.buffer);
-    let imported = 0;
-    contacts.forEach((c) => { if (c.phone) { upsertAgenda(c.phone, c.name, "planilha"); imported++; } });
-    saveAgenda();
-    res.json({ ok: true, imported });
+    const touched = [];
+    contacts.forEach((c) => { if (c.phone) { touched.push(upsertAgenda(c.phone, c.name, "planilha")); } });
+    if (USE_SUPABASE) { for (const c of touched) if (c) await repo.contatosRepo.upsertOne(c); }
+    else await saveAgenda();
+    res.json({ ok: true, imported: touched.filter(Boolean).length });
   } catch (err) {
     res.status(500).json({ error: "Falha ao ler a planilha: " + err.message });
   }
@@ -1272,21 +1343,25 @@ app.post("/api/agenda/sync-chip", async (req, res) => {
       for (const c of list) {
         const phone = c.phone || c.id || "";
         const name = c.name || c.vname || c.notify || c.short || "";
-        if (phoneKey(phone)) { upsertAgenda(phone, name, "chip"); imported++; }
+        if (phoneKey(phone)) {
+          const a = upsertAgenda(phone, name, "chip");
+          if (USE_SUPABASE && a) await repo.contatosRepo.upsertOne(a);
+          imported++;
+        }
       }
       if (list.length < 100) break;
     }
-    saveAgenda();
+    if (!USE_SUPABASE) await saveAgenda();
     res.json({ ok: true, imported });
   } catch (err) {
     res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
   }
 });
 
-app.delete("/api/agenda/:id", (req, res) => {
+app.delete("/api/agenda/:id", async (req, res) => {
   const before = agenda.length;
   agenda = agenda.filter((a) => a.id !== req.params.id);
-  saveAgenda();
+  if (before !== agenda.length) await saveAgenda(null, req.params.id);
   res.json({ ok: before !== agenda.length });
 });
 
@@ -1351,7 +1426,7 @@ app.post("/api/conversas/:key/reply", async (req, res) => {
   const phone = existing ? onlyDigits(existing.phone) : req.params.key;
   try {
     await axios.post(`${zapiBaseUrl(creds)}/send-text`, { phone, message }, { headers: zapiHeaders(creds), timeout: 20000 });
-    recordMessage(phone, message, "out");
+    await recordMessage(phone, message, "out");
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
@@ -1361,7 +1436,7 @@ app.post("/api/conversas/:key/reply", async (req, res) => {
 // --- Chatbot por regras ---
 app.get("/api/chatbot", (req, res) => res.json(chatbot));
 
-app.put("/api/chatbot", (req, res) => {
+app.put("/api/chatbot", async (req, res) => {
   const b = req.body || {};
   chatbot = {
     enabled: !!b.enabled,
@@ -1379,38 +1454,54 @@ app.put("/api/chatbot", (req, res) => {
       reply: String(b.fallback?.reply || "").slice(0, 2000),
     },
   };
-  saveChatbot();
+  await saveChatbot();
   res.json({ ok: true, chatbot });
 });
 
 // --- Webhook da Z-API (respostas recebidas) ---
+// Responde rápido para a Z-API e processa em segundo plano (persistência + dedup).
 app.post("/api/webhook", (req, res) => {
-  try {
-    const b = req.body || {};
-    const phone = b.phone || b.participantPhone || b.connectedPhone;
-    const fromMe = b.fromMe === true;
-    const content = b.text?.message || b.message || b.body || b.caption || "";
-    if (phone && !fromMe) {
-      // Mensagem RECEBIDA (resposta do contato)
-      recordResponse(phone, Date.now(), content);
-      recordClientReply(phone); // atualiza a etapa do cliente no CRM
-      setWaName(phone, waNameFrom(b)); // guarda o nome recebido do WhatsApp
-      if (content) recordMessage(phone, content, "in"); // caixa de conversas
-      // Resposta automática (chatbot por regras), personalizada com {{nome}}
-      const reply = findChatbotReply(content);
-      if (reply) {
-        const cli = findClient(phone);
-        sendAutoReply(phone, applyTemplate(reply, { name: cli?.name || "" }));
-      }
-    } else if (phone && fromMe && content) {
-      // Mensagem ENVIADA por mim (ex.: respondida direto pelo celular)
-      recordMessage(phone, content, "out");
-    }
-  } catch (err) {
-    console.error("Erro no webhook:", err.message);
-  }
+  const body = req.body || {};
   res.json({ ok: true });
+  processWebhook(body).catch((err) => console.error("Erro no webhook:", err.message));
 });
+
+/** Identificador externo do evento (messageId da Z-API) para impedir duplicidade. */
+function webhookExternalId(b) {
+  return String(b.messageId || b.id || b.message?.id || b.messageid || "").trim() || null;
+}
+
+async function processWebhook(b) {
+  const phone = b.phone || b.participantPhone || b.connectedPhone;
+  if (!phone) return;
+  const fromMe = b.fromMe === true;
+  const content = b.text?.message || b.message || b.body || b.caption || "";
+  const externalId = webhookExternalId(b);
+
+  // Dedup por evento: se já registramos este id externo, não processa de novo.
+  if (USE_SUPABASE && externalId) {
+    const { isNew } = await repo.eventosRepo.record(externalId, phoneKey(phone), fromMe, b);
+    if (!isNew) return;
+  }
+
+  if (!fromMe) {
+    // Mensagem RECEBIDA (resposta do contato)
+    await recordResponse(phone, Date.now(), content, externalId);
+    await recordClientReply(phone); // atualiza a etapa do cliente no CRM
+    await setWaName(phone, waNameFrom(b)); // guarda o nome recebido do WhatsApp
+    if (content) await recordMessage(phone, content, "in", externalId); // caixa de conversas
+    // Resposta automática (chatbot por regras), personalizada com {{nome}}
+    const reply = findChatbotReply(content);
+    if (reply) {
+      const cli = findClient(phone);
+      await sendAutoReply(phone, applyTemplate(reply, { name: cli?.name || "" }));
+    }
+  } else if (content) {
+    // Mensagem ENVIADA por mim (ex.: respondida direto pelo celular)
+    await recordMessage(phone, content, "out", externalId);
+  }
+  if (USE_SUPABASE && externalId) await repo.eventosRepo.markProcessed(externalId);
+}
 
 // Configurações públicas para o frontend
 app.get("/api/config", (req, res) => {
@@ -1422,7 +1513,54 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
-    (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)") + "\n");
+// ---------------------------------------------------------------------------
+// Inicialização: carrega os dados (Supabase ou arquivos), corrige jobs
+// interrompidos, liga o agendador e sobe o servidor.
+// ---------------------------------------------------------------------------
+async function bootstrap() {
+  if (USE_SUPABASE) {
+    console.log("  Persistência: Supabase (banco central).");
+    const all = await repo.loadEverything();
+    jobs = all.jobs;
+    agenda = all.agenda;
+    clients = all.clients;
+    conversas = all.conversas;
+    templates = all.templates;
+    chatbot = all.chatbot;
+    metrics = { sends: all.sends, responses: all.responses, campaigns: all.sends.length };
+  } else {
+    console.log("  Persistência: arquivos locais (Supabase não configurado).");
+    await loadJobs();
+    await loadMetrics();
+    await loadClients();
+    await loadTemplates();
+    await loadAgenda();
+    await loadConversas();
+    await loadChatbot();
+  }
+  await migrateClients(); // normaliza/mescla duplicados pelo nono dígito ao subir
+
+  // Marca como "erro" jobs que ficaram "enviando" por causa de um reinício.
+  let mexeu = false;
+  for (const j of jobs) {
+    if (j.status === "enviando") {
+      j.status = "erro";
+      j.error = "Interrompido por reinício do servidor.";
+      mexeu = true;
+      if (USE_SUPABASE) await saveJobs(j);
+    }
+  }
+  if (mexeu && !USE_SUPABASE) await saveJobs();
+
+  setInterval(schedulerTick, 15000);
+
+  app.listen(PORT, () => {
+    console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
+      (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)") + "\n");
+  });
+}
+
+bootstrap().catch((err) => {
+  console.error("[Falha na inicialização do ZapFlow]", err);
+  process.exit(1);
 });
