@@ -1522,14 +1522,15 @@ app.get("/api/config", (req, res) => {
 
 // Health check da base de dados (sem expor credenciais).
 app.get("/api/health/database", async (req, res) => {
+  res.set("Cache-Control", "no-store");
   if (!USE_SUPABASE) {
     return res.json({ connected: false, mode: "arquivos", projectRef: null, schema: null, tables: [] });
   }
   try {
     const result = await checkDatabase();
-    res.status(result.connected ? 200 : 503).json({ mode: "supabase", dbReady, ...result });
+    res.status(result.connected ? 200 : 503).json({ mode: "supabase", dbReady, loadError: dbLastError, ...result });
   } catch (err) {
-    res.status(503).json({ mode: "supabase", connected: false, dbReady, projectRef, error: String(err.message || err) });
+    res.status(503).json({ mode: "supabase", connected: false, dbReady, loadError: dbLastError, projectRef, error: String(err.message || err) });
   }
 });
 
