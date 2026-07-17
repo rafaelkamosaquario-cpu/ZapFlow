@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="no-js">
 <head>
 <meta charset="utf-8" />
+<script>document.documentElement.classList.remove('no-js');</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>ZapFlow — Central de Vendas pelo WhatsApp</title>
 <meta name="description" content="ZapFlow é a central de vendas pelo WhatsApp para pequenos e médios comerciantes: organize contatos, dispare campanhas, acompanhe respostas e feche mais vendas em um só lugar." />
@@ -27,7 +28,7 @@
 </script>
 <style>
   :root{
-    --blue:#1D4ED8; --blue-2:#1E40AF; --blue-3:#3B82F6;
+    --blue:#1D4ED8; --blue-2:#1E40AF; --blue-3:#2F6DEA;
     --ink:#0B1220; --text:#172033; --muted:#5B6B7A;
     --bg:#F6F8FB; --bg-2:#EEF3FA; --card:#FFFFFF; --border:#E2E8F0;
     --green:#22C55E; --amber:#F59E0B; --red:#EF4444;
@@ -37,7 +38,7 @@
     --shadow:0 10px 30px rgba(16,24,40,.10);
     --shadow-lg:0 30px 60px rgba(16,24,40,.16);
     --radius:16px;
-    --grad:linear-gradient(135deg,#1D4ED8,#3B82F6);
+    --grad:linear-gradient(135deg,#1D4ED8,#2F6DEA);
     --maxw:1120px;
   }
   :root[data-theme="dark"]{
@@ -262,6 +263,7 @@
 
   /* reveal animation */
   .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  html.no-js .reveal{opacity:1;transform:none}
   .reveal.in{opacity:1;transform:none}
   .reveal[data-d="1"]{transition-delay:.07s}.reveal[data-d="2"]{transition-delay:.14s}.reveal[data-d="3"]{transition-delay:.21s}.reveal[data-d="4"]{transition-delay:.28s}
   /* microinterações */
