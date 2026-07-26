@@ -6,11 +6,12 @@
  * integração com o Claude (tool use) — ver README.md desta pasta para o
  * estado atual dessa integração.
  *
+ * Todas as 11 ferramentas planejadas para esta primeira sequência —
  * `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
  * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete`,
  * `calcular_valor_minimo_frete`, `calcular_receita_km`,
- * `calcular_custo_dia` e `calcular_custo_veiculo_parado` têm a lógica de
- * cálculo implementada — as demais expõem apenas a estrutura (ver README).
+ * `calcular_custo_dia`, `calcular_custo_veiculo_parado` e
+ * `calcular_jornada` — têm a lógica de cálculo implementada (ver README).
  */
 
 export * from "./types";
@@ -43,11 +44,11 @@ import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
  * Todas as ferramentas internas do Frota IA, na ordem em que aparecem na
- * pasta. `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
- * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete`,
- * `calcular_valor_minimo_frete`, `calcular_receita_km`,
- * `calcular_custo_dia` e `calcular_custo_veiculo_parado` têm a lógica de
- * cálculo implementada — as demais expõem apenas a estrutura (ver README).
+ * pasta. Todas as 11 ferramentas — `calcular_combustivel`, `calcular_cpk`,
+ * `comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
+ * `analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km`,
+ * `calcular_custo_dia`, `calcular_custo_veiculo_parado` e
+ * `calcular_jornada` — têm a lógica de cálculo implementada (ver README).
  */
 export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, ResultadoFerramentaBase>> = [
   ferramentaAnalisarFrete,

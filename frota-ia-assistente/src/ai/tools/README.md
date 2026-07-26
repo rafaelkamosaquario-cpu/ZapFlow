@@ -28,13 +28,13 @@ nenhuma API externa nesta fase.
 | `calcular_receita_km` | `calcular-receita-km.ts` | **Lógica implementada** |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | **Lógica implementada** |
 | `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | **Lógica implementada** |
-| `calcular_jornada` | `calcular-jornada.ts` | Estrutura apenas |
+| `calcular_jornada` | `calcular-jornada.ts` | **Lógica implementada** |
 
-"Estrutura apenas" significa: tipos de entrada/saída, parâmetros
-documentados e a função `executar` já existem, mas o corpo lança
-`Error("... logica ainda nao implementada (etapa de estrutura).")`. Cada uma
-será implementada em uma etapa própria, seguindo o mesmo padrão usado em
-`calcular-combustivel.ts`.
+Todas as 11 ferramentas planejadas para esta primeira sequência já têm a
+lógica de cálculo implementada, seguindo o mesmo padrão de
+`calcular-combustivel.ts`: contrato tipado (`ResultadoFerramentaBase`),
+premissas e alertas explícitos, nunca inventa dados ausentes, e nunca
+arredonda durante os cálculos internos (só na saída).
 
 ## Contrato comum (`types.ts`)
 
@@ -1488,6 +1488,155 @@ const resultado = calcularCustoVeiculoParado({
 - Base percentual `VALOR_FIXO` para `custosAdicionais` ainda não tem
   equação implementada nesta fase.
 
+## `calcular_jornada`
+
+Planeja, consolida e analisa a jornada operacional de motoristas e
+veículos — a 11ª e última ferramenta desta primeira sequência. Separa
+sempre quatro dimensões, nunca tratadas como a mesma coisa:
+
+1. **Jornada operacional** — planejamento completo da viagem (direção,
+   carga, descarga, espera, pausas, descanso, abastecimento, imprevistos).
+2. **Jornada de trabalho** — períodos em que o motorista está trabalhando
+   (dirigindo ou executando outras atividades).
+3. **Tempo de direção** — somente o período efetivamente dirigindo.
+4. **Conformidade** — comparação com regras fornecidas/configuradas,
+   nunca com limites legais fixos embutidos na lógica.
+
+### Modos de cálculo
+
+| Modo | Cálculo |
+|---|---|
+| `CALCULAR_DURACAO_VIAGEM` | Duração total estimada da operação |
+| `CALCULAR_JORNADA_TOTAL` | Consolida direção, trabalho, espera, pausas e descanso |
+| `CALCULAR_TEMPO_DIRECAO` | Somente o tempo de condução |
+| `CALCULAR_HORARIO_CHEGADA` / `CALCULAR_HORARIO_SAIDA` | Chegada a partir da saída, ou saída necessária para uma chegada desejada |
+| `CALCULAR_DIAS_NECESSARIOS` | Dias operacionais (exatos e inteiros) |
+| `CALCULAR_DISTANCIA_POSSIVEL` / `CALCULAR_VELOCIDADE_NECESSARIA` | Capacidade de deslocamento dentro do tempo disponível |
+| `PLANEJAR_JORNADA` | Programação completa da viagem |
+| `ANALISAR_CONFORMIDADE` / `ANALISAR_PAUSAS` / `ANALISAR_DESCANSO` / `ANALISAR_TEMPO_ESPERA` / `ANALISAR_CARGA_DESCARGA` | Análises focadas por categoria |
+| `CALCULAR_CUSTO_JORNADA` / `CALCULAR_CUSTO_ESPERA` / `CALCULAR_RECEITA_HORA` / `CALCULAR_LUCRO_HORA` | Indicadores financeiros por hora |
+| `UM_MOTORISTA` / `DOIS_MOTORISTAS` / `REVEZAMENTO` / `MULTIPLOS_MOTORISTAS` | Planejamento por motorista(s) — nunca divide a direção automaticamente |
+| `PREVISTO_X_REALIZADO` | Compara programação com o que aconteceu |
+| `MULTIPLAS_ETAPAS` | Viagem dividida em trechos, com consolidação ponderada |
+| `MULTIPLOS_VEICULOS` | Consolidação por frota |
+| `COMPARACAO_CENARIOS` | Alternativas de programação, com rankings independentes |
+
+### Reutilização — coordenadora, não reimplementadora
+
+- `calcular_custo_veiculo_parado` (modo `CUSTO_POR_HORA_PARADA`) para o
+  custo de espera — mesma fórmula (valor por hora × horas), sem duplicar.
+- `calcular_margem` (modo `MARGEM_SIMPLES`) para lucro/margem por hora —
+  mesma técnica já usada por `calcular_custo_dia` e `calcular_receita_km`.
+- `calcular_receita_km` (modo `RECEITA_BRUTA_POR_KM`) quando a receita é
+  informada como valor por km × distância.
+- `calcular_cpk` (modo `CPK_PNEUS`) como divisor genérico valor ÷ divisor,
+  seguro contra zero, para todas as divisões "por hora".
+- `analisar_frete` (modo `ANALISE_SIMPLES`) para a viabilidade prazo ×
+  custo × receita da programação, quando receita e custo já são conhecidos.
+- `calcular_custo_viagem`, via `resumoCustoViagem` (tipo já reexportado
+  por `calcular-margem.ts`) — fonte alternativa de `custoTotal` da jornada,
+  mesmo padrão decoupled usado por `calcular_custo_dia`.
+
+Nenhum desses módulos importa `calcular-jornada.ts` de volta — sem
+dependências circulares (é a última ferramenta da sequência, criada só
+para consumir as anteriores).
+
+### Duração da parada — fontes e sobreposição
+
+O tempo de direção pode vir de três fontes: `tempoDirecaoMinutos`
+informado direto, `distanciaTotalKm ÷ velocidadeMediaKmH`, ou a soma do
+tempo de direção das `etapas`. Informar mais de uma fonte gera erro por
+padrão (`estrategiaSobreposicaoDuracao: "REJEITAR_SOBREPOSICAO"`), a menos
+que uma estratégia de prioridade seja escolhida explicitamente.
+
+### Jornada total × duração total da viagem
+
+```
+jornadaTotal = direção + trabalho sem direção
+             + (espera, se configuracaoJornada.incluirEsperaNaJornada !== false)
+             + (pausas, se incluirPausasNaJornada !== false)
+             + (imprevistos, se incluirImprevistosNaJornada !== false)
+
+duracaoTotalViagem = jornadaTotal + descanso + margem de segurança
+                    + (o que foi excluído da jornada acima, sem duplicar)
+```
+
+Descanso nunca é contado como jornada. `percentualProdutivo` usa uma lista
+configurável de atividades produtivas (`configuracaoJornada.atividadesProdutivas`,
+padrão `["DIRECAO"]`) — espera, carga e descarga nunca entram como
+produtivas automaticamente.
+
+### Custo, receita e lucro por hora
+
+`custoJornada` é resolvido, em ordem de prioridade configurável, a partir
+de `custoTotal` informado, `resumoCustoViagem.custoTotal`, ou a composição
+`custoVeiculoHora + custoMotoristaHora×motoristas + custoAjudanteHora×ajudantes
++ custoEspera + adicionalNoturnoValor + horasExtrasValor + despesasAdicionais`,
+todas multiplicadas pela jornada em horas. `custoPorHoraDirecao` distribui
+todo o custo da jornada apenas pelas horas de direção — é um indicador
+informativo, não o "custo real por hora trabalhada".
+
+### Um motorista, dois motoristas e revezamento
+
+A distribuição da direção entre motoristas **nunca é automática**: cada
+motorista precisa de seus próprios `periodos` informados. Dois motoristas
+nunca são tratados como autorização para operação contínua, nem como
+divisão de 50% da direção. A ferramenta detecta e rejeita (com falha,
+não apenas alerta) um motorista dirigindo e descansando ao mesmo tempo, e
+um veículo em duas etapas/atividades simultâneas.
+
+### Múltiplas etapas e múltiplos veículos — sempre ponderado
+
+`velocidadeMediaConsolidada = distância total ÷ tempo de direção total`,
+nunca a média simples das velocidades individuais de cada etapa/veículo
+(uma etapa de 100 km em 1h e outra de 300 km em 5h resultam em ~66,67 km/h,
+não 80 km/h).
+
+### Conformidade configurável
+
+Sem `regrasConformidade` informadas, o status fica sempre `NAO_AVALIADO` —
+a ferramenta calcula o planejamento operacional normalmente, mas nunca
+afirma conformidade ou irregularidade legal. Uma regra com
+`tipoAplicacao: "LEGAL"` sem `fonte` e `versao` é rebaixada a referência
+operacional (nunca tratada como regra legal válida), com alerta explícito.
+
+### Exemplo de uso
+
+```ts
+calcularJornada({
+  modo: "PLANEJAR_JORNADA",
+  dataHoraSaida: "2026-07-26T08:00:00-03:00",
+  distanciaTotalKm: 900,
+  velocidadeMediaKmH: 60,
+  tempoCargaMinutos: 120,
+  tempoDescargaMinutos: 60,
+  tempoEsperaMinutos: 180,
+  tempoPausasMinutos: 60,
+  tempoDescansoMinutos: 600,
+  custoTotal: 4800,
+});
+// resultado.tempoDirecaoMinutos, resultado.jornadaTotalMinutos,
+// resultado.duracaoTotalViagemMinutos, resultado.dataHoraChegadaEstimada,
+// resultado.custoPorHoraTotal, resultado.statusConformidade
+```
+
+### Limitações conhecidas
+
+- Não calcula distância, velocidade, duração, horários, carga, descarga,
+  espera, pausas, descanso, quantidade de motoristas, custos, receita ou
+  fuso horário automaticamente — tudo vem do que foi informado.
+- Sem biblioteca de datas/fuso-horário no projeto, os horários usam o
+  objeto `Date` nativo do JavaScript a partir de strings ISO 8601; o fuso
+  não é alterado ou reinterpretado silenciosamente (um alerta é emitido
+  quando `fusoHorario` é informado sem offset explícito na data/hora).
+- O nível de confiança da velocidade necessária nunca vira recomendação
+  de velocidade: quando ultrapassa `velocidadeMaximaOperacionalKmH`, a
+  programação é classificada como `PRAZO_INCOMPATIVEL`, sem ajustar ou
+  sugerir exceder o limite.
+- `nivelCompletude` exige, para `COMPLETO`, atividades + motoristas +
+  custo/receita + regras de conformidade simultaneamente — na prática, a
+  maioria dos cálculos fica em `PARCIAL`, o que é esperado e documentado.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -1856,15 +2005,68 @@ Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
 junto com os 40 de `calcular_custo_veiculo_parado` — todas as 91
 verificações passaram nesta rodada.
 
+**`calcular_jornada`**
+
+1. Tempo de direção (600 km ÷ 60 km/h → 10 h, 600 min)
+2. Distância possível (60 km/h × 8 h → 480 km)
+3. Velocidade necessária (600 km ÷ 10 h → 60 km/h)
+4. Jornada total (direção 8h + carga 1h + descarga 1h + espera 2h → 12h)
+5. Duração total com descanso (jornada 12h + descanso 10h → 22h)
+6. Horário de chegada (saída 08:00 + 10h → 18:00 mesmo dia)
+7. Chegada no dia seguinte (saída 20:00 + 10h → 06:00 do dia seguinte)
+8. Horário necessário de saída (chegada desejada 18:00 − 10h → 08:00)
+9. Dias necessários (25h ÷ 10h/dia → 2,5 exatos, 3 inteiros)
+10. Percentual de espera (5h de 20h → 25%)
+11. Percentual de direção (10h de 20h → 50%)
+12. Custo de espera (5h × R$ 100,00/h → R$ 500,00)
+13. Custo por hora (R$ 4.000,00 ÷ 20h → R$ 200,00/h)
+14. Receita por hora (R$ 6.000,00 ÷ 20h → R$ 300,00/h)
+15. Lucro por hora (receita R$ 6.000,00 − custo R$ 4.000,00 → lucro R$ 2.000,00, R$ 100,00/h, margem ~33,33%)
+16. Previsto x realizado — duração (20h → 24h → atraso 4h, variação 20%)
+17. Espera prevista x realizada (2h → 5h, custo R$ 100,00/h → 3h adicionais, R$ 300,00 de impacto, via `calcular_custo_veiculo_parado`)
+18. Um motorista — jornada, direção, pausas, descanso e duração total individuais
+19. Dois motoristas — distribuição manual por `periodos`, jornadas e custos individuais, custo total somado automaticamente (sem divisão 50/50 automática)
+20. Revezamento com turnos — cronologia construída e ordenada, sem conflitos
+21. Motorista dirigindo e descansando ao mesmo tempo → falha, conflito identificado
+22. Veículo em duas etapas simultâneas → falha, etapas identificadas
+23. Múltiplas etapas (300 km/5h + 300 km/5h → 600 km, 10h, 60 km/h consolidado)
+24. Velocidade média ponderada (100 km/1h + 300 km/5h → ~66,67 km/h, nunca a média simples de 80 km/h)
+25. Carga e descarga (carga 2h, espera antes 3h, descarga 1h → sem classificação duplicada)
+26. Conformidade sem regra → `NAO_AVALIADO`, cálculo operacional normal
+27. Conformidade com regra configurada (limite fictício de teste) → `NAO_CONFORME`, ocorrência com fonte e versão
+28. Regra legal sem fonte → rebaixada a referência operacional, alerta, `PARCIALMENTE_AVALIADO`
+29. Distância zero em modo que exige deslocamento → falha
+30. Velocidade zero → falha, sem divisão por zero
+31. Tempo negativo → falha, campo identificado
+32. Chegada anterior à saída (mesma data, sem indicar virada de dia) → falha
+33. Duração total e etapas detalhadas → sobreposição rejeitada por padrão
+34. Tempo de direção e distância/velocidade → duas fontes detectadas, rejeitado por padrão
+35. Espera total e esperas detalhadas (`periodos` tipo ESPERA) → duplicidade detectada
+36. Custo por hora sem duração → não calculado, dado faltante listado
+37. Lucro por hora sem receita → não calculado, indicador não avaliado
+38. Dados parciais → planejamento calculado, completude `PARCIAL`, conformidade `NAO_AVALIADO`
+39. Dados insuficientes (sem distância, velocidade, duração ou horários) → completude `INSUFICIENTE`, nenhum horário inventado
+40. Comparação de três cenários (um motorista, dois motoristas, espera alta) → rankings separados por custo, lucro e espera
+41. Cenário mais rápido x mais caro → rankings de menor duração e menor custo com vencedores independentes
+42. Velocidade necessária acima do limite operacional informado → `PRAZO_INCOMPATIVEL`, velocidade não ajustada nem recomendada
+43. Múltiplos veículos → consolidação com velocidade média ponderada (nunca a média simples das velocidades individuais)
+44. Fuso horário informado → sem alterar/reinterpretar silenciosamente; alerta quando falta offset explícito
+45. Tolerância de minutos → pequena diferença dentro da tolerância não gera ocorrência de conformidade
+
+Testes de regressão de todas as 10 ferramentas anteriores (um cenário
+representativo de cada) foram reexecutados junto com os 45 de
+`calcular_jornada` — todas as 126 verificações passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
-Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
-`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
-`analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km`,
-`calcular_custo_dia` e `calcular_custo_veiculo_parado` estão registradas
+Anthropic instalado). Por isso, todas as 11 ferramentas —
+`calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
+`calcular_custo_viagem`, `calcular_margem`, `analisar_frete`,
+`calcular_valor_minimo_frete`, `calcular_receita_km`, `calcular_custo_dia`,
+`calcular_custo_veiculo_parado` e `calcular_jornada` — estão registradas
 aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão**
 conectadas a nenhum loop de tool use real.
 
@@ -1910,14 +2112,28 @@ oficina fica mais barata considerando o tempo parado?", "Quanto a frota
 parada está me custando?", "Qual veículo parado tem maior impacto?",
 "Quanto custa aguardar carga?", "Quanto custa aguardar descarga?", "Quanto
 tempo vou precisar trabalhar para recuperar a perda?", "O custo realizado
-ficou acima do previsto?" e "É melhor reparar ou substituir?" — em todos os
-casos o modelo deve pedir apenas os dados faltantes (via `dadosFaltantes`),
-nunca inventar distância, consumo, combustível, pedágio, retorno, custos,
-impostos, comissão, margem, markup, prazo, carga, peso, quantidade, valor
-oferecido, CPK, valor mínimo, período, salário, encargos, financiamento,
-seguro, quilometragem, dias, horas, quantidade de veículos/pessoas, prazo
-de peça/oficina, custo de substituto, custo de oportunidade,
-responsabilidade ou cobertura de seguro.
+ficou acima do previsto?" e "É melhor reparar ou substituir?"; e
+`calcular_jornada` é a ferramenta esperada para perguntas como "Quantas
+horas essa viagem vai levar?", "Quantos dias serão necessários?", "Que
+horas devo sair?", "Que horas vou chegar?", "Essa viagem cabe na jornada?",
+"Quanto tempo posso dirigir?", "Quanto tempo de carga e descarga devo
+considerar?", "Quanto custa a jornada?", "Quanto custa a espera?", "Quanto
+estou faturando por hora?", "Quanto estou lucrando por hora?", "Vale a
+pena colocar dois motoristas?", "Quanto tempo dois motoristas economizam?",
+"Qual é o custo do segundo motorista?", "Minha chegada atrasou quanto?",
+"Quanto a espera aumentou o custo?", "Essa programação é operacionalmente
+viável?", "A jornada está dentro das regras informadas?", "Quais dados
+faltam para analisar a conformidade?", "Qual cenário é mais rápido?",
+"Qual cenário tem menor custo?" e "Qual cenário gera maior lucro?" — em
+todos os casos o modelo deve pedir apenas os dados faltantes (via
+`dadosFaltantes`), nunca inventar distância, consumo, combustível,
+pedágio, retorno, custos, impostos, comissão, margem, markup, prazo,
+carga, peso, quantidade, valor oferecido, CPK, valor mínimo, período,
+salário, encargos, financiamento, seguro, quilometragem, dias, horas,
+quantidade de veículos/pessoas, prazo de peça/oficina, custo de
+substituto, custo de oportunidade, responsabilidade, cobertura de seguro,
+velocidade, horários, carga/descarga, espera, pausas, descanso ou regras
+legais/conformidade.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -1988,6 +2204,14 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   `MULTIPLOS_VEICULOS`, e receita/margem média real por veículo/rota para
   `receitaMediaDia`/`margemMediaPercentual` — sempre como sugestão a
   confirmar, nunca assumida.
+- Buscar o histórico de jornadas realizadas (períodos de direção, espera,
+  carga/descarga, descanso) para pré-preencher `periodos`/`motoristas` em
+  `calcular_jornada` em vez de exigir digitação manual, o histórico de
+  paradas por veículo/motorista para `MULTIPLOS_VEICULOS`/
+  `MULTIPLOS_MOTORISTAS`, e regras de conformidade cadastradas (por
+  empresa, motorista ou convenção coletiva) para pré-preencher
+  `regrasConformidade` — sempre com fonte e versão explícitas, nunca como
+  regra legal presumida.
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
@@ -2057,4 +2281,17 @@ parada (`dataInicio`/`dataFim`); e um painel de disponibilidade de frota
 poderia consumir `consolidadoVeiculos` diretamente — sempre como dado a
 confirmar, nunca assumido. Nenhuma dessas integrações foi implementada; só
 os tipos e pontos de entrada já suportam recebê-las sem quebrar a API
-atual.
+atual. Para `calcular_jornada`: telemetria/rastreador e tacógrafo poderiam
+alimentar `dataHoraSaida`/`dataHoraChegadaReal`/`tempoDirecaoMinutos`
+realizados automaticamente; um sistema de ponto eletrônico/diário de bordo
+poderia fornecer os `periodos` de cada motorista sem digitação manual; uma
+agenda/plataforma de frete poderia sugerir `dataHoraChegadaDesejada` e
+`etapas` de uma programação já negociada; dados de trânsito e clima
+poderiam contextualizar (nunca substituir) `velocidadeMediaKmH` informada;
+e, quando a legislação oficial atualizada (Lei do Motorista, convenções
+coletivas) estiver disponível de forma versionada, ela alimentaria
+`regrasConformidade` automaticamente — sempre como sugestão a confirmar,
+nunca como regra legal aplicada silenciosamente. Nenhuma dessas
+integrações foi implementada; só os tipos e pontos de entrada (`periodos`,
+`etapas`, `motoristas`, `regrasConformidade`) já suportam recebê-las sem
+quebrar a API atual.
