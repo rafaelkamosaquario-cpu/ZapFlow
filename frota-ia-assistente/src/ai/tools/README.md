@@ -26,7 +26,7 @@ nenhuma API externa nesta fase.
 | `analisar_frete` | `analisar-frete.ts` | **Lógica implementada** |
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | **Lógica implementada** |
 | `calcular_receita_km` | `calcular-receita-km.ts` | **Lógica implementada** |
-| `calcular_custo_dia` | `calcular-custo-dia.ts` | Estrutura apenas |
+| `calcular_custo_dia` | `calcular-custo-dia.ts` | **Lógica implementada** |
 | `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | Estrutura apenas |
 | `calcular_jornada` | `calcular-jornada.ts` | Estrutura apenas |
 
@@ -1196,6 +1196,148 @@ const resultado = calcularReceitaKm({
 - `estrategiaSobreposicaoCusto: "PRIORIZAR_CPK"` e as demais estratégias de
   sobreposição só escolhem UMA fonte — nunca somam fontes conflitantes.
 
+## `calcular_custo_dia`
+
+Calcula e interpreta o **custo diário** de um veículo, frota, operação,
+rota, contrato ou período — sempre diferenciando custo fixo de variável,
+dia corrido de dia útil/operado/disponível, e nunca dividindo custos
+mensais/anuais por 30/365 silenciosamente. Um veículo parado **nunca** é
+tratado como sem custo: os custos fixos que continuam existindo
+(financiamento, seguro, licenciamento etc.) são sempre considerados.
+
+| Modo | Uso |
+|---|---|
+| `CUSTO_FIXO_DIARIO` / `CUSTO_VARIAVEL_DIARIO` / `CUSTO_TOTAL_DIARIO` | Só o fixo, só o variável, ou a soma |
+| `CUSTO_POR_DIA_CORRIDO`/`UTIL`/`OPERADO`/`DISPONIVEL` | Rateiam pela base de dias correspondente (infere `tipoDia` do próprio modo) |
+| `CUSTO_VEICULO_DIA` / `CUSTO_FROTA_DIA` | Custo de 1 veículo, ou consolidado da frota (÷ `quantidadeVeiculos`) |
+| `CUSTO_VIAGEM_POR_DIA` | Custo total de uma viagem ÷ `diasViagem` |
+| `VEICULO_OPERANDO` / `VEICULO_PARADO` / `VEICULO_OCIOSO` | Veículo rodando, parado (só custos que continuam existindo) ou disponível sem receita |
+| `RECEITA_E_RESULTADO_DIARIO` | Receita, custo, lucro e margem do dia |
+| `PONTO_EQUILIBRIO_DIARIO` / `MARGEM_ALVO_DIARIA` | Receita diária mínima, com ou sem margem-alvo |
+| `PREVISTO_X_REALIZADO` | Compara os blocos `previsto`/`realizado` |
+| `ANALISE_POR_PERIODO` | Indicadores do período (usa os mesmos campos do núcleo) |
+| `MULTIPLOS_VEICULOS` | Consolida `veiculos` (média ponderada pela quilometragem) |
+| `COMPARACAO_CENARIOS` | Compara ≥ 2 `cenarios`, com 6 rankings independentes |
+
+### Reutilização — coordenadora, não reimplementadora
+
+- **`calcularMargem`** (modo `MARGEM_SIMPLES`) calcula lucro e margem
+  diária quando receita e custo já são conhecidos — mesma técnica de
+  `calcular_receita_km`.
+- **`calcularValorMinimoFrete`** (modos `PONTO_EQUILIBRIO`/`MARGEM_ALVO`)
+  calcula a receita de equilíbrio e a receita mínima para a margem-alvo
+  diária, já considerando deduções percentuais (`impostoPercentual`,
+  `comissaoPercentual`, `outrasDeducoesPercentual`) — sem reimplementar
+  essas equações.
+- **`calcularCpk`** (modo `CPK_PNEUS` como divisor genérico valor ÷ km) faz
+  toda divisão segura contra zero: custo por km, por hora, por veículo,
+  por motorista, por ajudante, por viagem, receita por veículo — mesmo
+  padrão de `calcular_margem.ts`, `calcular_valor_minimo_frete.ts` e
+  `calcular_receita_km.ts`.
+- **`calcularReceitaKm`** (modo `RECEITA_BRUTA_POR_KM`) resolve a receita
+  diária quando informada como valor por km × quilometragem
+  (`receitaPorKmInformada`), em vez de reimplementar aquela resolução.
+- Aceita o custo de `calcular-custo-viagem.ts` via `resumoCustoViagem`
+  (tipo reexportado por `calcular-margem.ts`) e o CPK de `calcular-cpk.ts`
+  via `resumoCpk` (tipo reexportado por `calcular-valor-minimo-frete.ts` —
+  não duplicado aqui). Cria só um ponto de extensão desacoplado
+  (`resumoCustoVeiculoParado`) para a futura `calcular-custo-veiculo-parado.ts`
+  — sem importar aquele módulo, que ainda não existe.
+
+### Normalização de periodicidade
+
+Cada item de `custosFixos` tem uma `periodicidade` (`DIARIO` até
+`PERSONALIZADO`) convertida para valor diário por uma função central:
+`MENSAL`/`POR_PERIODO` usam a base de dias resolvida por `tipoDia` (ou
+`quantidadeDiasPeriodo` do próprio item); `SEMANAL`/`QUINZENAL`/
+`BIMESTRAL`/`TRIMESTRAL`/`SEMESTRAL`/`ANUAL` exigem `quantidadeDiasPeriodo`
+explícito, ou caem para um padrão configurável **só** quando
+`permitirEstimativas` está habilitado — sempre com a premissa registrada
+(nunca assume 30 ou 365 dias silenciosamente). `VALOR_TOTAL` sempre exige
+`quantidadeDiasPeriodo`.
+
+### Tipo de dia — base de rateio explícita
+
+`tipoDia` (`CORRIDO`/`UTIL`/`OPERADO`/`DISPONIVEL`/`VIAGEM`/`PARADO`/
+`PERSONALIZADO`) é inferido do modo quando o nome do modo já o determina
+(`CUSTO_POR_DIA_OPERADO` → `OPERADO`, `VEICULO_PARADO` → `PARADO` etc.); a
+ferramenta nunca escolhe silenciosamente entre 30 dias, dias úteis ou dias
+operados — o campo de dias correspondente só é exigido quando algo
+realmente precisa dele (custo mensal informado, ou item de custo fixo com
+periodicidade que rateia pela base de dias).
+
+### Custos de pessoal
+
+`custoTotalMotoristas`/`custoTotalAjudantes` (agregados) são divididos por
+`quantidadeMotoristas`/`quantidadeAjudantes` para `custoMotoristaDia`/
+`custoAjudanteDia` — nunca calcula encargos automaticamente, usa só os
+valores informados. A convenção de categoria `"SALARIO_COM_ENCARGOS"` +
+`"ENCARGOS"` no mesmo `custosFixos` é detectada como possível duplicidade e
+rejeitada por padrão.
+
+### Veículo parado x ocioso
+
+`VEICULO_PARADO` inclui só os custos que continuam existindo (fixo diário
++ `custosEspecificosParada`, ex.: estacionamento, diária de pátio) —
+**nunca** inclui combustível, ARLA ou pedágio automaticamente, porque
+esses só existiriam se o usuário os informasse (o que não faz sentido para
+um veículo parado). `VEICULO_OCIOSO` calcula `diasOciosos`
+(`diasDisponiveisPeriodo − diasOperadosPeriodo`), `taxaUtilizacao`,
+`taxaOciosidade` e `custoFixoOciosidade` (custo fixo × dias ociosos).
+
+### Múltiplos veículos — sempre média ponderada
+
+A consolidação de `veiculos` usa custo total ÷ quilometragem total (média
+ponderada), nunca a média simples dos custos por km individuais — mesmo
+princípio de `calcular_receita_km`.
+
+### Prevenção de sobreposições
+
+Custo (total diário × mensal × detalhado × CPK × custo por km × fonte
+externa de outra ferramenta) é resolvido com estratégia configurável
+(`REJEITAR_SOBREPOSICAO`/`PRIORIZAR_TOTAL`/`PRIORIZAR_DETALHADO`/
+`PRIORIZAR_VALOR_DIARIO`/`PRIORIZAR_FONTE_EXTERNA`), padrão
+`REJEITAR_SOBREPOSICAO`. `custoFinanceiroDiarioInformado`/
+`custoAdministrativoDiarioInformado`/`outrosCustosDiariosInformado` são
+sempre somados por cima da fonte principal (fixo+variável) — nunca
+competem entre si por sobreposição.
+
+### Exemplo de uso
+
+```ts
+import { calcularCustoDia } from "@/ai/tools/calcular-custo-dia";
+
+const resultado = calcularCustoDia({
+  modo: "RECEITA_E_RESULTADO_DIARIO",
+  custosFixos: [
+    { descricao: "Financiamento", valor: 4500, periodicidade: "MENSAL" },
+    { descricao: "Seguro", valor: 900, periodicidade: "MENSAL" },
+  ],
+  custosVariaveis: [{ descricao: "Combustível", valor: 2.5, base: "POR_KM" }],
+  tipoDia: "OPERADO",
+  diasOperadosPeriodo: 20,
+  quilometragemDia: 400,
+  receitaDia: 1500,
+});
+// resultado.custoFixoDiario, resultado.custoTotalDiario,
+// resultado.lucroDiario, resultado.classificacao
+```
+
+### Limitações conhecidas
+
+- Não calcula custos, salário, encargos, financiamento, seguro,
+  manutenção, combustível, quilometragem, dias, horas ou receita
+  automaticamente — tudo vem do que foi informado.
+- A detecção de "salário com encargos + encargos separados" depende da
+  convenção de categoria `"SALARIO_COM_ENCARGOS"`/`"ENCARGOS"` — categorias
+  livres diferentes não são detectadas automaticamente.
+- Custos de pessoal detalhados (diárias, horas extras, adicional noturno
+  etc.) devem ser informados como itens de `custosFixos`/`custosVariaveis`
+  — não há uma sub-estrutura dedicada nesta fase.
+- O ponto de extensão para `calcular-custo-veiculo-parado.ts`
+  (`resumoCustoVeiculoParado`) aceita o campo, mas aquela ferramenta ainda
+  não existe.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -1465,6 +1607,55 @@ Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
 de cada) foram reexecutados junto com os 36 de `calcular_receita_km` — todas
 as 106 verificações passaram nesta rodada.
 
+**`calcular_custo_dia`**
+
+1. Custo mensal por dia corrido (R$ 9.000,00 ÷ 30 dias → R$ 300,00/dia)
+2. Custo mensal por dia útil (R$ 9.000,00 ÷ 22 dias → ≈R$ 409,09/dia)
+3. Custo mensal por dia operado (R$ 9.000,00 ÷ 20 dias → R$ 450,00/dia)
+4. Custo anual rateado (R$ 12.000,00 ÷ 365 dias informados explicitamente → ≈R$ 32,88/dia)
+5. Custo fixo diário (financiamento R$ 150,00 + seguro R$ 30,00 + rastreador R$ 10,00 → R$ 190,00/dia)
+6. Custo variável por km (R$ 2,50/km × 400 km → R$ 1.000,00)
+7. Custo variável por hora (R$ 50,00/h × 8h → R$ 400,00)
+8. Custo total diário (fixo R$ 400,00 + variável R$ 800,00 → R$ 1.200,00/dia)
+9. Custo por km do dia (R$ 1.200,00, 400 km → R$ 3,0000/km)
+10. Custo por hora (R$ 1.200,00, 10h → R$ 120,00/h)
+11. Custo de viagem por dia (R$ 6.000,00 ÷ 3 dias → R$ 2.000,00/dia)
+12. Receita e lucro diário (receita R$ 1.500,00, custo R$ 1.200,00 → lucro R$ 300,00, margem 20%)
+13. Prejuízo diário (receita R$ 1.000,00, custo R$ 1.200,00 → prejuízo R$ 200,00, `PREJUIZO`)
+14. Ponto de equilíbrio diário sem deduções (custo R$ 1.200,00 → R$ 1.200,00)
+15. Ponto de equilíbrio com dedução (custo R$ 1.200,00, 10% → ≈R$ 1.333,33)
+16. Margem-alvo diária sem deduções (custo R$ 1.200,00, margem 20% → R$ 1.500,00)
+17. Margem-alvo com deduções (custo R$ 1.200,00, dedução 10%, margem 20% → ≈R$ 1.714,29)
+18. Veículo parado (fixo R$ 400,00 + custos específicos R$ 100,00 → R$ 500,00/dia, sem combustível/pedágio)
+19. Veículo ocioso (25 dias disponíveis, 20 operados → 5 ociosos, utilização 80%, ociosidade 20%, custo fixo da ociosidade R$ 2.000,00)
+20. Múltiplos veículos (A: R$ 1.000,00/400 km; B: R$ 1.500,00/600 km → total R$ 2.500,00/1.000 km = R$ 2,5000/km, sem média simples)
+21. Receita por veículo (R$ 6.000,00, 3 veículos → R$ 2.000,00/veículo)
+22. Motoristas (custo total R$ 600,00, 2 motoristas → R$ 300,00/motorista)
+23. Ajudantes (custo total R$ 300,00, 2 ajudantes → R$ 150,00/ajudante)
+24. Previsto x realizado (previsto R$ 1.200,00, realizado R$ 1.350,00 → diferença R$ 150,00, variação 12,5%)
+25. Dias operados maiores que disponíveis → falha, campos identificados
+26. Divisor zero (quilometragem zero no modo que exige km) → falha, sem divisão por zero
+27. Custo negativo → falha, campo identificado
+28. Receita negativa → falha
+29. Custo total e detalhado → sobreposição rejeitada por padrão
+30. Custo mensal sem base de rateio → dados insuficientes, solicita tipo de dia e divisor
+31. Custo por km sem quilometragem → falha, campo `quilometragemDia` identificado
+32. Custo por hora sem horas → falha
+33. Percentual sobre receita sem receita → falha, solicita receita
+34. Salário com encargos e encargos separados (convenção de categoria) → duplicidade detectada, rejeitada por padrão
+35. CPK e custo por km → conflito detectado, fonte prioritária solicitada
+36. Dados parciais (só custo total diário) → cálculo possível, completude `PARCIAL`
+37. Dados insuficientes (sem custo nem divisor) → falha, completude `INSUFICIENTE`
+38. Comparação de três cenários (20/22/25 dias operados) → custo por dia, custo por km, utilização e rankings separados
+39. Maior custo diário, melhor eficiência (veículo com custo maior mas menor custo por km) → rankings divergem, com alerta de que custo total não é o mesmo que eficiência
+40. Tolerância decimal → ruído de ponto flutuante não altera a classificação de ponto de equilíbrio
+
+Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
+`analisar_frete`, `calcular_valor_minimo_frete` e `calcular_receita_km` (um
+cenário representativo de cada) foram reexecutados junto com os 40 de
+`calcular_custo_dia` — todas as 92 verificações passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
@@ -1472,9 +1663,10 @@ nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
 `comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
-`analisar_frete`, `calcular_valor_minimo_frete` e `calcular_receita_km`
-estão registradas aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda
-**não estão** conectadas a nenhum loop de tool use real.
+`analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km` e
+`calcular_custo_dia` estão registradas aqui em `FERRAMENTAS_FROTA_IA`
+(`index.ts`), mas ainda **não estão** conectadas a nenhum loop de tool use
+real.
 
 Quando essa conexão existir, `analisar_frete` é a ferramenta esperada para
 perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
@@ -1498,11 +1690,21 @@ por km para atingir minha margem?", "Quanto o retorno vazio reduz minha
 receita por km?", "Qual rota paga melhor por quilômetro?", "Qual frete
 gera maior lucro por km?", "Quanto faturei por km no mês?", "Minha receita
 por km prevista foi atingida?", "Quanto recebo por km carregado e por km
-total?" e "Qual veículo gera maior receita por km?" — em todos os casos o
-modelo deve pedir apenas os dados faltantes (via `dadosFaltantes`), nunca
-inventar distância, consumo, combustível, pedágio, retorno, custos,
-impostos, comissão, margem, markup, prazo, carga, peso, quantidade, valor
-oferecido, CPK, valor mínimo, período ou custo de capital.
+total?" e "Qual veículo gera maior receita por km?"; e `calcular_custo_dia`
+é a ferramenta esperada para perguntas como "Quanto custa meu caminhão por
+dia?", "Qual é meu custo fixo diário?", "Quanto custa minha frota por
+dia?", "Quanto custa um veículo parado?", "Quanto custa um dia operado?",
+"Quanto custa um dia útil?", "Quanto custa um dia de viagem?", "Quanto
+preciso faturar por dia?", "Quanto preciso faturar para ter 20% de
+margem?", "Quanto sobra por dia?", "Qual veículo custa mais por dia?",
+"Qual veículo tem menor custo por km?", "Quanto a ociosidade está me
+custando?", "Qual foi meu custo diário no mês?" e "Meu custo diário
+realizado ficou acima do previsto?" — em todos os casos o modelo deve pedir
+apenas os dados faltantes (via `dadosFaltantes`), nunca inventar distância,
+consumo, combustível, pedágio, retorno, custos, impostos, comissão,
+margem, markup, prazo, carga, peso, quantidade, valor oferecido, CPK,
+valor mínimo, período, salário, encargos, financiamento, seguro,
+quilometragem, dias, horas ou quantidade de veículos/pessoas.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -1561,6 +1763,12 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   receita por cliente e por rota para alimentar `COMPARACAO_CENARIOS`, e
   metas por veículo/motorista para contextualizar (nunca substituir) a
   classificação da receita por km.
+- Buscar o cadastro de custos fixos do veículo (financiamento, seguro,
+  licenciamento, IPVA) para pré-preencher `custosFixos` em
+  `calcular_custo_dia`, o histórico de dias operados/parados/ociosos por
+  veículo para alimentar `MULTIPLOS_VEICULOS`/`ANALISE_POR_PERIODO`
+  automaticamente, e a folha de pagamento para `custoTotalMotoristas`/
+  `custoTotalAjudantes` — sempre como sugestão a confirmar.
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
@@ -1611,5 +1819,14 @@ automático poderiam alimentar `distanciaTotalKm`/`distanciaCarregadaKm`/
 poderia fornecer `receitaBruta`/deduções efetivas por frete, e um dashboard
 gerencial poderia consumir `consolidadoViagens`/`consolidadoVeiculos`
 diretamente — sempre como dado a confirmar, nunca assumido. Nenhuma dessas
+integrações foi implementada; só os tipos e pontos de entrada já suportam
+recebê-las sem quebrar a API atual. Para `calcular_custo_dia`: a futura
+`calcular-custo-veiculo-parado.ts` alimentaria `resumoCustoVeiculoParado`
+(ponto de extensão já criado, desacoplado); `calcular-jornada.ts` poderia
+sugerir `horasOperadasDia`/`diasOperadosPeriodo` a partir da jornada real
+do motorista; um ERP/folha de pagamento poderia fornecer
+`custoTotalMotoristas`/`custoTotalAjudantes` efetivos; e telemetria/
+rastreador poderiam alimentar `quilometragemDia` realizada — sempre como
+sugestão a confirmar, nunca assumida silenciosamente. Nenhuma dessas
 integrações foi implementada; só os tipos e pontos de entrada já suportam
 recebê-las sem quebrar a API atual.
