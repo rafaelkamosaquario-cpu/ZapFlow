@@ -85,6 +85,9 @@ export interface ResumoCustoViagem {
   custosFixosProporcionais?: number;
   custosDiretos?: number;
   custosIndiretos?: number;
+  /** Custo da ida/volta, quando a viagem tem os dois trechos calculados separadamente (retorno vazio ou não). */
+  custoIda?: number;
+  custoVolta?: number;
   distanciaTotalKm?: number;
   quantidadeVeiculos?: number;
   nivelCompletude?: NivelCompletude;
@@ -513,7 +516,7 @@ function resolverCustoTotalFinal(v: DadosMargemVariante, estrategia: EstrategiaS
 // Resolução de sobreposição — valor fixo x percentual (impostos/comissão)
 // ---------------------------------------------------------------------------
 
-interface ValorOuAliquotaResolvido {
+export interface ValorOuAliquotaResolvido {
   valor?: number;
   modoUsado?: "FLAT" | "PERCENTUAL";
   origem?: string;
@@ -521,7 +524,7 @@ interface ValorOuAliquotaResolvido {
   erro?: string;
 }
 
-function resolverValorOuAliquota(
+export function resolverValorOuAliquota(
   valorFlat: number | undefined,
   aliquotaPercentual: number | undefined,
   base: number | undefined,

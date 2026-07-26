@@ -5,6 +5,11 @@
  * `FERRAMENTAS_FROTA_IA` reúne todas elas para uso futuro pelo mecanismo de
  * integração com o Claude (tool use) — ver README.md desta pasta para o
  * estado atual dessa integração.
+ *
+ * `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
+ * `calcular_custo_viagem`, `calcular_margem` e `analisar_frete` têm a lógica
+ * de cálculo implementada — as demais expõem apenas a estrutura (ver
+ * README).
  */
 
 export * from "./types";

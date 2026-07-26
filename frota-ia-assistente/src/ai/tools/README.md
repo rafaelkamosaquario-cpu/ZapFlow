@@ -23,7 +23,7 @@ nenhuma API externa nesta fase.
 | `comparar_pneus` | `comparar-pneus.ts` | **Lógica implementada** |
 | `calcular_custo_viagem` | `calcular-custo-viagem.ts` | **Lógica implementada** |
 | `calcular_margem` | `calcular-margem.ts` | **Lógica implementada** |
-| `analisar_frete` | `analisar-frete.ts` | Estrutura apenas |
+| `analisar_frete` | `analisar-frete.ts` | **Lógica implementada** |
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | Estrutura apenas |
 | `calcular_receita_km` | `calcular-receita-km.ts` | Estrutura apenas |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | Estrutura apenas |
@@ -682,6 +682,210 @@ const resultado = calcularMargem({
   não existe aqui, já que este tool não modela motorista/diária
   separadamente; isso é escopo de `calcular_custo_viagem`).
 
+## `analisar_frete`
+
+Ferramenta **coordenadora/interpretativa**: responde perguntas como "Este
+frete compensa?", "Vale a pena pegar essa carga?", "Quanto vai sobrar?",
+"Preciso de quanto de capital de giro?", "Qual proposta é melhor?" — sempre
+considerando receita, custo, distância, retorno vazio, prazo de pagamento,
+capital de giro, riscos e nível de completude dos dados, **nunca** apenas o
+valor bruto do frete.
+
+| Modo | O que faz |
+|---|---|
+| `ANALISE_SIMPLES` | Receita, custo, lucro e margem de um frete único |
+| `ANALISE_COMPLETA` | Igual, com todas as camadas (riscos, prazo, capital de giro) |
+| `IDA_E_VOLTA` | Frete com volta informada (remunerada ou não) |
+| `RETORNO_VAZIO` | Considera o custo total do retorno sem receita; infere `distanciaCarregadaKm`/`distanciaVaziaKm` a partir de ida/volta quando não informadas separadamente |
+| `FRETE_COM_RETORNO` | Ida e volta com receita e custo próprios em cada trecho |
+| `COMPARACAO_PROPOSTAS` | Compara `propostas` (≥ 2): ranking por lucro, margem, lucro/km, capital de giro, risco |
+| `PREVISTO_X_REALIZADO` | Compara os blocos `previsto` e `realizado`, com categorias extras (distância, capital de giro, prazo) |
+| `ANALISE_POR_KM` | Foco em receita/custo/lucro por km |
+| `ANALISE_POR_TONELADA` | Foco em receita/custo/lucro por tonelada — exige `pesoCargaToneladas` |
+| `ANALISE_CAPITAL_GIRO` | Foco na necessidade de capital de giro até o recebimento |
+
+### Reutilização de `calcular-margem.ts` (não reimplementa fórmulas)
+
+O núcleo financeiro inteiro — receita líquida, deduções, custo total
+(incluindo a resolução de sobreposição entre `custoTotal`/categorias
+detalhadas/`resumoCustoViagem`), lucro, margem, markup, ponto de
+equilíbrio, receita para margem-alvo, receita/custo/lucro por km e por
+tonelada, e `impactoRetornoVazio` — é delegado para
+`calcularMargem({modo: "MARGEM_SIMPLES", ...})`. `analisar-frete.ts` monta
+um `DadosMargemVariante` a partir da sua própria entrada e lê o resultado;
+nenhuma dessas fórmulas foi copiada. A função `resolverValorOuAliquota`
+(resolve um valor como R$ fixo ou percentual da receita) foi **exportada**
+por `calcular-margem.ts` especificamente para ser reaproveitada aqui na taxa
+de plataforma, em vez de reimplementada — a única alteração feita naquele
+arquivo para este trabalho (além de dois campos opcionais `custoIda`/
+`custoVolta` em `ResumoCustoViagem`, para compatibilidade estrutural com o
+resultado completo de `calcular_custo_viagem`). `calcular-cpk.ts` e
+`calcular-combustivel.ts` não são chamados diretamente por esta ferramenta;
+seus resultados podem ser passados via `resumoCustoViagem`/`resumoCpk`/
+`cpkTotalReaisPorKm`.
+
+Camadas exclusivas desta ferramenta (não existem em `calcular_margem`):
+dupla representação de distância, capital de giro, análise de prazo,
+classificação de riscos, classificação de viabilidade, comparação de
+propostas e as categorias extras do previsto x realizado.
+
+### Dupla representação de distância (nunca duplicada)
+
+1. `distanciaIdaKm` + `distanciaVoltaKm` + `distanciaAdicionalKm`, **ou**
+2. `distanciaCarregadaKm` + `distanciaVaziaKm`.
+
+As duas formas juntas disparam sobreposição (`estrategiaSobreposicaoDistancia`,
+padrão `REJEITAR_SOBREPOSICAO`). No modo `RETORNO_VAZIO`, quando só a forma
+1 é informada, a ferramenta assume `distanciaCarregadaKm = distanciaIdaKm` e
+`distanciaVaziaKm = distanciaVoltaKm` — premissa sempre declarada
+explicitamente, nunca silenciosa, e só nesse modo (nos demais modos, sem a
+forma 2 explícita, `distanciaCarregadaKm`/`distanciaVaziaKm` ficam
+indefinidos).
+
+### Receita por km: total x carregado
+
+- `receitaPorKmTotal` = receita líquida ÷ distância total (via
+  `calcularMargem`, mesmo cálculo de `calcular_margem`).
+- `receitaPorKmCarregado` = receita líquida ÷ `distanciaCarregadaKm` —
+  calculado localmente nesta ferramenta (divisão simples, não é uma fórmula
+  de outra ferramenta) porque `calcular_margem` só divide por um único
+  `quilometragemTotal` por chamada. Sempre acompanhado do alerta de que
+  pode esconder o custo do retorno vazio quando olhado isoladamente.
+
+### Fontes de custo (nunca somadas ao mesmo tempo)
+
+As mesmas três fontes de `calcular_margem` (`custoTotal` / categorias
+detalhadas / `resumoCustoViagem`) — resolvidas por aquela própria
+ferramenta — mais uma quarta, exclusiva daqui: `cpkTotalReaisPorKm` ou
+`resumoCpk.cpk` (resultado de `calcular_cpk`), multiplicado pela distância
+total para derivar um `custoTotal`. Essa quarta fonte tem sua própria
+checagem de sobreposição contra as outras três (`estrategiaSobreposicaoCusto`,
+padrão `REJEITAR_SOBREPOSICAO`) antes de ser repassada para `calcularMargem`.
+
+### Deduções: taxa de plataforma, seguro e gerenciamento de risco
+
+`descontos`, `impostos`/`aliquotaImpostosPercentual` e `comissao`/
+`aliquotaComissaoPercentual` são repassados direto para `calcular_margem`.
+`taxaPlataforma`/`aliquotaTaxaPlataformaPercentual` (resolvidos via
+`resolverValorOuAliquota`, com `estrategiaSobreposicaoDeducao` — rótulos
+próprios `REJEITAR_SOBREPOSICAO`/`PRIORIZAR_VALOR_FIXO`/`PRIORIZAR_PERCENTUAL`,
+já que a escolha aqui é entre valor fixo e percentual, não entre total e
+detalhado), `seguroCarga`, `gerenciamentoRisco` e `outrasDeducoesInformadas`
+são somados e entram como `outrasDeducoes` no `calcularMargem`.
+
+### Capital de giro
+
+```
+desembolsoAntesRecebimento = soma dos custosAntecipados informados (combustível, pedágio, alimentação, hospedagem, diária, carga/descarga, outros)
+capitalGiroNecessario      = desembolsoAntesRecebimento − adiantamento      (pode ser negativo, se o adiantamento cobre tudo)
+saldoOperacional           = max(0, capitalGiroNecessario)
+retornoSobreCapitalPercentual = lucro ÷ capitalProprioEmpregado × 100        (só quando capitalProprioEmpregado é informado explicitamente — nunca derivado do capital de giro)
+```
+
+Só entram no cálculo os itens de `custosAntecipados` efetivamente
+informados — nunca presume que todo o custo é pago antecipadamente.
+
+### Análise de prazo de pagamento
+
+Nunca usa um limite universal de "prazo bom/ruim". Gera alertas/riscos para:
+prazo não informado (`NAO_AVALIADO`), ausência de adiantamento, prazo
+elevado (`LIMITES_CLASSIFICACAO_FRETE.prazoPagamentoElevadoDias`, hoje 45
+dias) combinado com margem baixa, e resultado positivo com capital de giro
+alto — sem nunca inventar histórico de pagamento do cliente.
+
+### Classificação de riscos
+
+Categorias: `FINANCEIRO`, `OPERACIONAL`, `DADOS_INCOMPLETOS`,
+`RETORNO_VAZIO`, `PRAZO_PAGAMENTO`, `MARGEM_BAIXA`, `PREJUIZO`,
+`CAPITAL_GIRO`, `CARGA`, `ROTA`, `CLIENTE`, `DOCUMENTACAO`, `OUTRO`. Níveis:
+`BAIXO`/`MODERADO`/`ALTO`/`CRITICO`/`NAO_AVALIADO`. Cada risco traz
+`categoria`, `nivel`, `descricao`, `evidencia`, `impactoPotencial`,
+`acaoRecomendada` e `origemInformacao`. **`CARGA`/`ROTA`/`CLIENTE`/
+`DOCUMENTACAO` só recebem um nível diferente de `NAO_AVALIADO` quando o
+usuário informa explicitamente `risco*Nivel`/`risco*Descricao`** — nunca
+inferidos do nome de `origem`/`destino`/`tipoCarga`.
+
+### Classificação de viabilidade
+
+`ClassificacaoViabilidadeFrete`: `DADOS_INSUFICIENTES` → `INVIAVEL` →
+`ALTO_RISCO` → `MARGEM_INSUFICIENTE` → `VIAVEL_COM_RESSALVAS` → `VIAVEL` →
+`ATRATIVO`, verificados nessa ordem de prioridade (a primeira condição que
+bater decide a classificação). "Prejuízo" e "custos conhecidos não cobertos
+pela receita" são a mesma condição numérica (`lucro < 0`) e não duas
+categorias separadas — documentado em `limitacoes`. Limites configuráveis em
+`LIMITES_CLASSIFICACAO_FRETE` (`margemAtrativaPercentual`,
+`percentualKmVazioAtencaoPercentual`,
+`capitalGiroSobreLucroAtencaoPercentual`, `prazoPagamentoElevadoDias`) —
+nenhum limite embutido sem constante nomeada. Quando `margemMinimaPercentual`
+não é informado, a classificação `ATRATIVO`/`VIAVEL` usa só os limites
+indicativos, deixando claro que não há meta personalizada.
+
+### Comparação de propostas
+
+Cada proposta em `propostas` (≥ 2) passa pelo mesmo pipeline de um frete
+único. Rankings por maior lucro, maior margem, maior lucro/km, maior
+receita/km, menor capital de giro, menor exposição ao retorno vazio, menor
+pontuação de risco (`pontuacaoRisco`, pesos por nível — proxy simples,
+documentado como tal) e um `porResultadoGeral` que combina as posições de
+lucro + margem + risco. **Nunca** classifica pela maior receita/valor bruto
+isoladamente; quando o líder por receita/km difere do líder por lucro, um
+alerta explícito é adicionado (mesmo padrão de `calcular_margem`).
+
+### Previsto x realizado
+
+Roda o pipeline completo duas vezes (`previsto`/`realizado`) e compara
+receita, custo, distância, lucro, margem, capital de giro e prazo —
+categorias a mais do que o `PREVISTO_X_REALIZADO` de `calcular_margem`
+(que só compara receita/custo/lucro/margem). Aponta `principalDesvio` (a
+categoria com maior variação absoluta entre receita/custo/distância) sem
+inventar a causa.
+
+### Nível de completude
+
+- **INSUFICIENTE**: falha na validação, receita/custo/distância ausentes,
+  ou o `calcularMargem` subjacente retorna `INSUFICIENTE`.
+- **PARCIAL**: calculável, mas `calcularMargem` retornou `PARCIAL`
+  (impostos/comissão/indiretos ausentes), ou faltam `prazoPagamentoDias`,
+  ou não há informação sobre o retorno (nem `distanciaVaziaKm` nem
+  `receitaFreteVolta`).
+- **COMPLETO**: nada relevante faltando.
+
+### Exemplo de uso
+
+```ts
+import { analisarFrete } from "@/ai/tools";
+
+const resultado = analisarFrete({
+  modo: "RETORNO_VAZIO",
+  receitaFreteIda: 10000,
+  receitaFreteVolta: 0,
+  custoViagem: 6000,
+  custoRetorno: 2000,
+  distanciaIdaKm: 500,
+  distanciaVoltaKm: 500,
+  prazoPagamentoDias: 30,
+  custosAntecipados: { combustivel: 3000, pedagio: 200 },
+});
+// resultado.freteAnalisado.lucro === 2000
+// resultado.freteAnalisado.margemPercentual === 20
+// resultado.freteAnalisado.percentualKmVazio === 50
+// resultado.freteAnalisado.classificacao === "VIAVEL_COM_RESSALVAS" (retorno vazio relevante)
+```
+
+### Limitações conhecidas
+
+- Não calcula distância, consumo, preço de diesel, pedágio, impostos,
+  comissão, retorno, prazo, peso, valor mínimo ou margem ideal
+  automaticamente — tudo vem do que foi informado.
+- Riscos de carga, rota, cliente e documentação só são avaliados quando
+  informados explicitamente — na ausência de dados, ficam `NAO_AVALIADO`.
+- A classificação de viabilidade não é um padrão de mercado nem uma meta
+  universal — depende do tipo de operação, risco, prazo, cliente e
+  estrutura de custos da transportadora.
+- `analisarRiscos` inclui uma checagem leve de `OPERACIONAL` (menos
+  motoristas do que veículos); não modela escala, jornada ou legislação de
+  motorista — isso é escopo de `calcular_jornada`.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -821,15 +1025,65 @@ Testes de regressão de `calcular_combustivel` (13), `calcular_cpk` (10),
 cenários-chave) foram reexecutados junto com os 25 de `calcular_margem` —
 todas as 90 verificações passaram nesta rodada.
 
+**`analisar_frete`**
+
+1. Frete simples lucrativo (receita R$ 10.000, custo R$ 8.000, 1.000 km → lucro R$ 2.000, margem 20%, receita/custo/lucro por km: 10/8/2)
+2. Prejuízo (receita R$ 8.000, custo R$ 9.000 → prejuízo R$ 1.000, margem negativa, classificação `INVIAVEL`)
+3. Retorno vazio (ida: receita R$ 10.000/custo R$ 6.000/500 km; volta: receita R$ 0/custo R$ 2.000/500 km → custo total R$ 8.000, lucro R$ 2.000, margem 20%, distância vazia 500 km, 50%, lucro/km R$ 2,00, `impactoRetornoVazio` presente)
+4. Frete com retorno remunerado (receita e custo somados dos dois trechos, sem duplicidade)
+5. Receita por km carregado x total diferem (carregado > total, quando há retorno vazio)
+6. Análise por tonelada (receita R$ 10.000, custo R$ 8.000, 20 t → R$ 500,00/400,00/100,00 por tonelada)
+7. Imposto percentual (10% de R$ 10.000 → dedução R$ 1.000, receita líquida R$ 9.000, lucro R$ 2.000, margem ≈22,22%)
+8. Comissão percentual (5% de R$ 10.000 → dedução R$ 500, lucro R$ 2.500)
+9. Taxa de plataforma percentual (8% de R$ 10.000 → dedução R$ 800, lucro R$ 2.200)
+10. `valorFreteTotal` + `receitaFreteIda` → sobreposição de receita rejeitada por padrão
+11. `custoTotal` + `custosVariaveis` → sobreposição de custo rejeitada por padrão (delegado a `calcular_margem`)
+12. Capital de giro (antecipados R$ 4.000, adiantamento R$ 1.500 → capital necessário R$ 2.500)
+13. Adiantamento suficiente (antecipados R$ 4.000, adiantamento R$ 4.500 → capital necessário -R$ 500, saldo operacional R$ 0)
+14. Prazo não informado → risco `PRAZO_PAGAMENTO`/`NAO_AVALIADO`, completude `PARCIAL`
+15. Margem mínima (receita R$ 10.000, custo R$ 8.500, margem 15% x mínima 20% → cobre custos, valor adicional R$ 625,00, classificação `MARGEM_INSUFICIENTE`)
+16. Ponto de equilíbrio (receita R$ 9.000, custo R$ 10.000 → valor adicional R$ 1.000,00, classificação `INVIAVEL`)
+17. Comparação de duas propostas (maior receita/custo não é a de maior margem/lucro — ranking não usa só o faturamento)
+18. Comparação de três propostas (ranking por lucro, e uma proposta com margem mínima própria classificada `MARGEM_INSUFICIENTE` mesmo lucrativa)
+19. Previsto x realizado (previsto: receita R$ 10.000/custo R$ 8.000/margem 20%; realizado: receita R$ 9.500/custo R$ 8.700/lucro R$ 800/margem ≈8,42%)
+20. Distância igual a zero → falha, sem divisão por zero
+21. Receita igual a zero → falha para margem, mensagem clara
+22. Custo negativo → falha, campo identificado (delegado a `calcular_margem`)
+23. Percentual inválido (150%) → falha (delegado a `calcular_margem`)
+24. Apenas parte dos custos (`custosVariaveis`) → cálculo possível, completude `PARCIAL`, custos ausentes listados
+25. Dados insuficientes (só `descricaoFrete`) → falha, sem recomendação enganosa
+26. Risco não avaliado (origem/destino/tipoCarga informados, mas sem `risco*Nivel`) → `CARGA`/`ROTA`/`CLIENTE` como `NAO_AVALIADO`, nada inventado do nome da cidade/carga
+27. Múltiplos veículos (2 veículos, lucro R$ 6.000 → lucro por veículo R$ 3.000,00, sem duplicidade)
+28. Adiantamento maior que o frete → rejeitado sem justificativa; aceito com `justificativaAdiantamentoSuperiorAoFrete`
+29. Saldo inconsistente (adiantamento + saldo ≠ valor do frete) → rejeitado; aceito quando coerente
+30. Resultado positivo com capital de giro alto → lucro positivo, risco `CAPITAL_GIRO`, alerta financeiro, classificação não é `ATRATIVO` automaticamente
+
+Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus`, `calcular_custo_viagem` e `calcular_margem` (um cenário
+representativo de cada) foram reexecutados junto com os 30 de
+`analisar_frete` — todas as 111 verificações passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
-`comparar_pneus`, `calcular_custo_viagem` e `calcular_margem` estão
-registradas aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não
-estão** conectadas a nenhum loop de tool use real.
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem` e
+`analisar_frete` estão registradas aqui em `FERRAMENTAS_FROTA_IA`
+(`index.ts`), mas ainda **não estão** conectadas a nenhum loop de tool use
+real.
+
+Quando essa conexão existir, `analisar_frete` é a ferramenta esperada para
+perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
+"Quanto vai sobrar?", "Esse valor cobre meus custos?", "Qual é a margem?",
+"Quanto vou ganhar por km?", "O retorno vazio prejudica muito?", "Quanto
+preciso cobrar?", "Qual proposta é melhor?", "Preciso de quanto de capital
+de giro?", "Esse prazo de pagamento vale a pena?" e "Esse frete está dando
+prejuízo?" — o modelo deve pedir apenas os dados faltantes (via
+`dadosFaltantes`), nunca inventar distância, consumo, combustível, pedágio,
+retorno, custos, impostos, comissão, margem mínima, prazo, carga, peso ou
+risco do cliente.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -866,6 +1120,13 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   praticados) para pré-preencher `calcular_margem`, e registrar o
   resultado realizado de cada operação para alimentar seu
   `PREVISTO_X_REALIZADO` automaticamente.
+- Buscar propostas de frete recebidas (de um cadastro de clientes/cargas ou
+  de uma plataforma de frete integrada) para pré-preencher
+  `analisar_frete` em `COMPARACAO_PROPOSTAS`, histórico de pagamento por
+  cliente (prazo médio praticado, inadimplência) para enriquecer — nunca
+  substituir — a análise de prazo e risco de cliente, e o resultado
+  realizado de cada frete para alimentar seu `PREVISTO_X_REALIZADO`
+  automaticamente.
 - Nenhuma ferramenta desta pasta deve acessar o Supabase diretamente — a
   busca de dados deve acontecer antes, na camada que monta a `entrada` da
   ferramenta, mantendo os cálculos puros e testáveis.
@@ -896,4 +1157,13 @@ sistema financeiro/ERP ou emissão fiscal poderia fornecer
 `aliquotaImpostosPercentual` real por regime tributário e `comissoes`
 efetivas por cliente/contrato, e uma plataforma de frete poderia alimentar
 `receitaBruta` direto a partir do valor negociado — sempre como sugestão
-a confirmar, nunca assumida silenciosamente.
+a confirmar, nunca assumida silenciosamente. Para `analisar_frete`: uma
+plataforma de frete (ex.: agenciadores de carga) poderia alimentar
+`valorFreteTotal`/`distanciaIdaKm`/`prazoPagamentoDias` de uma proposta
+recebida, ANTT/ANP poderiam sugerir valores de referência de frete e preço
+de diesel por região para contextualizar (nunca substituir) a análise, e um
+cadastro de clientes/histórico de pagamentos poderia sugerir
+`riscoClienteNivel` — sempre como dado a confirmar explicitamente, já que
+esta ferramenta nunca infere risco do nome do cliente. Nenhuma dessas
+integrações foi implementada; só os tipos e pontos de entrada já suportam
+recebê-las sem quebrar a API atual.
