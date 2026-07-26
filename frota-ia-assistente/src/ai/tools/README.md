@@ -19,8 +19,8 @@ nenhuma API externa nesta fase.
 | Ferramenta | Arquivo | Status |
 |---|---|---|
 | `calcular_combustivel` | `calcular-combustivel.ts` | **Lógica implementada** |
+| `calcular_cpk` | `calcular-cpk.ts` | **Lógica implementada** |
 | `analisar_frete` | `analisar-frete.ts` | Estrutura apenas |
-| `calcular_cpk` | `calcular-cpk.ts` | Estrutura apenas |
 | `comparar_pneus` | `comparar-pneus.ts` | Estrutura apenas |
 | `calcular_custo_viagem` | `calcular-custo-viagem.ts` | Estrutura apenas |
 | `calcular_margem` | `calcular-margem.ts` | Estrutura apenas |
@@ -150,6 +150,88 @@ informado (ex.: nunca assume `litrosAbastecidos` como se fosse
 - Sem persistência: cada chamada é isolada, sem memória de abastecimentos
   anteriores.
 
+## `calcular_cpk`
+
+Calcula o Custo Por Quilômetro (CPK) por categoria de custo ou no total, e
+compara o CPK entre dois veículos/operações (ex.: pneu novo x recapado,
+veículo A x veículo B). Reutilizável por outras ferramentas — `analisar_frete`,
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem` e
+`calcular_valor_minimo_frete` podem chamar `calcularCpk` em vez de reimplementar
+a soma de custos.
+
+| Modo | Obrigatórios | Calcula |
+|---|---|---|
+| `CPK_PNEUS` | `quilometragem` + `custoPneus` e/ou `custoRecapagem` | CPK de pneus |
+| `CPK_COMBUSTIVEL` | `quilometragem` + `custoCombustivel` | CPK de combustível |
+| `CPK_MANUTENCAO` | `quilometragem` + ao menos um custo de manutenção | CPK de manutenção |
+| `CPK_OPERACIONAL` | `quilometragem` + ao menos um custo operacional | CPK operacional |
+| `CPK_TOTAL` | `quilometragem` + ao menos um custo de qualquer categoria | CPK total + `cpkPorCategoria` (breakdown) |
+| `COMPARACAO_CPK` | `operacaoA` e `operacaoB`, cada uma com `quilometragem` + custos da `categoriaComparacao` (padrão `TOTAL`) | menor CPK, diferença R$/km e %, economia estimada |
+
+### Categorias de custo
+
+```
+PNEUS        = custoPneus + custoRecapagem
+COMBUSTIVEL  = custoCombustivel
+MANUTENCAO   = custoManutencaoPreventiva + custoManutencaoCorretiva + custoPecas + custoMaoDeObra
+OPERACIONAL  = custoPedagios + custoLubrificantes + custoArla + custoSeguros + custoLicenciamento
+             + custoFinanciamento + custoDepreciacao + custoSalarios + custoEncargos
+             + custoAdministracao + custoRastreador + custoOperacionalAdicional + custoPersonalizado
+TOTAL        = PNEUS + COMBUSTIVEL + MANUTENCAO + OPERACIONAL
+
+CPK (qualquer categoria) = soma da categoria ÷ quilometragem
+```
+
+`quantidadePneus`, `vidaUtilPneusKm` e `valorResidual` são aceitos na entrada
+para uso futuro (ex.: por `comparar_pneus`), mas **não** entram na fórmula de
+`CPK_PNEUS` nesta versão — que é exatamente `(custoPneus + custoRecapagem) ÷ quilometragem`,
+como especificado.
+
+### Transparência
+
+Todo resultado bem-sucedido traz `custosConsiderados` e `custosIgnorados`
+(rótulos, não só nomes de campo) com a lista completa dos custos daquela
+categoria — o que entrou e o que ficou de fora por não ter sido informado.
+Quando há custos ignorados, um alerta explícito avisa que o CPK **não**
+representa o custo real completo.
+
+### Classificação e limites configuráveis
+
+`ClassificacaoCpk`: `EXCELENTE` / `BOM` / `ATENCAO` / `CRITICO`, calculada por
+`LIMITES_CLASSIFICACAO_CPK` (um conjunto de 3 limiares R$/km por categoria,
+no topo de `calcular-cpk.ts`). **Importante**: são valores iniciais de
+referência para caminhões de carga, não um benchmark oficial do setor —
+ajuste-os para a operação real antes de usar a classificação para decisões.
+
+### Exemplo de uso
+
+```ts
+import { calcularCpk } from "@/ai/tools";
+
+const resultado = calcularCpk({
+  modo: "CPK_PNEUS",
+  custoPneus: 12000,
+  quilometragem: 100000,
+});
+// resultado.resultados.cpk === 0.12
+// resultado.custosConsiderados === ["Pneus"]
+```
+
+### Limitações conhecidas
+
+- Não busca custos históricos automaticamente — tudo vem do que foi informado.
+- Os limiares de classificação são um ponto de partida, não um dado do setor.
+- `COMPARACAO_CPK` compara uma categoria por vez (`categoriaComparacao`); para
+  comparar todas as categorias entre dois veículos, é preciso chamar a
+  ferramenta uma vez por categoria (ou usar `TOTAL`, que soma todas).
+
+## Helpers compartilhados (`utils.ts`)
+
+`arredondar`, `formatarBRL`, `formatarNumero` e `CASAS_DECIMAIS_PADRAO` vivem
+em `utils.ts` e são usados por `calcular-combustivel.ts` e `calcular-cpk.ts`.
+Novas ferramentas que precisarem de arredondamento/formatação devem importar
+daqui em vez de duplicar as funções.
+
 ## Dependências
 
 Nenhuma nesta fase — apenas TypeScript puro, sem pacotes externos.
@@ -159,10 +241,17 @@ Nenhuma nesta fase — apenas TypeScript puro, sem pacotes externos.
 O projeto (`frota-ia-assistente`) ainda **não tem um framework de testes
 configurado** (sem Jest/Vitest no `package.json`). Por instrução explícita,
 nenhum framework novo foi instalado sem antes informar isso. A verificação
-de `calcular-combustivel.ts` foi feita manualmente, rodando os cenários da
-especificação via `node --experimental-strip-types` (script descartável, não
-commitado). Quando o time decidir qual framework usar, os casos abaixo devem
-virar testes automatizados:
+de cada ferramenta foi feita manualmente, rodando os cenários da
+especificação em um script descartável (não commitado) — para
+`calcular-combustivel.ts` via `node --experimental-strip-types`; para
+`calcular-cpk.ts`, como o arquivo passou a importar `./utils` (sem extensão),
+o resolvedor nativo do Node não encontra o módulo nesse modo, então a
+verificação foi feita compilando os arquivos para CommonJS com
+`tsc --module commonjs --moduleResolution node` num diretório temporário e
+rodando o JS resultante com `node`. Quando o time decidir qual framework
+usar, os casos abaixo devem virar testes automatizados:
+
+**`calcular_combustivel`**
 
 1. Viagem simples (600 km, 3 km/l, R$ 6,00/l → 200 l, R$ 1.200,00, R$ 2,00/km)
 2. Ida e volta via `considerarIdaVolta`
@@ -178,14 +267,27 @@ virar testes automatizados:
 12. Litros no tanque acima da capacidade rejeitados
 13. Comparação entre dois cenários
 
+**`calcular_cpk`**
+
+1. Pneus (R$ 12.000, 100.000 km → CPK = 0,12)
+2. Combustível (R$ 90.000, 60.000 km → CPK = 1,50)
+3. Manutenção (R$ 18.000, 60.000 km → CPK = 0,30)
+4. CPK total (somatório correto + `cpkPorCategoria` só com as categorias informadas)
+5. Comparação entre dois veículos (menor CPK, diferença, economia estimada)
+6. Valores negativos rejeitados
+7. Quilometragem igual a zero rejeitada
+8. Custos incompletos → `dadosFaltantes` preenchido
+9. Somente pneus (sem exigir outras categorias)
+10. Somente combustível
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
-Anthropic instalado). Por isso, `calcular_combustivel` está registrada aqui
-em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não está** conectada a
-nenhum loop de tool use real.
+Anthropic instalado). Por isso, `calcular_combustivel` e `calcular_cpk` estão
+registradas aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não
+estão** conectadas a nenhum loop de tool use real.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -208,6 +310,9 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
 - Registrar o histórico de abastecimentos/viagens para alimentar
   `CONSUMO_REAL` e `COMPARACAO_PREVISTO_REALIZADO` sem exigir que o usuário
   digite hodômetro e litros manualmente toda vez.
+- Buscar o histórico de custos do veículo (pneus, manutenções, seguros etc.)
+  para pré-preencher `calcular_cpk` por período, em vez de o usuário digitar
+  cada custo a cada pergunta.
 - Nenhuma ferramenta desta pasta deve acessar o Supabase diretamente — a
   busca de dados deve acontecer antes, na camada que monta a `entrada` da
   ferramenta, mantendo os cálculos puros e testáveis.

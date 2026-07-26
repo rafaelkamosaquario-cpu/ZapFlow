@@ -1,4 +1,5 @@
 import type { DefinicaoFerramenta, DefinicaoParametroFerramenta, ResultadoFerramentaBase } from "./types";
+import { CASAS_DECIMAIS_PADRAO, arredondar, formatarBRL, formatarNumero } from "./utils";
 
 /**
  * Ferramenta: calcular_combustivel
@@ -33,9 +34,6 @@ export const AUTONOMIA_UTIL_MINIMA_KM = 50;
  * suficiente.
  */
 export const AUTONOMIA_UTIL_ALERTA_KM = 150;
-
-/** Casas decimais usadas por padrão no arredondamento da saída. */
-export const CASAS_DECIMAIS_PADRAO = 2;
 
 const PREMISSA_ESTIMATIVA = "O cálculo representa uma estimativa.";
 const PREMISSA_SEM_VARIACOES =
@@ -154,23 +152,6 @@ export interface CalcularCombustivelResultado extends ResultadoFerramentaBase {
   classificacao?: ClassificacaoCombustivel | "DADOS_INSUFICIENTES";
   /** Apenas no modo COMPARACAO_CENARIOS: identifica o cenário mais econômico. */
   cenarioMaisEconomico?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers numéricos e de formatação
-// ---------------------------------------------------------------------------
-
-function arredondar(valor: number, casas: number): number {
-  const fator = 10 ** casas;
-  return Math.round((valor + Number.EPSILON) * fator) / fator;
-}
-
-function formatarBRL(valor: number): string {
-  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatarNumero(valor: number): string {
-  return valor.toLocaleString("pt-BR");
 }
 
 // ---------------------------------------------------------------------------

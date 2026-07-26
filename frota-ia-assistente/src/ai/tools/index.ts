@@ -8,6 +8,7 @@
  */
 
 export * from "./types";
+export * from "./utils";
 
 export * from "./analisar-frete";
 export * from "./calcular-combustivel";
@@ -36,8 +37,8 @@ import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
  * Todas as ferramentas internas do Frota IA, na ordem em que aparecem na
- * pasta. `calcular_combustivel` é, por enquanto, a única com a lógica de
- * cálculo implementada — as demais expõem apenas a estrutura (ver README).
+ * pasta. `calcular_combustivel` e `calcular_cpk` têm a lógica de cálculo
+ * implementada — as demais expõem apenas a estrutura (ver README).
  */
 export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, ResultadoFerramentaBase>> = [
   ferramentaAnalisarFrete,
