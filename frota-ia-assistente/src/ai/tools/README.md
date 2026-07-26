@@ -27,7 +27,7 @@ nenhuma API externa nesta fase.
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | **Lógica implementada** |
 | `calcular_receita_km` | `calcular-receita-km.ts` | **Lógica implementada** |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | **Lógica implementada** |
-| `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | Estrutura apenas |
+| `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | **Lógica implementada** |
 | `calcular_jornada` | `calcular-jornada.ts` | Estrutura apenas |
 
 "Estrutura apenas" significa: tipos de entrada/saída, parâmetros
@@ -1338,6 +1338,156 @@ const resultado = calcularCustoDia({
   (`resumoCustoVeiculoParado`) aceita o campo, mas aquela ferramenta ainda
   não existe.
 
+## `calcular_custo_veiculo_parado`
+
+Calcula e interpreta o **impacto financeiro de um veículo (ou frota) parado**
+— manutenção, avaria, acidente, espera de peça/oficina/carga/descarga, falta
+de motorista/demanda, restrição operacional/administrativa ou parada
+programada. Sempre diferencia custo fixo que continua existindo, custo
+adicional provocado pela parada, custos evitados por não operar, receita
+não realizada e lucro não realizado — **nunca trata faturamento perdido
+como lucro perdido**, e nunca soma receita não realizada e lucro não
+realizado como impactos independentes no mesmo total.
+
+| Modo | Uso |
+|---|---|
+| `CUSTO_FIXO_DURANTE_PARADA` / `CUSTO_ADICIONAL_PARADA` / `CUSTO_DIRETO_PARADA` / `CUSTO_TOTAL_PARADA` | Só o fixo, só o adicional, a soma, ou o total (com custos evitados/receita/lucro quando disponíveis) |
+| `RECEITA_NAO_REALIZADA` / `LUCRO_NAO_REALIZADO` | Faturamento e resultado que deixaram de acontecer |
+| `CUSTO_OPORTUNIDADE` | Só quando uma alternativa é explicitamente informada |
+| `CUSTO_POR_HORA_PARADA` / `CUSTO_POR_DIA_PARADO` | Impacto dividido pela duração |
+| `PARADA_MANUTENCAO`/`AVARIA`/`ACIDENTE`/`AGUARDANDO_PECA`/`AGUARDANDO_OFICINA`/`AGUARDANDO_CARGA`/`AGUARDANDO_DESCARGA`/`FALTA_MOTORISTA`/`FALTA_DEMANDA` | Rótulos de motivo — o núcleo de cálculo é o mesmo, o motivo nunca infere responsabilidade ou cobertura |
+| `PARADA_PROGRAMADA` / `PARADA_NAO_PROGRAMADA` | Classificação `PARADA_PROGRAMADA_CONTROLADA` fixa no primeiro caso; nenhum benefício preventivo é calculado sem entrada |
+| `VEICULO_SUBSTITUTO` | Compara manter a parada com substituir temporariamente |
+| `MULTIPLOS_VEICULOS` / `FROTA_PARCIALMENTE_PARADA` | Consolida `veiculos`, ou só o percentual de frota parada |
+| `PREVISTO_X_REALIZADO` | Compara os blocos `previsto`/`realizado` |
+| `COMPARACAO_CENARIOS` / `ANALISE_REPARAR_OU_SUBSTITUIR` | Compara ≥ 2 `cenarios` (oficinas, peças, reparar x substituir) |
+| `ANALISE_REDUCAO_TEMPO_PARADO` | Valor máximo economicamente justificável para reduzir a parada |
+
+### Reutilização — coordenadora, não reimplementadora
+
+- **`calcularCustoDia`** (modo `CUSTO_FIXO_DIARIO`) normaliza `custosFixos`
+  — mesmo tipo `ItemCustoFixo` reexportado por `calcular-custo-dia.ts`, com
+  a mesma normalização de periodicidade (mensal/anual/etc. rateados pela
+  base de dias) — sem reimplementar aquele rateio.
+- **`calcularMargem`** (modo `MARGEM_SIMPLES`) calcula o "lucro pela
+  operação evitada" (receita não realizada − custos variáveis evitados).
+- **`calcularCpk`** (modo `CPK_PNEUS` como divisor genérico) faz toda
+  divisão segura contra zero (custo por hora/dia parado, custo médio por
+  veículo, custo médio consolidado por hora/dia).
+- Aceita o custo de `calcular-custo-dia.ts` via `resumoCustoDia` (sentido
+  inverso do ponto de extensão que aquela ferramenta já expõe para esta:
+  `ResumoCustoVeiculoParadoParaCustoDia`), custos evitados de
+  `calcular-custo-viagem.ts` via `resumoCustoViagem` (tipo reexportado por
+  `calcular-margem.ts`) e de `calcular-cpk.ts` via `resumoCpk` (tipo
+  reexportado por `calcular-valor-minimo-frete.ts`). Nenhuma dependência
+  circular: este arquivo importa de `calcular-custo-dia.ts`,
+  `calcular-margem.ts`, `calcular-cpk.ts` e `calcular-valor-minimo-frete.ts`
+  (só tipo) — nenhum deles importa deste.
+
+### Duração da parada
+
+`horasParadas`, `diasParados`×`horasPorDia` e `dataInicio`/`dataFim` competem
+como fontes concorrentes (`estrategiaSobreposicaoDuracao`, padrão
+`REJEITAR_SOBREPOSICAO`). Quando datas são usadas, a regra é sempre
+documentada: diferença em dias corridos, sem considerar fuso horário ou
+horas parciais. Duração igual a zero é sempre rejeitada (nunca uma divisão
+por zero silenciosa).
+
+### Custo fixo x adicional x evitado
+
+- **Custo fixo** (`custoFixoDiarioInformado`/`custoFixoHoraInformado`/
+  `custosFixos`/`resumoCustoDia`) é o que continua existindo mesmo sem
+  operação — financiamento, seguro, salário etc.
+- **Custo adicional** (`custosAdicionais`) é o gasto extraordinário da
+  parada — oficina, peça, guincho, hospedagem etc. Bases percentuais
+  (`RECEITA_NAO_REALIZADA`/`VALOR_DO_FRETE`/`CUSTO_REPARO`/
+  `CUSTO_TOTAL_PARADA`) têm equação fechada — inclusive `CUSTO_TOTAL_PARADA`,
+  que é circular (o adicional é % do total que ele próprio compõe) e é
+  resolvida por equação, não por iteração.
+- **Custos evitados** (`custosEvitados`) são os custos operacionais que não
+  ocorreram por não operar — nunca subtraídos automaticamente, só quando
+  informados explicitamente ou derivados de `resumoCpk`/`resumoCustoViagem`.
+  Quando os evitados superam o custo direto, um alerta explícito lembra que
+  isso não significa lucro.
+
+### Receita não realizada x lucro não realizado
+
+Faturamento perdido (receita) e resultado perdido (lucro) são sempre
+diferenciados — o lucro só é calculado a partir de margem histórica, lucro
+médio, ou receita menos custos variáveis evitados (via `calcularMargem`),
+nunca assumido como igual à receita.
+
+### Visão de caixa x visão econômica
+
+```
+impactoCaixa     = custoAdicionalParada + custoFixoParada − custosEvitados
+impactoEconomico = custoLiquidoDireto + lucroNaoRealizado + custoOportunidadeInformado
+```
+
+A visão de caixa trata todo custo fixo informado como desembolsável nesta
+fase (não distingue itens não-caixa como depreciação automaticamente). A
+visão econômica nunca soma receita não realizada e lucro não realizado
+juntos — só o lucro entra no impacto econômico.
+
+### Veículo substituto e redução de tempo parado
+
+`VEICULO_SUBSTITUTO` calcula `resultadoSubstituto` (receita gerada − custo
+do substituto) e `beneficioLiquidoSubstituto` (impacto evitado + resultado
+do substituto) — nunca escolhe automaticamente a substituição como melhor.
+`ANALISE_REDUCAO_TEMPO_PARADO` calcula `valorMaximoJustificavelReducao`
+(custo por dia parado × dias de redução) como um indicativo, nunca como
+autorização automática de gasto.
+
+### Múltiplos veículos — sempre média ponderada
+
+A consolidação usa impacto total ÷ horas/dias totais (média ponderada),
+nunca a média simples — mesmo princípio de `calcular_custo_dia` e
+`calcular_receita_km`.
+
+### Prevenção de sobreposições
+
+Custo fixo (diário × hora × detalhado × `resumoCustoDia`), custo adicional
+(total × detalhado), receita não realizada (6 fontes) e lucro não realizado
+(4 fontes) são todos resolvidos com estratégia configurável, padrão
+`REJEITAR_SOBREPOSICAO`.
+
+### Exemplo de uso
+
+```ts
+import { calcularCustoVeiculoParado } from "@/ai/tools/calcular-custo-veiculo-parado";
+
+const resultado = calcularCustoVeiculoParado({
+  modo: "PARADA_MANUTENCAO",
+  motivoParada: "MANUTENCAO_CORRETIVA",
+  diasParados: 3,
+  custoFixoDiarioInformado: 400,
+  custosAdicionais: [
+    { descricao: "Peça", valor: 2000, base: "VALOR_TOTAL" },
+    { descricao: "Mão de obra", valor: 800, base: "VALOR_TOTAL" },
+  ],
+  custosEvitados: [{ descricao: "Combustível", valor: 700 }],
+  receitaMediaDia: 2000,
+  margemMediaPercentual: 20,
+});
+// resultado.custoDiretoParada, resultado.custoLiquidoDireto,
+// resultado.receitaNaoRealizada, resultado.lucroNaoRealizado,
+// resultado.impactoEconomico, resultado.classificacao
+```
+
+### Limitações conhecidas
+
+- Não calcula duração, custos, receita, margem, lucro, quantidade de
+  viagens, quilômetros, prazo de peça/oficina, custo de substituto ou
+  custo de oportunidade automaticamente — tudo vem do que foi informado.
+- Não infere responsabilidade, culpa, cobertura de seguro ou obrigação
+  legal a partir do motivo da parada.
+- O nível de confiança (`nivelConfianca`) é um indicador único por
+  resultado nesta fase, não granular por categoria (custo fixo, adicional,
+  evitados etc. separadamente) como o detalhamento máximo da especificação
+  sugere.
+- Base percentual `VALOR_FIXO` para `custosAdicionais` ainda não tem
+  equação implementada nesta fase.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -1656,6 +1806,56 @@ Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
 cenário representativo de cada) foram reexecutados junto com os 40 de
 `calcular_custo_dia` — todas as 92 verificações passaram nesta rodada.
 
+**`calcular_custo_veiculo_parado`**
+
+1. Custo fixo por três dias (R$ 400,00/dia × 3 → R$ 1.200,00)
+2. Custo fixo por horas (R$ 25,00/h × 10h → R$ 250,00)
+3. Custo adicional (peças R$ 2.000,00 + mão de obra R$ 800,00 + guincho R$ 500,00 → R$ 3.300,00)
+4. Custo direto da parada (fixo R$ 1.200,00 + adicional R$ 3.300,00 → R$ 4.500,00)
+5. Custos evitados (direto R$ 4.500,00, combustível R$ 700,00 + pedágio R$ 300,00 → evitados R$ 1.000,00, líquido R$ 3.500,00)
+6. Receita não realizada por dia (R$ 2.000,00/dia × 3 → R$ 6.000,00)
+7. Receita não realizada por hora (R$ 200,00/h × 10h → R$ 2.000,00)
+8. Receita não realizada por viagem (R$ 5.000,00 × 2 viagens perdidas → R$ 10.000,00)
+9. Receita não realizada por km (R$ 8,00/km × 1.000 km → R$ 8.000,00)
+10. Lucro não realizado por margem (receita R$ 10.000,00 × 20% → R$ 2.000,00)
+11. Lucro não realizado por dia (R$ 500,00/dia × 3 → R$ 1.500,00)
+12. Lucro pela operação evitada (receita R$ 10.000,00 − evitados R$ 7.000,00, via calcular_margem → R$ 3.000,00)
+13. Visão de caixa (adicional R$ 3.000,00 + fixo R$ 1.000,00 − evitados R$ 700,00 → R$ 3.300,00)
+14. Visão econômica (líquido direto R$ 3.500,00 + lucro não realizado R$ 2.000,00 → R$ 5.500,00)
+15. Custo por dia parado (impacto R$ 6.000,00 ÷ 3 dias → R$ 2.000,00/dia)
+16. Custo por hora parada (impacto R$ 6.000,00 ÷ 24h → R$ 250,00/h)
+17. Frota parcialmente parada (2 de 10 veículos → 20%)
+18. Veículos parados maiores que a frota → falha, campos identificados
+19. Custo médio por veículo (impacto total R$ 20.000,00 ÷ 4 veículos → R$ 5.000,00/veículo)
+20. Veículo substituto (parada R$ 8.000,00, substituto R$ 3.000,00, receita R$ 7.000,00 → resultado R$ 4.000,00, benefício líquido R$ 12.000,00)
+21. Redução do tempo parado (R$ 2.000,00/dia × 2 dias → R$ 4.000,00 indicativo)
+22. Oficina mais cara e mais rápida (reparo maior + parada menor vence no custo econômico total, não no preço do reparo)
+23. Previsto x realizado (2→4 dias, R$ 4.000,00→R$ 7.000,00 → +2 dias, +R$ 3.000,00, variação 75%)
+24. Parada programada → classificação `PARADA_PROGRAMADA_CONTROLADA`, sem pressupor falha
+25. Aguardando carga (fixo R$ 300,00 + alimentação R$ 80,00 = R$ 380,00; estadia R$ 200,00 → resultado líquido -R$ 180,00)
+26. Custo total e detalhado → sobreposição rejeitada por padrão
+27. Custo fixo diário e detalhado → conflito detectado, fonte prioritária solicitada
+28. Receita diária e horária → sobreposição rejeitada por padrão
+29. Receita perdida e lucro perdido não somados como impactos independentes no impacto econômico
+30. Duração zero → falha, sem divisão por zero
+31. Custo negativo → falha, campo identificado
+32. Receita negativa → falha
+33. Margem inválida (150%) → falha
+34. Custo de oportunidade sem alternativa informada → não calculado, `NAO_AVALIADO`
+35. Sem receita informada → calcula custo direto, não calcula receita/lucro, completude `PARCIAL`
+36. Dados insuficientes (sem duração nem custo) → falha, completude `INSUFICIENTE`
+37. Múltiplos veículos com durações diferentes → consolidação, impacto total, custo médio ponderado por hora, ranking
+38. Maior receita perdida, menor lucro perdido (dois veículos com receitas/margens diferentes) → rankings de receita e lucro não realizados divergem
+39. Custos evitados maiores que o custo direto → alerta, líquido direto negativo, sem classificar como lucro
+40. Tolerância decimal → cálculo com ruído de ponto flutuante não gera erro
+
+Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
+`analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km` e
+`calcular_custo_dia` (um cenário representativo de cada) foram reexecutados
+junto com os 40 de `calcular_custo_veiculo_parado` — todas as 91
+verificações passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
@@ -1663,10 +1863,10 @@ nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
 `comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
-`analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km` e
-`calcular_custo_dia` estão registradas aqui em `FERRAMENTAS_FROTA_IA`
-(`index.ts`), mas ainda **não estão** conectadas a nenhum loop de tool use
-real.
+`analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km`,
+`calcular_custo_dia` e `calcular_custo_veiculo_parado` estão registradas
+aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão**
+conectadas a nenhum loop de tool use real.
 
 Quando essa conexão existir, `analisar_frete` é a ferramenta esperada para
 perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
@@ -1699,12 +1899,25 @@ preciso faturar por dia?", "Quanto preciso faturar para ter 20% de
 margem?", "Quanto sobra por dia?", "Qual veículo custa mais por dia?",
 "Qual veículo tem menor custo por km?", "Quanto a ociosidade está me
 custando?", "Qual foi meu custo diário no mês?" e "Meu custo diário
-realizado ficou acima do previsto?" — em todos os casos o modelo deve pedir
-apenas os dados faltantes (via `dadosFaltantes`), nunca inventar distância,
-consumo, combustível, pedágio, retorno, custos, impostos, comissão,
-margem, markup, prazo, carga, peso, quantidade, valor oferecido, CPK,
-valor mínimo, período, salário, encargos, financiamento, seguro,
-quilometragem, dias, horas ou quantidade de veículos/pessoas.
+realizado ficou acima do previsto?"; e `calcular_custo_veiculo_parado` é a
+ferramenta esperada para perguntas como "Quanto meu caminhão parado está
+me custando?", "Quanto custa um dia parado?", "Quanto custa uma hora
+parado?", "Quanto perdi com o caminhão na oficina?", "Quanto deixei de
+faturar?", "Quanto deixei de lucrar?", "Quanto custa esperar uma peça?",
+"Vale a pena pagar mais para a peça chegar antes?", "Vale a pena alugar
+outro caminhão?", "Quanto posso gastar para reduzir a parada?", "Qual
+oficina fica mais barata considerando o tempo parado?", "Quanto a frota
+parada está me custando?", "Qual veículo parado tem maior impacto?",
+"Quanto custa aguardar carga?", "Quanto custa aguardar descarga?", "Quanto
+tempo vou precisar trabalhar para recuperar a perda?", "O custo realizado
+ficou acima do previsto?" e "É melhor reparar ou substituir?" — em todos os
+casos o modelo deve pedir apenas os dados faltantes (via `dadosFaltantes`),
+nunca inventar distância, consumo, combustível, pedágio, retorno, custos,
+impostos, comissão, margem, markup, prazo, carga, peso, quantidade, valor
+oferecido, CPK, valor mínimo, período, salário, encargos, financiamento,
+seguro, quilometragem, dias, horas, quantidade de veículos/pessoas, prazo
+de peça/oficina, custo de substituto, custo de oportunidade,
+responsabilidade ou cobertura de seguro.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -1769,6 +1982,12 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   veículo para alimentar `MULTIPLOS_VEICULOS`/`ANALISE_POR_PERIODO`
   automaticamente, e a folha de pagamento para `custoTotalMotoristas`/
   `custoTotalAjudantes` — sempre como sugestão a confirmar.
+- Buscar histórico de manutenções/oficinas/peças e prazos reais de reparo
+  para pré-preencher `custoReparoInformado`/`diasParados` em
+  `calcular_custo_veiculo_parado`, o histórico de paradas por veículo para
+  `MULTIPLOS_VEICULOS`, e receita/margem média real por veículo/rota para
+  `receitaMediaDia`/`margemMediaPercentual` — sempre como sugestão a
+  confirmar, nunca assumida.
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
@@ -1829,4 +2048,13 @@ do motorista; um ERP/folha de pagamento poderia fornecer
 rastreador poderiam alimentar `quilometragemDia` realizada — sempre como
 sugestão a confirmar, nunca assumida silenciosamente. Nenhuma dessas
 integrações foi implementada; só os tipos e pontos de entrada já suportam
-recebê-las sem quebrar a API atual.
+recebê-las sem quebrar a API atual. Para `calcular_custo_veiculo_parado`:
+oficinas/fornecedores de peças poderiam alimentar `custoReparoInformado`/
+prazos reais; um sistema de manutenção forneceria MTBF/MTTR e SLA por
+oficina para contextualizar (nunca decidir) a comparação de alternativas;
+telemetria/rastreador poderiam sinalizar automaticamente o início/fim da
+parada (`dataInicio`/`dataFim`); e um painel de disponibilidade de frota
+poderia consumir `consolidadoVeiculos` diretamente — sempre como dado a
+confirmar, nunca assumido. Nenhuma dessas integrações foi implementada; só
+os tipos e pontos de entrada já suportam recebê-las sem quebrar a API
+atual.
