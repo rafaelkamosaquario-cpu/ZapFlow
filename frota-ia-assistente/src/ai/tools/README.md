@@ -21,8 +21,8 @@ nenhuma API externa nesta fase.
 | `calcular_combustivel` | `calcular-combustivel.ts` | **Lógica implementada** |
 | `calcular_cpk` | `calcular-cpk.ts` | **Lógica implementada** |
 | `comparar_pneus` | `comparar-pneus.ts` | **Lógica implementada** |
+| `calcular_custo_viagem` | `calcular-custo-viagem.ts` | **Lógica implementada** |
 | `analisar_frete` | `analisar-frete.ts` | Estrutura apenas |
-| `calcular_custo_viagem` | `calcular-custo-viagem.ts` | Estrutura apenas |
 | `calcular_margem` | `calcular-margem.ts` | Estrutura apenas |
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | Estrutura apenas |
 | `calcular_receita_km` | `calcular-receita-km.ts` | Estrutura apenas |
@@ -378,12 +378,155 @@ const resultado = compararPneus({
 - Sem persistência: cada chamada é isolada, sem histórico de recapagens
   anteriores.
 
+## `calcular_custo_viagem`
+
+Calcula o custo operacional **completo** de uma viagem de transporte
+rodoviário — não só diesel e pedágio. Sempre diferencia custo variável,
+custo fixo proporcional, custo direto, custo indireto, previsto e
+realizado, e nunca apresenta um valor parcial como se fosse o custo real
+completo da operação.
+
+| Modo | O que faz |
+|---|---|
+| `VIAGEM_SIMPLES` | Custo de um único trecho (`distanciaIdaKm`) |
+| `IDA_E_VOLTA` | Ida e volta, com parâmetros iguais ou distintos por trecho |
+| `IDA_COM_RETORNO_VAZIO` | Ida carregada + volta sem receita — os custos da volta continuam entrando no total |
+| `IDA_COM_CARGA_RETORNO` | Ida e volta com cargas distintas (`volta.cargaToneladas`) |
+| `CUSTO_PREVISTO` / `CUSTO_REALIZADO` | Igual a `VIAGEM_SIMPLES`, só rotula o resultado como previsto/realizado |
+| `COMPARACAO_PREVISTO_REALIZADO` | Recebe blocos `previsto` e `realizado` completos e compara |
+| `MULTIPLOS_VEICULOS` | Calcula o custo de 1 veículo e projeta para `quantidadeVeiculos`, sem duplicar |
+| `RATEIO_POR_CARGA` | Exige `criterioRateioCarga` (`TONELADA`/`UNIDADE`/`VOLUME`) + o divisor correspondente |
+
+### Reutilização de `calcular-combustivel.ts` e `calcular-cpk.ts`
+
+- **Combustível**: sempre que há distância + consumo (+ preço opcional), a
+  categoria é calculada chamando `calcularCombustivel({modo:"PREVISAO_VIAGEM", ...})`
+  — inclusive nos modos de ida e volta, com uma chamada por trecho (mesmo
+  quando o consumo é igual nos dois), para poder reportar `custoIda`/`custoVolta`
+  separadamente sem duplicar a lógica de litros/custo já implementada ali.
+- **Custo por km**: depois de somado o custo total, `custoPorKm` é obtido
+  chamando `calcularCpk({modo:"CPK_PNEUS", custoPneus: custoTotal, quilometragem: distanciaTotalKm})`
+  — reaproveitando a mesma divisão/arredondamento/validação de km zero já
+  testada em `calcular-cpk.ts`, exatamente como `comparar-pneus.ts` já fazia.
+- **CPK por categoria** (`veiculo.cpkManutencao`, `cpkPneus`, `cpkDepreciacao`,
+  `cpkCustosFixos`): a fórmula é `cpk × distanciaTotalKm`, uma multiplicação
+  simples que **não existe** em `calcular-cpk.ts` (que só faz a divisão
+  custo ÷ km) — não há lógica para reutilizar aqui, então é calculada
+  diretamente nesta ferramenta.
+- **`comparar-pneus.ts`** não é chamado diretamente; o CPK de pneus que ela
+  calcula pode ser passado como `veiculo.cpkPneus`.
+- **Nenhuma alteração foi necessária** em `calcular-combustivel.ts` ou
+  `calcular-cpk.ts` — ambas foram usadas apenas por composição.
+
+### Base de rateio dos custos fixos (elimina ambiguidade)
+
+Cada item de `custosFixos` (`seguroVeiculo`, `licenciamento`, `financiamento`,
+`depreciacao`, `rastreador`, `administracao`, `salarioFixo`, `garagem`,
+`impostosFixos`, `outros`) é `{ valor, base }`, com `base` em `POR_VIAGEM` /
+`POR_TRECHO` / `POR_VEICULO` / `POR_PESSOA` / `POR_DIA` / `POR_KM` /
+`POR_TONELADA` / `POR_UNIDADE` / `VALOR_TOTAL`. Um `valor` informado **sem**
+`base` nunca é multiplicado silenciosamente — vira dado faltante
+(`custosFixos.X.base`). A normalização é feita por uma única função
+(`normalizarValorComBase`), não duplicada por categoria.
+
+### Sobreposição de custos
+
+Detecta e trata como conflito (nunca soma as duas fontes automaticamente):
+
+- `cpkTotal` informado junto com combustível detalhado, `custosFixos` ou
+  `cpkManutencao`/`cpkPneus`/`cpkDepreciacao`/`cpkCustosFixos` (o CPK total
+  já embutiria tudo isso).
+- `cpkCustosFixos` junto com `custosFixos` detalhados.
+- `cpkDepreciacao` junto com `custosFixos.depreciacao`.
+- `pedagios.valorTotal` junto com `pedagios.pracas`.
+- `operacao.valorTotal` junto com os itens detalhados de `operacao`.
+- `custoCombustivelInformado` junto com consumo/preço detalhados.
+
+Controlado por `estrategiaSobreposicao` (padrão **`REJEITAR_SOBREPOSICAO`**,
+que falha com mensagem explicando os campos em conflito); `PRIORIZAR_TOTAL`
+e `PRIORIZAR_DETALHADO` escolhem uma fonte, ignoram a outra e registram um
+alerta explicando o que foi ignorado.
+
+> Nem todo par citado na especificação original tem um campo concreto nesta
+> versão (ex.: "custo de motorista total + diária" — `CustosMotorista` não
+> tem um campo de total agregado separado da diária, então não há uma
+> sobreposição real de dados para detectar aí; os dois são componentes
+> aditivos legítimos). Os pares acima são os que existem de fato na
+> tipagem e por isso são checados.
+
+### Categorias de saída
+
+`combustível`, `ARLA`, `pedágios`, `motorista`, `ajudante`, `alimentação`,
+`hospedagem`, `carga e descarga`, `operação`, `manutenção`, `pneus`,
+`depreciação`, `seguro`, `licenciamento`, `financiamento`, `rastreador`,
+`administração`, `outros (indiretos)` — cada uma com valor, origem, base de
+cálculo, previsto/realizado, incluído/ignorado e memória de cálculo.
+`alimentação`/`hospedagem` são inseridas em `motorista`/`ajudante` na
+entrada, mas somadas numa categoria própria na saída (sem duplicar).
+Quando `veiculo.cpkTotal` é usado, aparece uma única categoria "CPK total
+do veículo" — as demais (combustível, manutenção, pneus, depreciação,
+fixos) não são estimadas separadamente, pois já estão embutidas nele.
+
+Cada categoria pertence a exatamente um dos 4 buckets do resultado
+(`custosVariaveis` = combustível/ARLA/pedágios; `custosFixosProporcionais`
+= tudo de `custosFixos` + CPK do veículo; `custosDiretos` = motorista,
+ajudante, alimentação, hospedagem, carga/descarga, operação;
+`custosIndiretos` = despesas administrativas e custos adicionais), para que
+`custoTotal` nunca conte a mesma categoria duas vezes.
+
+### Nível de completude
+
+- **INSUFICIENTE**: sem distância válida ou nenhuma categoria calculável.
+- **PARCIAL**: dá para calcular, mas falta combustível com preço completo
+  ou qualquer representação de custos fixos (nenhum `custosFixos.*`, nem
+  `cpkTotal`/`cpkCustosFixos` informado) — é por isso que uma viagem só com
+  combustível (teste 1 da especificação) sai como parcial.
+- **COMPLETO**: nenhuma dessas lacunas.
+
+### Ida, volta e retorno vazio
+
+`custoIda`/`custoVolta` cobrem os custos atribuíveis a cada trecho
+(combustível por perna, pedágio de praças marcadas com `trecho`, custos
+adicionais do retorno em `volta.custosAdicionais`). Motorista, ajudante,
+custos fixos e operação **não** são divididos por trecho nesta versão —
+normalmente não fazem sentido meio-ida-meio-volta — e entram só no
+`custoTotal`. Em `IDA_COM_RETORNO_VAZIO`, os custos da volta nunca são
+omitidos; uma premissa explícita registra que o retorno foi tratado como
+sem carga/receita.
+
+### Exemplo de uso
+
+```ts
+import { calcularCustoViagem } from "@/ai/tools";
+
+const resultado = calcularCustoViagem({
+  modo: "VIAGEM_SIMPLES",
+  distanciaIdaKm: 600,
+  veiculo: { consumoMedioKmLitro: 3, precoCombustivelLitro: 6 },
+});
+// resultado.litrosCombustivel === 200
+// resultado.custosPorCategoria.find(c => c.categoria === "Combustível").valor === 1200
+// resultado.nivelCompletude === "PARCIAL" (sem custos fixos informados)
+```
+
+### Limitações conhecidas
+
+- Não calcula distância, preço de combustível, pedágio, diária ou CPK
+  automaticamente — tudo vem do que foi informado.
+- Motorista/ajudante/custos fixos/operação não são divididos por trecho
+  (só combustível e pedágio, quando as praças têm `trecho` marcado).
+- Comparação previsto x realizado sinaliza a categoria de maior desvio, mas
+  nunca infere a causa (rota diferente, operação extra, etc.).
+
 ## Helpers compartilhados (`utils.ts`)
 
-`arredondar`, `formatarBRL`, `formatarNumero` e `CASAS_DECIMAIS_PADRAO` vivem
-em `utils.ts` e são usados por `calcular-combustivel.ts` e `calcular-cpk.ts`.
-Novas ferramentas que precisarem de arredondamento/formatação devem importar
-daqui em vez de duplicar as funções.
+`arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
+`CASAS_DECIMAIS_MOEDA_PADRAO` e `CASAS_DECIMAIS_PERCENTUAL_PADRAO` vivem em
+`utils.ts` e são usados por todas as ferramentas com lógica implementada.
+`NivelCompletude` (COMPLETO/PARCIAL/INSUFICIENTE) vive em `types.ts` pelo
+mesmo motivo — é usado por `comparar-pneus.ts` e `calcular-custo-viagem.ts`.
+Novas ferramentas que precisarem de arredondamento/formatação/completude
+devem importar daqui em vez de redeclarar.
 
 ## Dependências
 
@@ -450,20 +593,48 @@ usar, os casos abaixo devem virar testes automatizados:
 13. Quantidade de pneus sem duplicar custo/economia
 14. Recapagens em lista, com custos e quilometragens diferentes por evento
 
-Testes de regressão de `calcular_cpk` (10 cenários) e `calcular_combustivel`
-(13 cenários) foram reexecutados junto com os de `comparar_pneus` para
-garantir que nenhuma ferramenta anterior quebrou — todos passaram (69/69
-verificações no total nesta rodada).
+**`calcular_custo_viagem`**
+
+1. Viagem simples só combustível (600 km, 3 km/l, R$ 6,00/l → 200 l, R$ 1.200,00, R$ 2,0000/km, classificação parcial)
+2. Combustível + pedágio (custo total R$ 1.600,00, R$ 3,2000/km)
+3. Ida e volta com consumos diferentes (160 l + 125 l = 285 l, R$ 1.710,00)
+4. Custo por `cpkTotal` (1.000 km × R$ 4,50/km = R$ 4.500,00)
+5. `cpkTotal` + combustível detalhado → sobreposição rejeitada por padrão
+6. CPK por categoria (manutenção+pneus+fixos+combustível → R$ 3,5000/km)
+7. ARLA por percentual (5% de 200 l → 10 l, R$ 40,00)
+8. Custo por tonelada (R$ 5.000,00 ÷ 25 t = R$ 200,00)
+9. Custo por tonelada-km (R$ 5.000,00 ÷ (25 t × 500 km) = R$ 0,40)
+10. Múltiplos veículos (3 veículos, custo por veículo sem duplicar)
+11. Motorista por diária (3 dias × R$ 250,00 = R$ 750,00)
+12. Dois motoristas (multiplicação correta por pessoa e por dia)
+13. Pedágio em lista (soma de praças e passagens)
+14. Pedágio total + lista → duplicidade rejeitada por padrão
+15. Retorno vazio (custo da ida e da volta preservados, total correto, premissa explícita)
+16. Previsto x realizado (R$ 4.000,00 → R$ 4.600,00: diferença R$ 600,00, variação 15%)
+17. Distância zero rejeitada
+18. Consumo zero rejeitado
+19. Custo negativo rejeitado
+20. Dados parciais → classificação PARCIAL, custos ausentes listados
+21. Dados insuficientes → falha, sem resultado financeiro enganoso
+22. Rateio por dia (custo fixo `POR_DIA` × dias)
+23. Rateio por veículo (custo fixo `POR_VEICULO` × quantidadeVeiculos)
+24. Rateio por pessoa (ajudante: diária × dias × quantidade)
+25. Custo por unidade (`RATEIO_POR_CARGA`, critério `UNIDADE`)
+
+Testes de regressão de `calcular_combustivel` (13), `calcular_cpk` (10) e
+`comparar_pneus` (5 cenários-chave) foram reexecutados junto com os 25 de
+`calcular_custo_viagem` para garantir que nenhuma ferramenta anterior
+quebrou — todas as 72 verificações passaram nesta rodada.
 
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
-Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk` e
-`comparar_pneus` estão registradas aqui em `FERRAMENTAS_FROTA_IA`
-(`index.ts`), mas ainda **não estão** conectadas a nenhum loop de tool use
-real.
+Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus` e `calcular_custo_viagem` estão registradas aqui em
+`FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão** conectadas a
+nenhum loop de tool use real.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -492,6 +663,10 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
 - Buscar o histórico de compras/recapagens de pneus (marca, modelo, custo,
   quilometragem realizada) para pré-preencher `comparar_pneus`, e registrar
   o resultado realizado de cada pneu para refinar comparações futuras.
+- Buscar viagens anteriores (rota, distância, custos por categoria) para
+  pré-preencher `calcular_custo_viagem`, e registrar o resultado realizado
+  de cada viagem para alimentar `COMPARACAO_PREVISTO_REALIZADO`
+  automaticamente em vez de exigir os dois blocos digitados na hora.
 - Nenhuma ferramenta desta pasta deve acessar o Supabase diretamente — a
   busca de dados deve acontecer antes, na camada que monta a `entrada` da
   ferramenta, mantendo os cálculos puros e testáveis.
@@ -509,3 +684,12 @@ nunca assumidos — antes de entrar no cálculo. O mesmo vale para
 compatibilidade técnica (medida, índice de carga/velocidade): um banco
 técnico de fabricantes futuramente poderia validar isso automaticamente,
 mas hoje a ferramenta apenas alerta que essa validação não foi feita.
+Para `calcular_custo_viagem`: Google Routes/Maps forneceria `distanciaIdaKm`/
+`distanciaVoltaKm` (a ferramenta continuaria não calculando distância
+sozinha), uma API de pedágios preencheria `pedagios.pracas` automaticamente
+para a rota informada, a ANP poderia sugerir `precoCombustivelLitro` por
+região, e um cartão-combustível/rastreador poderia alimentar
+`custoCombustivelInformado`/`distanciaVoltaKm` realizados direto no bloco
+`realizado` de `COMPARACAO_PREVISTO_REALIZADO`. Nenhuma dessas integrações
+foi implementada; só os tipos e pontos de entrada (campos opcionais) já
+suportam recebê-las sem quebrar a API atual.

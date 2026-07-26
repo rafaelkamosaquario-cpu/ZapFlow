@@ -1,5 +1,5 @@
-import type { DefinicaoFerramenta, DefinicaoParametroFerramenta, ResultadoFerramentaBase } from "./types";
-import { arredondar, formatarBRL, formatarNumero } from "./utils";
+import type { DefinicaoFerramenta, DefinicaoParametroFerramenta, NivelCompletude, ResultadoFerramentaBase } from "./types";
+import { CASAS_DECIMAIS_MOEDA_PADRAO, CASAS_DECIMAIS_PERCENTUAL_PADRAO, arredondar, formatarBRL, formatarNumero } from "./utils";
 import { calcularCpk } from "./calcular-cpk";
 
 /**
@@ -27,10 +27,13 @@ import { calcularCpk } from "./calcular-cpk";
 // Constantes configuráveis
 // ---------------------------------------------------------------------------
 
-/** Casas decimais padrão por tipo de grandeza (sobrescritas em bloco por `casasDecimais` na entrada). */
-export const CASAS_DECIMAIS_MOEDA_PADRAO = 2;
+/**
+ * Casas decimais padrão por tipo de grandeza (sobrescritas em bloco por
+ * `casasDecimais` na entrada). `CASAS_DECIMAIS_MOEDA_PADRAO` e
+ * `CASAS_DECIMAIS_PERCENTUAL_PADRAO` vêm de `utils.ts` (compartilhadas com
+ * outras ferramentas); as demais são específicas de pneus.
+ */
 export const CASAS_DECIMAIS_CPK_PADRAO = 4;
-export const CASAS_DECIMAIS_PERCENTUAL_PADRAO = 2;
 export const CASAS_DECIMAIS_KM_PADRAO = 2;
 
 /**
@@ -177,8 +180,6 @@ export interface CompararPneusEntrada {
 // ---------------------------------------------------------------------------
 // Tipos de saída
 // ---------------------------------------------------------------------------
-
-export type NivelCompletude = "COMPLETO" | "PARCIAL" | "INSUFICIENTE";
 
 export type ClassificacaoDiferencaCpk =
   | "DIFERENCA_PEQUENA"

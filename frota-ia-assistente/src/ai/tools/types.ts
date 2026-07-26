@@ -41,6 +41,17 @@ export interface ResultadoFerramentaBase {
 }
 
 /**
+ * Nível de completude dos dados usados num cálculo — compartilhado por
+ * qualquer ferramenta que agregue várias categorias de custo opcionais
+ * (ex.: `comparar_pneus`, `calcular_custo_viagem`).
+ *
+ * - COMPLETO: todos os dados relevantes ao modo foram informados.
+ * - PARCIAL: o cálculo é possível, mas há custos/dados relevantes ausentes.
+ * - INSUFICIENTE: não há dados suficientes para um resultado confiável.
+ */
+export type NivelCompletude = "COMPLETO" | "PARCIAL" | "INSUFICIENTE";
+
+/**
  * Metadados + implementação de uma ferramenta interna do Frota IA.
  * `TEntrada` e `TSaida` são definidos por cada ferramenta individualmente.
  */
