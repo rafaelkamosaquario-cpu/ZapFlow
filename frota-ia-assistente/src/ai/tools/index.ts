@@ -7,9 +7,9 @@
  * estado atual dessa integração.
  *
  * `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
- * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete` e
- * `calcular_valor_minimo_frete` têm a lógica de cálculo implementada — as
- * demais expõem apenas a estrutura (ver README).
+ * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete`,
+ * `calcular_valor_minimo_frete` e `calcular_receita_km` têm a lógica de
+ * cálculo implementada — as demais expõem apenas a estrutura (ver README).
  */
 
 export * from "./types";

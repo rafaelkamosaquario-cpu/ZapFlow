@@ -25,7 +25,7 @@ nenhuma API externa nesta fase.
 | `calcular_margem` | `calcular-margem.ts` | **Lógica implementada** |
 | `analisar_frete` | `analisar-frete.ts` | **Lógica implementada** |
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | **Lógica implementada** |
-| `calcular_receita_km` | `calcular-receita-km.ts` | Estrutura apenas |
+| `calcular_receita_km` | `calcular-receita-km.ts` | **Lógica implementada** |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | Estrutura apenas |
 | `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | Estrutura apenas |
 | `calcular_jornada` | `calcular-jornada.ts` | Estrutura apenas |
@@ -1068,6 +1068,134 @@ const resultado = calcularValorMinimoFrete({
 - Não calcula tributos, comissões, pedágio ou combustível automaticamente —
   tudo vem do que foi informado.
 
+## `calcular_receita_km`
+
+Calcula e interpreta a **receita por quilômetro** de um frete, viagem, rota,
+veículo, operação, contrato, conjunto de viagens, frota ou período — sempre
+diferenciando receita bruta de receita líquida, receita por km total de
+receita por km carregado, e nunca declarando uma operação lucrativa só
+porque a receita por km é positiva (isso só é avaliado quando há custo ou
+CPK informado).
+
+| Modo | Uso |
+|---|---|
+| `RECEITA_BRUTA_POR_KM` | Receita bruta ÷ distância |
+| `RECEITA_LIQUIDA_POR_KM` | Receita líquida (após deduções) ÷ distância |
+| `RECEITA_POR_KM_TOTAL` | Toda a distância percorrida, carregada e vazia |
+| `RECEITA_POR_KM_CARREGADO` | Só a distância carregada, com alerta sobre a vazia |
+| `RECEITA_E_CUSTO_POR_KM` | Compara receita/km com custo/km ou CPK |
+| `LUCRO_POR_KM` / `MARGEM_POR_KM` | Lucro e margem por km |
+| `RETORNO_VAZIO` / `FRETE_COM_RETORNO` | Distâncias/receitas separadas por trecho |
+| `MULTIPLAS_VIAGENS` | Consolida `viagens` (média ponderada pela distância) |
+| `MULTIPLOS_VEICULOS` | Consolida `veiculos`, com ranking por eficiência |
+| `ANALISE_POR_PERIODO` | Indicadores por dia (`receitaPorDia`, `kmPorDia`, `lucroPorDia`) |
+| `PREVISTO_X_REALIZADO` | Compara os blocos `previsto`/`realizado` |
+| `COMPARACAO_CENARIOS` | Compara ≥ 2 `cenarios`, com 5 rankings independentes |
+| `COMPARAR_COM_VALOR_MINIMO` | Compara com `valorMinimoPorKm`/`valorMinimoTotal` |
+| `RECEITA_TONELADA_KM` | Receita/custo/lucro por tonelada-quilômetro |
+
+### Reutilização — coordenadora, não reimplementadora
+
+- **`calcularMargem`** (modo `MARGEM_POR_KM`) faz todo o núcleo financeiro:
+  receita líquida, deduções (imposto, comissão, descontos, devoluções —
+  resolvidas pela própria `calcularMargem` via `resolverValorOuAliquota`
+  interna), custo, lucro, margem e receita/custo/lucro por km. Diferente de
+  `calcular_valor_minimo_frete`, aqui a receita já é conhecida (não está
+  sendo resolvida), então a delegação é direta, como em `analisar_frete`.
+  `calcularMargem` exige `custoTotal` em todo modo — quando não há custo
+  real informado, um placeholder `0` é passado só para obter a receita
+  líquida, e os campos derivados de custo (`custoPorKm`/`lucroPorKm`/
+  `margemPercentual`) são descartados no resultado, nunca sugerindo uma
+  rentabilidade que não foi avaliada.
+- **`calcularValorMinimoFrete`** é reutilizada para derivar a receita mínima
+  por km (ponto de equilíbrio ou margem-alvo) quando `valorMinimoPorKm`/
+  `valorMinimoTotal` não são informados diretamente — só quando o custo
+  resolvido é um custo genuíno, não um CPK usado apenas como benchmark de
+  comparação (CPK e "meta de preço" são conceitos distintos aqui).
+- **`calcularCpk`** (modo `CPK_PNEUS` como divisor genérico valor ÷ km) faz
+  toda divisão adicional que `calcularMargem` não expõe: receita bruta por
+  km, receita por km carregado, receita por km de retorno, tonelada-km, por
+  dia, por veículo, por viagem — mesmo padrão de `calcular_margem.ts` e
+  `calcular_valor_minimo_frete.ts`.
+- Aceita custo de `calcular-custo-viagem.ts` via `resumoCustoViagem` (tipo
+  reexportado por `calcular-margem.ts`), CPK de `calcular-cpk.ts` via
+  `resumoCpk` (tipo reexportado por `calcular-valor-minimo-frete.ts` — não
+  duplicado aqui) e um resumo normalizado e desacoplado de
+  `analisar-frete.ts` via `resumoAnaliseFrete` — sem importar aquele módulo
+  por valor, evitando dependência circular; só o tipo
+  `EstrategiaSobreposicaoDeducao` é importado de lá (mesmo conceito já
+  reaproveitado por `calcular-valor-minimo-frete.ts`).
+
+### Receita bruta x líquida x por km total x por km carregado
+
+A receita por km carregado nunca é apresentada como o resultado da operação
+inteira: sempre que há distância vazia, um alerta explícito lembra que os km
+vazios ficaram fora desse divisor. O impacto do retorno vazio
+(`impactoRetornoVazio`) é apenas uma diferença de indicador (receita/km
+carregado − receita/km total) — nunca tratado como custo financeiro isolado.
+
+### Comparação com CPK e com valor mínimo
+
+`indiceCoberturaCpk`/`diferencaReceitaCpkPorKm` comparam a receita líquida
+por km com um CPK de referência (`cpkTotal`/`resumoCpk`/`custoPorKm`, nessa
+ordem). `receitaMinimaPorKm`/`diferencaParaMinimoPorKm`/
+`valorAdicionalNecessario` comparam com o valor mínimo (informado ou
+derivado via `calcular_valor_minimo_frete`). A classificação
+(`ABAIXO_DO_CUSTO` → `PONTO_DE_EQUILIBRIO` → `ABAIXO_DO_VALOR_MINIMO` →
+`ACIMA_DO_CUSTO` → `ATINGE_VALOR_MINIMO` → `ACIMA_DO_VALOR_MINIMO` →
+`DADOS_INSUFICIENTES`) usa tolerância configurável
+(`toleranciaClassificacaoPercentual`, padrão 0,5%) e nunca compara pontos
+flutuantes por igualdade exata. Sem custo, CPK ou valor mínimo informado, a
+classificação fica `DADOS_INSUFICIENTES` e a análise financeira é marcada
+como não avaliada — apenas a receita por km é retornada.
+
+### Consolidação de viagens e veículos — sempre média ponderada
+
+`MULTIPLAS_VIAGENS`/`MULTIPLOS_VEICULOS` consolidam somando receita e
+distância de cada registro e dividindo o total (`receitaTotalConsolidada ÷
+distanciaTotalConsolidada`) — **nunca** a média simples das receitas por km
+individuais, que distorce o resultado quando as distâncias diferem (ex.:
+uma viagem de 100 km a R$ 10/km e outra de 1.000 km a R$ 9/km consolidam
+para R$ 9,0909/km, não R$ 9,50/km).
+
+### Prevenção de sobreposições
+
+Receita (total x ida/volta x líquida já informada x fontes alternativas),
+distância (total x ida/volta+adicional x carregada+vazia) e custo (total x
+por km x CPK x detalhado) são todas resolvidas com estratégia configurável,
+padrão `REJEITAR_SOBREPOSICAO`. Consolidação (`viagens`/`veiculos`) informada
+junto de totais diretos também é rejeitada — é preciso escolher uma fonte.
+
+### Exemplo de uso
+
+```ts
+import { calcularReceitaKm } from "@/ai/tools/calcular-receita-km";
+
+const resultado = calcularReceitaKm({
+  modo: "RECEITA_E_CUSTO_POR_KM",
+  receitaBruta: 10000,
+  impostoPercentual: 10,
+  custoTotal: 8000,
+  distanciaCarregadaKm: 900,
+  distanciaVaziaKm: 100,
+  cpkTotal: 8.5,
+});
+// resultado.receitaLiquidaPorKm, resultado.custoPorKm, resultado.lucroPorKm,
+// resultado.indiceCoberturaCpk, resultado.impactoRetornoVazio
+```
+
+### Limitações conhecidas
+
+- Não calcula distância, receita, custo, CPK, impostos, comissão, retorno
+  ou período automaticamente — tudo vem do que foi informado.
+- A "receita por km carregado" distribui a receita só pelos km
+  carregados/remunerados — o resultado efetivo de toda a operação é sempre
+  a receita por km total.
+- Consolida sempre por média ponderada pela distância, nunca por média
+  simples.
+- `estrategiaSobreposicaoCusto: "PRIORIZAR_CPK"` e as demais estratégias de
+  sobreposição só escolhem UMA fonte — nunca somam fontes conflitantes.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -1292,6 +1420,51 @@ Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
 junto com os 38 de `calcular_valor_minimo_frete` — todas as 100 verificações
 passaram nesta rodada.
 
+**`calcular_receita_km`**
+
+1. Receita bruta por km (R$ 10.000,00, 1.000 km → R$ 10,0000/km)
+2. Receita líquida por km (bruta R$ 10.000,00, deduções R$ 1.000,00 → líquida R$ 9.000,00, R$ 9,0000/km)
+3. Imposto percentual (10% de R$ 10.000,00 → líquida R$ 9.000,00, R$ 9,0000/km)
+4. Comissão percentual (10% de R$ 10.000,00 → líquida R$ 9.000,00, R$ 9,0000/km)
+5. Receita por km total com retorno vazio (500 km carregados + 500 km vazios → total 1.000 km, R$ 10,0000/km total, R$ 20,0000/km carregado, 50% vazio, alerta)
+6. Frete com retorno remunerado (ida R$ 8.000,00/500 km + volta R$ 4.000,00/500 km → total R$ 12.000,00/1.000 km = R$ 12,0000/km; volta R$ 8,0000/km)
+7. Receita e custo por km (receita R$ 10.000,00, custo R$ 8.000,00, 1.000 km → R$ 10,0000/km receita, R$ 8,0000/km custo, R$ 2,0000/km lucro, margem 20%)
+8. Receita abaixo do CPK (R$ 5,00/km x CPK R$ 6,00/km → diferença -R$ 1,00/km, cobertura ≈0,8333, `ABAIXO_DO_CUSTO`)
+9. Receita igual ao CPK (R$ 6,00/km x CPK R$ 6,00/km → `PONTO_DE_EQUILIBRIO` dentro da tolerância)
+10. Receita acima do CPK (R$ 8,00/km x CPK R$ 6,00/km → diferença R$ 2,00/km, cobertura ≈1,3333)
+11. Comparação com valor mínimo abaixo (R$ 8,50/km x mínimo R$ 10,00/km, 1.000 km → diferença -R$ 1,50/km, adicional R$ 1.500,00, `ABAIXO_DO_VALOR_MINIMO`)
+12. Receita acima do valor mínimo (R$ 12,00/km x mínimo R$ 10,00/km → diferença +R$ 2,00/km, `ACIMA_DO_VALOR_MINIMO`)
+13. Receita por tonelada-quilômetro (R$ 10.000,00, 20 t, 500 km carregados → R$ 1,0000/t·km)
+14. Lucro por tonelada-quilômetro (receita R$ 10.000,00, custo R$ 8.000,00, 20 t, 500 km → lucro R$ 2.000,00 = R$ 0,2000/t·km)
+15. Múltiplas viagens com distâncias diferentes (A: R$ 1.000,00/100 km; B: R$ 9.000,00/1.000 km → consolidado R$ 10.000,00 ÷ 1.100 km ≈ R$ 9,0909/km, nunca a média simples R$ 9,50/km)
+16. Múltiplos veículos (resultados individuais + consolidação ponderada + rankings por receita/km e lucro/km)
+17. Receita por dia (R$ 30.000,00, 20 dias → R$ 1.500,00/dia)
+18. Km por dia (10.000 km, 20 dias → 500 km/dia)
+19. Receita por veículo (R$ 60.000,00, 3 veículos → R$ 20.000,00/veículo)
+20. Receita média por viagem (R$ 50.000,00, 10 viagens → R$ 5.000,00/viagem)
+21. Previsto x realizado (previsto R$ 10,00/km, realizado R$ 9,00/km → diferença -R$ 1,00/km, variação -10%)
+22. Distância zero → falha, sem divisão por zero
+23. Receita negativa → falha, campo identificado
+24. Dedução negativa → falha
+25. Percentual inválido (150%) → falha
+26. Distância carregada maior que a total → falha
+27. Distância vazia incompatível com a soma carregada+vazia → falha
+28. Receita total e receitas detalhadas → sobreposição rejeitada por padrão
+29. Receita líquida informada e deduções → sobreposição rejeitada por padrão
+30. Custo total e CPK → sobreposição rejeitada por padrão
+31. Lista de viagens e totais consolidados diretos → sobreposição rejeitada, fonte prioritária solicitada
+32. Sem custo informado → calcula receita por km, não calcula lucro/margem, classificação `DADOS_INSUFICIENTES`, completude `PARCIAL`
+33. Dados insuficientes (sem receita nem distância) → falha, completude `INSUFICIENTE`
+34. Comparação de três fretes → rankings por receita/km, lucro/km, margem e % km vazio
+35. Maior receita total, menor eficiência (fretes com receita/distância diferentes) → ranking por receita total diverge do ranking por receita/km, com alerta de que faturamento não é eficiência
+36. Tolerância de ponto flutuante → ruído decimal não altera a classificação
+
+Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
+`analisar_frete` e `calcular_valor_minimo_frete` (um cenário representativo
+de cada) foram reexecutados junto com os 36 de `calcular_receita_km` — todas
+as 106 verificações passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
@@ -1299,9 +1472,9 @@ nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
 `comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
-`analisar_frete` e `calcular_valor_minimo_frete` estão registradas aqui em
-`FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão** conectadas a
-nenhum loop de tool use real.
+`analisar_frete`, `calcular_valor_minimo_frete` e `calcular_receita_km`
+estão registradas aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda
+**não estão** conectadas a nenhum loop de tool use real.
 
 Quando essa conexão existir, `analisar_frete` é a ferramenta esperada para
 perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
@@ -1317,11 +1490,19 @@ por tonelada?", "Quanto cobrar considerando a volta vazia?", "O valor
 oferecido cobre meus custos?", "Quanto falta para este frete compensar?",
 "Posso dar desconto?", "Qual é meu limite de negociação?", "Quanto devo
 cobrar com imposto e comissão?", "Qual valor mínimo para três caminhões?" e
-"Quanto cobrar com pagamento em 30 dias?" — em ambos os casos o modelo deve
-pedir apenas os dados faltantes (via `dadosFaltantes`), nunca inventar
-distância, consumo, combustível, pedágio, retorno, custos, impostos,
-comissão, margem, markup, prazo, carga, peso, quantidade, valor oferecido
-ou custo de capital.
+"Quanto cobrar com pagamento em 30 dias?"; e `calcular_receita_km` é a
+ferramenta esperada para perguntas como "Quanto estou recebendo por
+quilômetro?", "Qual é minha receita líquida por km?", "Quanto sobra por
+quilômetro?", "Meu valor por km cobre meu CPK?", "Quanto preciso receber
+por km para atingir minha margem?", "Quanto o retorno vazio reduz minha
+receita por km?", "Qual rota paga melhor por quilômetro?", "Qual frete
+gera maior lucro por km?", "Quanto faturei por km no mês?", "Minha receita
+por km prevista foi atingida?", "Quanto recebo por km carregado e por km
+total?" e "Qual veículo gera maior receita por km?" — em todos os casos o
+modelo deve pedir apenas os dados faltantes (via `dadosFaltantes`), nunca
+inventar distância, consumo, combustível, pedágio, retorno, custos,
+impostos, comissão, margem, markup, prazo, carga, peso, quantidade, valor
+oferecido, CPK, valor mínimo, período ou custo de capital.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -1374,6 +1555,12 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   enriquecer — nunca substituir — a comparação com a oferta, e o resultado
   realizado de cada frete negociado para refinar, no futuro, os limites de
   classificação da oferta.
+- Buscar histórico de viagens e veículos para pré-preencher `viagens`/
+  `veiculos` em `calcular_receita_km` (`MULTIPLAS_VIAGENS`/
+  `MULTIPLOS_VEICULOS`) sem exigir digitação manual de cada registro,
+  receita por cliente e por rota para alimentar `COMPARACAO_CENARIOS`, e
+  metas por veículo/motorista para contextualizar (nunca substituir) a
+  classificação da receita por km.
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
@@ -1418,4 +1605,11 @@ mínimo calculado, e um sistema financeiro/ERP poderia fornecer a taxa real
 de custo de capital da transportadora — sempre como sugestão a confirmar,
 nunca assumida silenciosamente. Nenhuma dessas integrações foi implementada;
 só os tipos e pontos de entrada já suportam recebê-las sem quebrar a API
-atual.
+atual. Para `calcular_receita_km`: telemetria/rastreador e hodômetro
+automático poderiam alimentar `distanciaTotalKm`/`distanciaCarregadaKm`/
+`distanciaVaziaKm` realizados de cada viagem, um ERP/sistema financeiro
+poderia fornecer `receitaBruta`/deduções efetivas por frete, e um dashboard
+gerencial poderia consumir `consolidadoViagens`/`consolidadoVeiculos`
+diretamente — sempre como dado a confirmar, nunca assumido. Nenhuma dessas
+integrações foi implementada; só os tipos e pontos de entrada já suportam
+recebê-las sem quebrar a API atual.
