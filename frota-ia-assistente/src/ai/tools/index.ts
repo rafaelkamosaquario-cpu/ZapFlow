@@ -7,9 +7,9 @@
  * estado atual dessa integração.
  *
  * `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
- * `calcular_custo_viagem`, `calcular_margem` e `analisar_frete` têm a lógica
- * de cálculo implementada — as demais expõem apenas a estrutura (ver
- * README).
+ * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete` e
+ * `calcular_valor_minimo_frete` têm a lógica de cálculo implementada — as
+ * demais expõem apenas a estrutura (ver README).
  */
 
 export * from "./types";
@@ -43,8 +43,9 @@ import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 /**
  * Todas as ferramentas internas do Frota IA, na ordem em que aparecem na
  * pasta. `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
- * `calcular_custo_viagem` e `calcular_margem` têm a lógica de cálculo
- * implementada — as demais expõem apenas a estrutura (ver README).
+ * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete` e
+ * `calcular_valor_minimo_frete` têm a lógica de cálculo implementada — as
+ * demais expõem apenas a estrutura (ver README).
  */
 export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, ResultadoFerramentaBase>> = [
   ferramentaAnalisarFrete,

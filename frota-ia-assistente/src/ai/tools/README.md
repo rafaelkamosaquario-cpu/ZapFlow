@@ -24,7 +24,7 @@ nenhuma API externa nesta fase.
 | `calcular_custo_viagem` | `calcular-custo-viagem.ts` | **Lógica implementada** |
 | `calcular_margem` | `calcular-margem.ts` | **Lógica implementada** |
 | `analisar_frete` | `analisar-frete.ts` | **Lógica implementada** |
-| `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | Estrutura apenas |
+| `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | **Lógica implementada** |
 | `calcular_receita_km` | `calcular-receita-km.ts` | Estrutura apenas |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | Estrutura apenas |
 | `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | Estrutura apenas |
@@ -886,6 +886,188 @@ const resultado = analisarFrete({
   motoristas do que veículos); não modela escala, jornada ou legislação de
   motorista — isso é escopo de `calcular_jornada`.
 
+## `calcular_valor_minimo_frete`
+
+Calcula o **piso econômico** de um frete: o valor mínimo necessário para
+cobrir o custo informado, atingir o ponto de equilíbrio, uma margem-alvo, um
+markup-alvo ou um lucro fixo desejado — nunca o mesmo indicador tratado de
+forma intercambiável, e nunca um piso legal/oficial (essa distinção é sempre
+reforçada nas limitações do resultado; sem integração com tabelas oficiais,
+ANTT ou plataformas de frete nesta fase).
+
+| Modo | Uso |
+|---|---|
+| `PONTO_EQUILIBRIO` | Receita mínima para não haver prejuízo |
+| `MARGEM_ALVO` | Receita mínima para atingir `margemAlvoPercentual` |
+| `MARKUP_ALVO` | Receita mínima para atingir `markupAlvoPercentual` sobre o custo |
+| `LUCRO_FIXO_ALVO` | Receita mínima para gerar `lucroFixoDesejado` em R$ |
+| `VALOR_MINIMO_POR_VIAGEM` | Valor mínimo dividido por `quantidadeViagens` |
+| `VALOR_MINIMO_POR_KM` | Valor mínimo dividido por `distanciaTotalKm` |
+| `VALOR_MINIMO_POR_KM_CARREGADO` | Valor mínimo (com todo o custo, inclusive retorno vazio) dividido só por `distanciaCarregadaKm` |
+| `VALOR_MINIMO_POR_TONELADA` | Valor mínimo dividido por `pesoCargaToneladas` |
+| `VALOR_MINIMO_TONELADA_KM` | Valor mínimo dividido por peso × `distanciaCarregadaKm` |
+| `VALOR_MINIMO_POR_UNIDADE` | Valor mínimo dividido por `quantidadeCarga` |
+| `IDA_E_VOLTA` / `RETORNO_VAZIO` / `FRETE_COM_RETORNO` | Custo de ida e volta via `custoIda`/`custoVolta`; `RETORNO_VAZIO` destaca o impacto do trecho sem receita |
+| `MULTIPLOS_VEICULOS` | `custoTotal` interpretado como custo **por veículo**, multiplicado por `quantidadeVeiculos` (sem duplicar na divisão de volta) |
+| `COMPARAR_COM_OFERTA` | Compara `valorFreteOferecido` com o valor mínimo calculado |
+| `COMPARACAO_CENARIOS` | Compara ≥ 2 `cenarios`: ranking por menor valor mínimo, maior margem, menor custo total, menor impacto do retorno vazio |
+
+### Reutilização — coordenadora, não reimplementadora
+
+- **`resolverValorOuAliquota`** (exportada por `calcular-margem.ts`) resolve,
+  campo a campo, cada par valor-fixo × percentual (imposto, comissão, taxa de
+  plataforma, outras deduções, custo de capital, adicional de risco) — a
+  mesma função usada por `calcular_margem` e `analisar_frete`, sem duplicar a
+  lógica de detecção de sobreposição.
+- **`calcularCpk`** (`calcular-cpk.ts`, modo `CPK_PNEUS` como divisor
+  genérico valor ÷ km) é reutilizada para toda divisão que nunca pode ser
+  negativa: valor mínimo por km, por km carregado, por tonelada, por
+  tonelada-km, por unidade, por veículo e por viagem — mesmo padrão de
+  `calcular-margem.ts` (`dividirViaCpk`).
+- Aceita o custo já calculado por `calcular-custo-viagem.ts` via
+  `resumoCustoViagem` (a mesma interface reexportada por
+  `calcular-margem.ts` — não duplicada aqui), o CPK de `calcular-cpk.ts` via
+  `resumoCpk`/`cpkTotalReaisPorKm` × `distanciaTotalKm`, e um resumo
+  **normalizado e desacoplado** de `analisar-frete.ts` via
+  `resumoAnaliseFrete` (`{ custoTotal?, distanciaTotalKm? }`) — sem importar
+  aquele módulo, para não criar uma dependência circular (`analisar-frete.ts`
+  pode um dia precisar consumir o valor mínimo calculado aqui).
+- O tipo `EstrategiaSobreposicaoDeducao` (conflito valor fixo × percentual em
+  deduções) é **importado de `analisar-frete.ts`** em vez de redeclarado —
+  mesmo conceito, um `import type` sem risco de dependência circular (aquele
+  módulo não importa nada deste).
+- As equações de ponto de equilíbrio/margem-alvo/markup-alvo/lucro-fixo são
+  uma **generalização** das equações equivalentes de `calcular-margem.ts`
+  (que resolve só 2 deduções percentuais — imposto e comissão — fixas no
+  código). Como esta ferramenta soma até 5 deduções percentuais
+  independentes (imposto, comissão, taxa de plataforma, outras deduções,
+  custo de capital), os denominadores são reimplementados de forma genérica
+  — produzem o mesmo resultado de `calcular-margem.ts` quando só
+  imposto/comissão são usados, mas não são uma cópia do código de lá.
+
+### Fórmulas principais
+
+```
+custoTotalBase        = custoTotal informado, OU soma das categorias
+                         detalhadas, OU resumoCustoViagem.custoTotal, OU
+                         CPK × distância, OU custoIda + custoVolta
+                         (sobreposição entre fontes é rejeitada por padrão)
+custosFixosAdicionais  = soma das deduções resolvidas como valor fixo
+baseFinanceira         = custoTotalBase + custosFixosAdicionais
+percentualTotalDeducoes = soma das deduções resolvidas como percentual
+                          sobre a receita bruta
+
+valorPontoEquilibrio   = baseFinanceira ÷ (1 − %deduções)
+valorMinimoComMargem   = baseFinanceira ÷ (1 − %deduções − %margem)
+valorMinimoComMarkup   = baseFinanceira × (1 + %markup), ajustado por
+                         ÷ (1 − %deduções) quando há deduções percentuais
+valorMinimoComLucroFixo = (baseFinanceira + lucroFixoDesejado) ÷ (1 − %deduções)
+```
+
+Quando o modo não determina uma única meta de preço (ex.:
+`VALOR_MINIMO_POR_KM` sem margem/markup/lucro definidos), a prioridade usada
+para o "valor mínimo principal" é: **margem-alvo > markup-alvo > lucro fixo
+desejado > ponto de equilíbrio**.
+
+### Adicional de risco: três interpretações, nunca assumidas
+
+`adicionalRiscoPercentual` exige `interpretacaoAdicionalRisco` explícito —
+`SOBRE_CUSTO` (aplicado sobre `custoTotalBase`, soma-se aos custos fixos
+adicionais), `SOBRE_VALOR_MINIMO` (multiplicador final, forma fechada, sobre
+o valor mínimo já calculado) ou `SOBRE_RECEITA` (entra na mesma soma
+percentual das outras deduções). Sem essa interpretação, o cálculo falha em
+vez de assumir.
+
+### Custo de capital: valor direto ou sub-cálculo
+
+`custoCapitalValor`/`custoCapitalPercentual` funcionam como qualquer outra
+dedução (valor fixo ou percentual sobre a receita). Alternativamente,
+informando `capitalEmpregadoValor` + `custoCapitalMetodo`
+(`JUROS_SIMPLES`/`JUROS_COMPOSTOS`/`PERCENTUAL_DIRETO`/`VALOR_FIXO`) +
+`custoCapitalPeriodos`, a ferramenta calcula o custo financeiro do capital
+(juros simples: `capital × taxa × períodos`; juros compostos: `capital ×
+(1+taxa)^períodos − capital`) e soma o resultado aos custos fixos
+adicionais — nunca os dois caminhos ao mesmo tempo.
+
+### Retorno vazio
+
+O impacto do retorno vazio é calculado sempre que `custoIda` e `custoVolta`
+estão presentes: recalcula o mesmo "valor mínimo principal" só com o custo
+da ida, e compara com o valor considerando o retorno. **Nunca** calcula o
+valor mínimo por km carregado ignorando o custo do retorno — o numerador é
+sempre o custo de toda a operação.
+
+### Frete com retorno remunerado (rateio)
+
+Quando há `receitaRetorno`, a necessidade de receita da ida é resolvida por
+`criterioRateioReceitaRetorno` (padrão `NAO_RATEAR` — subtração simples da
+receita de retorno do valor mínimo total). `POR_CUSTO_DO_TRECHO` e
+`POR_DISTANCIA` fazem rateio proporcional quando os dados de cada trecho
+estão presentes; `MANUAL` usa `valorRateioManualIda` diretamente;
+`POR_PESO` cai de volta para `NAO_RATEAR` com alerta (não há peso separado
+por trecho na entrada desta fase).
+
+### Comparação com a oferta
+
+`COMPARAR_COM_OFERTA` classifica `valorFreteOferecido` com tolerância
+configurável (`toleranciaClassificacaoOfertaPercentual`, padrão 0,5% do
+valor mínimo, para não deixar ruído de ponto flutuante virar classificação
+errada): `ABAIXO_DO_CUSTO` → `NO_PONTO_DE_EQUILIBRIO` →
+`ABAIXO_DA_MARGEM_ALVO` → `ATENDE_MARGEM_ALVO` → `ACIMA_DA_MARGEM_ALVO`. O
+desconto máximo (`descontoMaximo`) é calculado a partir de
+`precoInicialNegociacao` (ou de `valorFreteOferecido` como alternativa) até
+o limite econômico — sem considerar estratégia comercial ou risco não
+informado.
+
+### Arredondamento comercial
+
+Nunca arredonda durante os cálculos — só na saída, e o arredondamento
+comercial (`arredondamentoComercial`, padrão `SEM_ARREDONDAMENTO`) acontece
+depois do arredondamento matemático. `PROXIMO_5`/`10`/`50`/`100` arredondam
+sempre **para cima** (nunca para baixo do valor mínimo calculado);
+`SEMPRE_PARA_CIMA` arredonda para o real inteiro seguinte. `valorMinimoExato`
+e `valorMinimoComercial` são sempre retornados juntos, nunca só o
+arredondado.
+
+### Nível de completude
+
+`INSUFICIENTE` quando não há fonte de custo válida. `PARCIAL` quando alguma
+categoria de dedução relevante (imposto, comissão, taxa de plataforma,
+outras deduções, custo de capital, adicional de risco) não foi informada —
+o que cobre a maioria dos casos de uso reais; `COMPLETO` exige as seis
+categorias explicitamente preenchidas.
+
+### Exemplo de uso
+
+```ts
+import { calcularValorMinimoFrete } from "@/ai/tools/calcular-valor-minimo-frete";
+
+const resultado = calcularValorMinimoFrete({
+  modo: "MARGEM_ALVO",
+  custoIda: 6000,
+  custoVolta: 2000,
+  impostoPercentual: 10,
+  margemAlvoPercentual: 20,
+  valorFreteOferecido: 9500,
+  distanciaTotalKm: 1000,
+});
+// resultado.valorMinimoComMargem, resultado.impactoRetornoVazio,
+// resultado.classificacaoOferta, resultado.valorAdicionalNecessario
+```
+
+### Limitações conhecidas
+
+- "Valor mínimo" aqui é exclusivamente o piso econômico calculado a partir
+  dos dados informados — nunca um piso legal, oficial ou de tabela de
+  mercado.
+- `baseCalculoPercentuais` diferente de `RECEITA_BRUTA` (o padrão) ainda não
+  tem equação fechada implementada — cai de volta para `RECEITA_BRUTA` com
+  alerta.
+- O critério de rateio `POR_PESO` não tem dados suficientes na entrada desta
+  fase (peso não é separado por trecho) e cai de volta para `NAO_RATEAR`.
+- Não calcula tributos, comissões, pedágio ou combustível automaticamente —
+  tudo vem do que foi informado.
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
@@ -1063,16 +1245,63 @@ Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
 representativo de cada) foram reexecutados junto com os 30 de
 `analisar_frete` — todas as 111 verificações passaram nesta rodada.
 
+**`calcular_valor_minimo_frete`**
+
+1. Ponto de equilíbrio simples (custo R$ 8.000,00, sem deduções → R$ 8.000,00)
+2. Ponto de equilíbrio com deduções (custo R$ 8.000,00, imposto 10% + comissão 5% → R$ 8.000 ÷ 0,85 ≈ R$ 9.411,76)
+3. Margem-alvo sem deduções (custo R$ 8.000,00, margem 20% → R$ 8.000 ÷ 0,80 = R$ 10.000,00)
+4. Margem-alvo com deduções (custo R$ 8.000,00, dedução 10%, margem 20% → R$ 8.000 ÷ 0,70 ≈ R$ 11.428,57)
+5. Markup-alvo sem deduções (custo R$ 8.000,00, markup 25% → R$ 10.000,00)
+6. Markup-alvo com deduções (custo R$ 8.000,00, markup 25%, dedução 10% → R$ 10.000 ÷ 0,90 ≈ R$ 11.111,11)
+7. Lucro fixo sem deduções (custo R$ 8.000,00, lucro R$ 2.000,00 → R$ 10.000,00)
+8. Lucro fixo com deduções (custo R$ 8.000,00, lucro R$ 2.000,00, dedução 10% → R$ 11.111,11)
+9. Valor por km (valor mínimo R$ 10.000,00, 1.000 km → R$ 10,0000/km)
+10. Valor por km carregado com retorno vazio (500 km carregados + 500 km vazios → R$ 10,0000/km total, R$ 20,0000/km carregado, alerta sobre o retorno vazio)
+11. Valor por tonelada (R$ 10.000,00, 20 t → R$ 500,00/t)
+12. Tonelada-quilômetro (R$ 10.000,00, 20 t × 500 km → R$ 1,0000/t·km)
+13. Valor por unidade (R$ 10.000,00, 200 unidades → R$ 50,00/unidade)
+14. Múltiplos veículos (custo individual R$ 8.000,00 × 3 veículos → custo total R$ 24.000,00, valor por veículo R$ 8.000,00, sem multiplicação duplicada)
+15. Retorno vazio (ida R$ 6.000,00 + retorno R$ 2.000,00, margem 20% → R$ 10.000,00; impacto do retorno destacado — sem retorno seria R$ 7.500,00)
+16. Retorno remunerado (valor mínimo R$ 10.000,00, receita de retorno R$ 3.000,00 → necessidade na ida R$ 7.000,00, sem rateio arbitrário)
+17. Oferta abaixo do custo (mínimo R$ 10.000,00, oferta R$ 7.500,00 → diferença -R$ 2.500,00, `ABAIXO_DO_CUSTO`)
+18. Oferta cobre custo mas não a margem (custo R$ 8.000,00, mínimo com margem R$ 10.000,00, oferta R$ 9.000,00 → `ABAIXO_DA_MARGEM_ALVO`)
+19. Oferta atinge a margem (mínimo e oferta R$ 10.000,00 → `ATENDE_MARGEM_ALVO`)
+20. Oferta acima da margem (mínimo R$ 10.000,00, oferta R$ 11.000,00 → `ACIMA_DA_MARGEM_ALVO`)
+21. Desconto máximo (referência R$ 12.000,00, mínimo R$ 10.000,00 → desconto R$ 2.000,00, ≈16,67%)
+22. Arredondamento comercial (R$ 10.043,27, `PROXIMO_50` → R$ 10.050,00)
+23. Margem x markup (custo R$ 8.000,00 → margem 20% dá R$ 10.000,00, markup 20% dá R$ 9.600,00 — resultados diferentes)
+24. Deduções somando 100% → falha, denominador inválido
+25. Margem + deduções ≥ 100% → falha, cálculo impossível
+26. Distância igual a zero → falha só quando o modo exige km; sem divisão por zero
+27. Peso igual a zero → falha só quando o modo exige tonelada
+28. Quantidade igual a zero → falha só quando o modo exige unidade
+29. Custo negativo → falha, campo identificado
+30. `custoTotal` + `custosVariaveis` → sobreposição de custo rejeitada por padrão
+31. Imposto fixo e percentual → sobreposição rejeitada por padrão
+32. Comissão fixa e percentual → sobreposição rejeitada por padrão
+33. Comparação de três cenários (margem 10%/15%/20% sobre o mesmo custo → ranking por menor valor mínimo, valores R$ 8.888,89 / R$ 9.411,76 / R$ 10.000,00)
+34. Custo de capital simples (capital R$ 5.000,00, taxa 2% a.m., 2 meses, juros simples → R$ 200,00)
+35. Custo de capital composto (mesmos dados, juros compostos → R$ 202,00)
+36. Dados parciais → cálculo possível, completude `PARCIAL`, deduções ausentes listadas
+37. Dados insuficientes (sem nenhuma fonte de custo) → falha, completude `INSUFICIENTE`
+38. Tolerância decimal → ruído de ponto flutuante na oferta não altera a classificação
+
+Testes de regressão de `calcular_combustivel`, `calcular_cpk`,
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem` e
+`analisar_frete` (um cenário representativo de cada) foram reexecutados
+junto com os 38 de `calcular_valor_minimo_frete` — todas as 100 verificações
+passaram nesta rodada.
+
 ## Futura integração com IA (Claude)
 
 Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
-`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem` e
-`analisar_frete` estão registradas aqui em `FERRAMENTAS_FROTA_IA`
-(`index.ts`), mas ainda **não estão** conectadas a nenhum loop de tool use
-real.
+`comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
+`analisar_frete` e `calcular_valor_minimo_frete` estão registradas aqui em
+`FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão** conectadas a
+nenhum loop de tool use real.
 
 Quando essa conexão existir, `analisar_frete` é a ferramenta esperada para
 perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
@@ -1080,10 +1309,19 @@ perguntas como "Este frete compensa?", "Vale a pena pegar essa carga?",
 "Quanto vou ganhar por km?", "O retorno vazio prejudica muito?", "Quanto
 preciso cobrar?", "Qual proposta é melhor?", "Preciso de quanto de capital
 de giro?", "Esse prazo de pagamento vale a pena?" e "Esse frete está dando
-prejuízo?" — o modelo deve pedir apenas os dados faltantes (via
-`dadosFaltantes`), nunca inventar distância, consumo, combustível, pedágio,
-retorno, custos, impostos, comissão, margem mínima, prazo, carga, peso ou
-risco do cliente.
+prejuízo?"; e `calcular_valor_minimo_frete` é a ferramenta esperada para
+perguntas como "Quanto preciso cobrar neste frete?", "Qual é o valor
+mínimo?", "Quanto cobrar para não ter prejuízo?", "Quanto cobrar para ter
+20% de margem?", "Qual valor por quilômetro devo pedir?", "Quanto cobrar
+por tonelada?", "Quanto cobrar considerando a volta vazia?", "O valor
+oferecido cobre meus custos?", "Quanto falta para este frete compensar?",
+"Posso dar desconto?", "Qual é meu limite de negociação?", "Quanto devo
+cobrar com imposto e comissão?", "Qual valor mínimo para três caminhões?" e
+"Quanto cobrar com pagamento em 30 dias?" — em ambos os casos o modelo deve
+pedir apenas os dados faltantes (via `dadosFaltantes`), nunca inventar
+distância, consumo, combustível, pedágio, retorno, custos, impostos,
+comissão, margem, markup, prazo, carga, peso, quantidade, valor oferecido
+ou custo de capital.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -1130,6 +1368,12 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
 - Nenhuma ferramenta desta pasta deve acessar o Supabase diretamente — a
   busca de dados deve acontecer antes, na camada que monta a `entrada` da
   ferramenta, mantendo os cálculos puros e testáveis.
+- Buscar propostas de frete recebidas (para pré-preencher `cenarios` em
+  `calcular_valor_minimo_frete` no modo `COMPARACAO_CENARIOS`), o histórico
+  de pagamento por cliente (prazo médio praticado, inadimplência) para
+  enriquecer — nunca substituir — a comparação com a oferta, e o resultado
+  realizado de cada frete negociado para refinar, no futuro, os limites de
+  classificação da oferta.
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
@@ -1166,4 +1410,12 @@ cadastro de clientes/histórico de pagamentos poderia sugerir
 `riscoClienteNivel` — sempre como dado a confirmar explicitamente, já que
 esta ferramenta nunca infere risco do nome do cliente. Nenhuma dessas
 integrações foi implementada; só os tipos e pontos de entrada já suportam
-recebê-las sem quebrar a API atual.
+recebê-las sem quebrar a API atual. Para `calcular_valor_minimo_frete`: uma
+plataforma de frete poderia sugerir `valorFreteOferecido` direto de uma
+proposta recebida, ANTT/ANP poderiam sugerir valores de referência de frete
+e preço de diesel por região para contextualizar (nunca substituir) o valor
+mínimo calculado, e um sistema financeiro/ERP poderia fornecer a taxa real
+de custo de capital da transportadora — sempre como sugestão a confirmar,
+nunca assumida silenciosamente. Nenhuma dessas integrações foi implementada;
+só os tipos e pontos de entrada já suportam recebê-las sem quebrar a API
+atual.
