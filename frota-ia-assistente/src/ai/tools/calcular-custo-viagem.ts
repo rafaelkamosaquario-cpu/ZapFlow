@@ -1,5 +1,12 @@
-import type { DefinicaoFerramenta, DefinicaoParametroFerramenta, NivelCompletude, ResultadoFerramentaBase } from "./types";
-import { CASAS_DECIMAIS_MOEDA_PADRAO, CASAS_DECIMAIS_PERCENTUAL_PADRAO, arredondar, formatarBRL, formatarNumero } from "./utils";
+import type { DefinicaoFerramenta, DefinicaoParametroFerramenta, EstrategiaSobreposicao, NivelCompletude, ResultadoFerramentaBase } from "./types";
+import {
+  CASAS_DECIMAIS_CUSTO_POR_KM_PADRAO,
+  CASAS_DECIMAIS_MOEDA_PADRAO,
+  CASAS_DECIMAIS_PERCENTUAL_PADRAO,
+  arredondar,
+  formatarBRL,
+  formatarNumero,
+} from "./utils";
 import { calcularCombustivel } from "./calcular-combustivel";
 import { calcularCpk } from "./calcular-cpk";
 
@@ -27,8 +34,6 @@ import { calcularCpk } from "./calcular-cpk";
 // ---------------------------------------------------------------------------
 // Constantes configuráveis
 // ---------------------------------------------------------------------------
-
-export const CASAS_DECIMAIS_CUSTO_POR_KM_PADRAO = 4;
 export const CASAS_DECIMAIS_LITROS_PADRAO = 2;
 export const CASAS_DECIMAIS_DISTANCIA_PADRAO = 2;
 export const CASAS_DECIMAIS_PESO_PADRAO = 3;
@@ -67,8 +72,6 @@ export type BaseCusto =
   | "POR_TONELADA"
   | "POR_UNIDADE"
   | "VALOR_TOTAL";
-
-export type EstrategiaSobreposicao = "REJEITAR_SOBREPOSICAO" | "PRIORIZAR_TOTAL" | "PRIORIZAR_DETALHADO";
 
 export type CriterioRateioCarga = "TONELADA" | "UNIDADE" | "VOLUME";
 

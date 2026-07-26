@@ -37,9 +37,9 @@ import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
  * Todas as ferramentas internas do Frota IA, na ordem em que aparecem na
- * pasta. `calcular_combustivel`, `calcular_cpk`, `comparar_pneus` e
- * `calcular_custo_viagem` têm a lógica de cálculo implementada — as demais
- * expõem apenas a estrutura (ver README).
+ * pasta. `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
+ * `calcular_custo_viagem` e `calcular_margem` têm a lógica de cálculo
+ * implementada — as demais expõem apenas a estrutura (ver README).
  */
 export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, ResultadoFerramentaBase>> = [
   ferramentaAnalisarFrete,

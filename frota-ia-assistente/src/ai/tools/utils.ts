@@ -16,6 +16,8 @@ export const CASAS_DECIMAIS_PADRAO = 2;
  */
 export const CASAS_DECIMAIS_MOEDA_PADRAO = 2;
 export const CASAS_DECIMAIS_PERCENTUAL_PADRAO = 2;
+/** Grandezas por km (custo/km, receita/km, lucro/km, CPK) pedem mais precisão que moeda. */
+export const CASAS_DECIMAIS_CUSTO_POR_KM_PADRAO = 4;
 
 export function arredondar(valor: number, casas: number): number {
   const fator = 10 ** casas;

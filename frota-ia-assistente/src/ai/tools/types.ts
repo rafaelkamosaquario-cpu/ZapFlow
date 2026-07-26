@@ -52,6 +52,21 @@ export interface ResultadoFerramentaBase {
 export type NivelCompletude = "COMPLETO" | "PARCIAL" | "INSUFICIENTE";
 
 /**
+ * Como resolver quando a mesma informação chega de duas formas — um valor
+ * já pronto (total) e também o detalhamento que o compõe (ex.: custo total
+ * informado direto E também combustível/pedágio/etc. detalhados; receita
+ * bruta e também impostos/comissão já embutidos noutro campo). Compartilhado
+ * por qualquer ferramenta que precise decidir entre "total" e "detalhado"
+ * sem somar as duas fontes por engano (ex.: `calcular_custo_viagem`,
+ * `calcular_margem`).
+ *
+ * - REJEITAR_SOBREPOSICAO (padrão): falha e explica os campos em conflito.
+ * - PRIORIZAR_TOTAL: usa o valor total, ignora o detalhamento (com alerta).
+ * - PRIORIZAR_DETALHADO: usa o detalhamento, ignora o total (com alerta).
+ */
+export type EstrategiaSobreposicao = "REJEITAR_SOBREPOSICAO" | "PRIORIZAR_TOTAL" | "PRIORIZAR_DETALHADO";
+
+/**
  * Metadados + implementação de uma ferramenta interna do Frota IA.
  * `TEntrada` e `TSaida` são definidos por cada ferramenta individualmente.
  */

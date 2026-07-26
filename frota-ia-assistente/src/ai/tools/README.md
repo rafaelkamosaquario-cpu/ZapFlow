@@ -22,8 +22,8 @@ nenhuma API externa nesta fase.
 | `calcular_cpk` | `calcular-cpk.ts` | **Lógica implementada** |
 | `comparar_pneus` | `comparar-pneus.ts` | **Lógica implementada** |
 | `calcular_custo_viagem` | `calcular-custo-viagem.ts` | **Lógica implementada** |
+| `calcular_margem` | `calcular-margem.ts` | **Lógica implementada** |
 | `analisar_frete` | `analisar-frete.ts` | Estrutura apenas |
-| `calcular_margem` | `calcular-margem.ts` | Estrutura apenas |
 | `calcular_valor_minimo_frete` | `calcular-valor-minimo-frete.ts` | Estrutura apenas |
 | `calcular_receita_km` | `calcular-receita-km.ts` | Estrutura apenas |
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | Estrutura apenas |
@@ -518,15 +518,182 @@ const resultado = calcularCustoViagem({
 - Comparação previsto x realizado sinaliza a categoria de maior desvio, mas
   nunca infere a causa (rota diferente, operação extra, etc.).
 
+## `calcular_margem`
+
+Calcula a margem financeira de uma viagem, frete, operação, veículo,
+contrato ou período. Sempre diferencia **faturamento, receita bruta,
+receita líquida, custo, lucro, margem, markup e preço mínimo** — nunca
+trata margem e markup como o mesmo indicador, nunca declara uma operação
+lucrativa só porque a receita supera alguns custos isolados, e nunca
+apresenta lucro líquido como definitivo quando impostos, comissões ou
+custos indiretos relevantes não foram informados.
+
+| Modo | O que faz |
+|---|---|
+| `MARGEM_SIMPLES` | Receita, custo, lucro e margem básicos |
+| `MARGEM_OPERACIONAL` | Idem, com foco no lucro operacional (buckets de custo) |
+| `MARGEM_LIQUIDA_ESTIMADA` | Idem, com impostos/comissões/indiretos informados |
+| `MARGEM_POR_VIAGEM` | Igual a `MARGEM_SIMPLES` — resultado de uma viagem específica |
+| `MARGEM_POR_KM` | Igual, exigindo também `quilometragemTotal` |
+| `MARGEM_POR_TONELADA` | Igual, exigindo também `pesoCargaToneladas` |
+| `COMPARACAO_CENARIOS` | Compara `cenarios` (≥ 2): ranking por lucro, margem, lucro/km, receita |
+| `PREVISTO_X_REALIZADO` | Compara os blocos `previsto` e `realizado` |
+| `MARGEM_ALVO` | Receita necessária para `margemAlvoPercentual` — **não exige receitaBruta** |
+| `PONTO_EQUILIBRIO` | Receita mínima para não haver prejuízo — **não exige receitaBruta** |
+
+### Receita, lucro, margem e markup — por que não são a mesma coisa
+
+- **Receita bruta** → **receita líquida** (após descontos, devoluções,
+  impostos, comissões e outras deduções) → **lucro** (receita líquida
+  menos custo) → **margem** (lucro ÷ receita, em %) → **markup** (receita
+  ÷ custo, em %, ou seja, o quanto se cobra *acima* do custo).
+- Margem de 20% sobre a receita **não é** o mesmo número que markup de 20%
+  sobre o custo — o teste `MARGEM_E_MARKUP` comprova isso explicitamente
+  (receita R$ 10.000, custo R$ 8.000 → margem 20%, markup 25%).
+- `lucroBruto` usa só `custosDiretos`; `lucroOperacional` soma os 4 buckets
+  (`custosVariaveis`+`custosFixosRateados`+`custosDiretos`+`custosIndiretos`);
+  `lucroLiquidoEstimado` usa `custoTotalFinal` (que pode incluir também
+  `custoViagem`/`custoRetorno`/`custoAdministrativo`/`outrosCustos`) — por
+  isso os três podem divergir, e o resultado sempre indica qual foi usado.
+
+### Três fontes de custo (nunca somadas ao mesmo tempo)
+
+1. `custoTotal` — valor já pronto.
+2. Categorias detalhadas — `custosVariaveis`, `custosFixosRateados`,
+   `custosDiretos`, `custosIndiretos`, `custoViagem`, `custoRetorno`,
+   `custoAdministrativo`, `outrosCustos` (somadas entre si).
+3. `resumoCustoViagem` — **estruturalmente compatível** com o resultado de
+   `calcular_custo_viagem` (mesmos nomes de campo: `custoTotal`,
+   `custosVariaveis`, `custosFixosProporcionais`, `custosDiretos`,
+   `custosIndiretos`, `distanciaTotalKm`, `quantidadeVeiculos`,
+   `nivelCompletude`) — o resultado completo daquela ferramenta pode ser
+   passado direto aqui, sem conversão.
+
+Impostos e comissões seguem a mesma lógica em miniatura: cada um pode ser
+`valor` (R$) **ou** `aliquota*Percentual` (%) — nunca os dois ao mesmo
+tempo. Controlado pela mesma `estrategiaSobreposicao` (padrão
+`REJEITAR_SOBREPOSICAO`, compartilhada com `calcular_custo_viagem` via
+`types.ts`).
+
+### Reutilização de `calcular-cpk.ts`
+
+`receitaPorKm` e `custoPorKm` (e as versões por tonelada) são calculados
+via `calcularCpk({modo:"CPK_PNEUS", custoPneus: valor, quilometragem: divisor})`
+— o mesmo truque de composição já usado em `comparar-pneus.ts` e
+`calcular-custo-viagem.ts`. **`lucroPorKm`/`lucroPorTonelada`/`lucroPorVeiculo`/
+`lucroPorViagem` são calculados diretamente aqui**, porque `calcular-cpk.ts`
+rejeita valores negativos e a margem, por definição, precisa suportar
+prejuízo — não haveria lógica reaproveitável nesse caso. Nenhuma alteração
+foi feita em `calcular-cpk.ts`.
+
+### Fórmulas principais
+
+```
+receitaBrutaTotal   = receitaBruta + receitaAdicional
+receitaLiquida       = receitaBrutaTotal − descontos − devoluções − impostos − comissões − outrasDeduções
+
+lucroBruto            = receitaBrutaTotal − custosDiretos
+lucroOperacional       = receitaLiquida − (custosVariaveis + custosFixosRateados + custosDiretos + custosIndiretos)
+lucroLiquidoEstimado    = receitaLiquida − custoTotalFinal
+
+margemXPercentual     = (lucroX ÷ base) × 100        (base = receitaBrutaTotal para a bruta; receitaLiquida para as demais)
+markupPercentual      = ((receitaLiquida ÷ custoTotalFinal) − 1) × 100
+fatorMarkup           = receitaLiquida ÷ custoTotalFinal
+
+receitaPontoEquilibrio = (custoTotalFinal + deduçõesFixas) ÷ (1 − percentualDeduções)
+receitaParaMargemAlvo  = (custoTotalFinal + deduçõesFixas) ÷ (1 − margemAlvoDecimal − percentualDeduções)
+receitaComMarkupAlvo   = custoTotalFinal × (1 + markupAlvoDecimal)
+```
+
+`percentualDeduções` usa só impostos/comissão informados como **percentual**
+(proporcionais à receita); valores informados como **R$ fixo** entram em
+`deduçõesFixas` — por isso a fórmula do ponto de equilíbrio funciona tanto
+na "versão simples" (sem deduções) quanto com impostos/comissão
+percentuais, sem misturar as duas bases incorretamente.
+
+### Margem negativa (prejuízo)
+
+Nunca é zerada. `classificacao` vira `PREJUIZO` sempre que a margem usada
+para classificar é negativa, com alerta explícito. `valorAdicionalParaEquilibrio`/
+`valorAdicionalParaMargemAlvo` mostram exatamente quanto falta (podem ser
+negativos, quando a meta já foi superada — também nunca escondido).
+
+### Retorno vazio
+
+`custoViagem` + `custoRetorno` + `receitaIda` (+ `receitaRetorno`, 0 quando
+vazio) disparam `impactoRetornoVazio`, comparando o resultado com e sem o
+trecho de volta:
+
+```ts
+{
+  lucroComRetorno, margemComRetornoPercentual,   // considerando ida + volta
+  lucroSoIda, margemSoIdaPercentual,              // só a ida
+  diferencaLucro, diferencaMargemPercentual,      // impacto do retorno vazio
+}
+```
+
+### Comparação de cenários
+
+Rankings por lucro, margem, lucro/km e receita líquida — **nunca** assume
+que o cenário de maior receita é o melhor; quando o líder por receita
+difere do líder por lucro, um alerta explícito é adicionado.
+`rankingPorMenorRiscoPrejuizo` é um proxy simples (maior margem líquida),
+documentado como tal — não é um modelo de risco.
+
+### Previsto x realizado
+
+Compara os dois blocos completos e aponta `principalDesvio` (receita ou
+custo, o de maior variação absoluta) sem inventar a causa — só alerta que
+houve desvio e qual foi maior.
+
+### Nível de completude
+
+- **INSUFICIENTE**: falta custo, ou falta receita nos modos que exigem
+  receita (todos, exceto `MARGEM_ALVO`/`PONTO_EQUILIBRIO`).
+- **PARCIAL**: calculável, mas impostos, comissão ou custos indiretos não
+  foram informados de nenhuma forma.
+- **COMPLETO**: nada relevante faltando. `MARGEM_ALVO`/`PONTO_EQUILIBRIO`
+  são sempre `COMPLETO` quando o custo é válido — são simulações baseadas
+  em premissas do próprio usuário, não em dados reais.
+
+### Exemplo de uso
+
+```ts
+import { calcularMargem } from "@/ai/tools";
+
+const resultado = calcularMargem({
+  modo: "MARGEM_SIMPLES",
+  receitaBruta: 10000,
+  custoTotal: 8000,
+});
+// resultado.lucroLiquidoEstimado === 2000
+// resultado.margemLiquidaPercentual === 20   (sobre a receita)
+// resultado.markupPercentual === 25          (sobre o custo — indicador diferente)
+```
+
+### Limitações conhecidas
+
+- Não calcula tributos, comissões ou custos automaticamente.
+- `receitaComMarkupAlvo` não está na lista original de campos do resultado,
+  mas a fórmula de markup-alvo e o teste dedicado exigem o valor — foi
+  adicionada como um campo extra, documentada aqui.
+- Nem todo par citado como sobreposição na especificação original tem um
+  campo concreto nesta tipagem (ex.: "custo de motorista total + diária" —
+  não existe aqui, já que este tool não modela motorista/diária
+  separadamente; isso é escopo de `calcular_custo_viagem`).
+
 ## Helpers compartilhados (`utils.ts`)
 
 `arredondar`, `formatarBRL`, `formatarNumero`, `CASAS_DECIMAIS_PADRAO`,
-`CASAS_DECIMAIS_MOEDA_PADRAO` e `CASAS_DECIMAIS_PERCENTUAL_PADRAO` vivem em
-`utils.ts` e são usados por todas as ferramentas com lógica implementada.
-`NivelCompletude` (COMPLETO/PARCIAL/INSUFICIENTE) vive em `types.ts` pelo
-mesmo motivo — é usado por `comparar-pneus.ts` e `calcular-custo-viagem.ts`.
-Novas ferramentas que precisarem de arredondamento/formatação/completude
-devem importar daqui em vez de redeclarar.
+`CASAS_DECIMAIS_MOEDA_PADRAO`, `CASAS_DECIMAIS_PERCENTUAL_PADRAO` e
+`CASAS_DECIMAIS_CUSTO_POR_KM_PADRAO` vivem em `utils.ts` e são usados por
+todas as ferramentas com lógica implementada. `NivelCompletude`
+(COMPLETO/PARCIAL/INSUFICIENTE) e `EstrategiaSobreposicao`
+(REJEITAR_SOBREPOSICAO/PRIORIZAR_TOTAL/PRIORIZAR_DETALHADO) vivem em
+`types.ts` pelo mesmo motivo — usados por `comparar-pneus.ts`,
+`calcular-custo-viagem.ts` e `calcular-margem.ts`. Novas ferramentas que
+precisarem de arredondamento/formatação/completude/estratégia de
+sobreposição devem importar daqui em vez de redeclarar.
 
 ## Dependências
 
@@ -621,10 +788,38 @@ usar, os casos abaixo devem virar testes automatizados:
 24. Rateio por pessoa (ajudante: diária × dias × quantidade)
 25. Custo por unidade (`RATEIO_POR_CARGA`, critério `UNIDADE`)
 
-Testes de regressão de `calcular_combustivel` (13), `calcular_cpk` (10) e
-`comparar_pneus` (5 cenários-chave) foram reexecutados junto com os 25 de
-`calcular_custo_viagem` para garantir que nenhuma ferramenta anterior
-quebrou — todas as 72 verificações passaram nesta rodada.
+**`calcular_margem`**
+
+1. Margem simples (receita R$ 10.000, custo R$ 8.000 → lucro R$ 2.000, margem 20%, markup 25%)
+2. Prejuízo (receita R$ 8.000, custo R$ 9.000 → prejuízo R$ 1.000, margem -12,5%, classificação PREJUIZO)
+3. Desconto (receita bruta R$ 10.000 − R$ 500 → receita líquida R$ 9.500, margem ≈15,79%)
+4. Imposto percentual (10% de R$ 10.000 = R$ 1.000 → receita líquida R$ 9.000, margem ≈22,22%)
+5. Comissão percentual (validação do cálculo e da base usada)
+6. Margem por km (receita R$ 9,00/km, custo R$ 7,00/km, lucro R$ 2,00/km)
+7. Margem por tonelada (lucro R$ 100,00/t)
+8. Ponto de equilíbrio sem percentuais (R$ 8.000,00)
+9. Ponto de equilíbrio com imposto (10%) e comissão (5%) (≈R$ 9.411,76)
+10. Margem-alvo sem deduções (R$ 8.000 ÷ 0,80 = R$ 10.000,00)
+11. Margem-alvo com deduções (equação completa validada)
+12. Markup-alvo (R$ 8.000 × 1,25 = R$ 10.000,00)
+13. Retorno vazio (custo total R$ 8.000, lucro R$ 2.000, margem 20%, impacto destacado)
+14. Previsto x realizado (diferença de receita, custo e margem calculadas corretamente)
+15. Comparação de três cenários (cenário de maior receita não é o de maior lucro — alertado)
+16. Receita zero rejeitada
+17. Custo negativo rejeitado
+18. Percentual acima de 100% rejeitado
+19. Deduções somando 100% ou mais → denominador inválido, rejeitado
+20. Custo total e detalhado ao mesmo tempo → sobreposição rejeitada por padrão
+21. Dados parciais → classificação PARCIAL, impostos/comissão ausentes citados no resumo
+22. Dados insuficientes → sem conclusão enganosa
+23. Dois veículos (lucro por veículo)
+24. Múltiplas viagens (lucro por viagem)
+25. Margem e markup comprovadamente diferentes para os mesmos números
+
+Testes de regressão de `calcular_combustivel` (13), `calcular_cpk` (10),
+`comparar_pneus` (5 cenários-chave) e `calcular_custo_viagem` (8
+cenários-chave) foram reexecutados junto com os 25 de `calcular_margem` —
+todas as 90 verificações passaram nesta rodada.
 
 ## Futura integração com IA (Claude)
 
@@ -632,9 +827,9 @@ Este repositório está na Fase 1 (scaffold de frontend): **ainda não existe**
 nenhuma integração com a API do Claude (`src/services/aiService.ts` apenas
 lança `Error(... Fase 2 ...)`, não há rota `/api/chat`, não há SDK da
 Anthropic instalado). Por isso, `calcular_combustivel`, `calcular_cpk`,
-`comparar_pneus` e `calcular_custo_viagem` estão registradas aqui em
-`FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não estão** conectadas a
-nenhum loop de tool use real.
+`comparar_pneus`, `calcular_custo_viagem` e `calcular_margem` estão
+registradas aqui em `FERRAMENTAS_FROTA_IA` (`index.ts`), mas ainda **não
+estão** conectadas a nenhum loop de tool use real.
 
 Quando a Fase 2 (integração com Claude) for implementada, o trabalho
 restante é:
@@ -667,6 +862,10 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
   pré-preencher `calcular_custo_viagem`, e registrar o resultado realizado
   de cada viagem para alimentar `COMPARACAO_PREVISTO_REALIZADO`
   automaticamente em vez de exigir os dois blocos digitados na hora.
+- Buscar fretes/contratos anteriores (receita, impostos e comissões
+  praticados) para pré-preencher `calcular_margem`, e registrar o
+  resultado realizado de cada operação para alimentar seu
+  `PREVISTO_X_REALIZADO` automaticamente.
 - Nenhuma ferramenta desta pasta deve acessar o Supabase diretamente — a
   busca de dados deve acontecer antes, na camada que monta a `entrada` da
   ferramenta, mantendo os cálculos puros e testáveis.
@@ -692,4 +891,9 @@ região, e um cartão-combustível/rastreador poderia alimentar
 `custoCombustivelInformado`/`distanciaVoltaKm` realizados direto no bloco
 `realizado` de `COMPARACAO_PREVISTO_REALIZADO`. Nenhuma dessas integrações
 foi implementada; só os tipos e pontos de entrada (campos opcionais) já
-suportam recebê-las sem quebrar a API atual.
+suportam recebê-las sem quebrar a API atual. Para `calcular_margem`: um
+sistema financeiro/ERP ou emissão fiscal poderia fornecer
+`aliquotaImpostosPercentual` real por regime tributário e `comissoes`
+efetivas por cliente/contrato, e uma plataforma de frete poderia alimentar
+`receitaBruta` direto a partir do valor negociado — sempre como sugestão
+a confirmar, nunca assumida silenciosamente.
