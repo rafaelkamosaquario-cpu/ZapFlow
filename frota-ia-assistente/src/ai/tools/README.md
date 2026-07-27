@@ -29,12 +29,22 @@ nenhuma API externa nesta fase.
 | `calcular_custo_dia` | `calcular-custo-dia.ts` | **Lógica implementada** |
 | `calcular_custo_veiculo_parado` | `calcular-custo-veiculo-parado.ts` | **Lógica implementada** |
 | `calcular_jornada` | `calcular-jornada.ts` | **Lógica implementada** |
+| `gerenciar_google_calendar` | `gerenciar-google-calendar.ts` | **Lógica implementada** (integração externa — ver `docs/camada-4-google-calendar.md`) |
 
-Todas as 11 ferramentas planejadas para esta primeira sequência já têm a
-lógica de cálculo implementada, seguindo o mesmo padrão de
+Todas as 11 ferramentas planejadas para a primeira sequência (cálculo
+puro) já têm a lógica implementada, seguindo o mesmo padrão de
 `calcular-combustivel.ts`: contrato tipado (`ResultadoFerramentaBase`),
 premissas e alertas explícitos, nunca inventa dados ausentes, e nunca
 arredonda durante os cálculos internos (só na saída).
+
+`gerenciar_google_calendar` (Camada 4) é diferente por natureza: é uma
+ferramenta de **integração externa**, não de cálculo. Faz I/O real
+(Google + Supabase), por isso é a primeira ferramenta com `executar`
+assíncrona — o contrato `DefinicaoFerramenta` permite isso desde a Camada 4
+(`TSaida | Promise<TSaida>`), sem alterar o comportamento das 11
+ferramentas de cálculo. Ela também não interpreta linguagem natural — só
+executa ações já estruturadas (datas absolutas em ISO 8601, id de evento já
+identificado). Detalhes completos em `docs/camada-4-google-calendar.md`.
 
 ## Contrato comum (`types.ts`)
 

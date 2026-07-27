@@ -6,12 +6,14 @@
  * integração com o Claude (tool use) — ver README.md desta pasta para o
  * estado atual dessa integração.
  *
- * Todas as 11 ferramentas planejadas para esta primeira sequência —
+ * As 11 ferramentas de cálculo da primeira sequência —
  * `calcular_combustivel`, `calcular_cpk`, `comparar_pneus`,
  * `calcular_custo_viagem`, `calcular_margem`, `analisar_frete`,
  * `calcular_valor_minimo_frete`, `calcular_receita_km`,
  * `calcular_custo_dia`, `calcular_custo_veiculo_parado` e
- * `calcular_jornada` — têm a lógica de cálculo implementada (ver README).
+ * `calcular_jornada` — têm a lógica implementada (ver README). A partir da
+ * Camada 4, `gerenciar_google_calendar` (integração externa) também está
+ * registrada aqui.
  */
 
 export * from "./types";
@@ -28,6 +30,7 @@ export * from "./calcular-receita-km";
 export * from "./calcular-custo-dia";
 export * from "./calcular-custo-veiculo-parado";
 export * from "./calcular-jornada";
+export * from "./gerenciar-google-calendar";
 
 import { ferramentaAnalisarFrete } from "./analisar-frete";
 import { ferramentaCalcularCombustivel } from "./calcular-combustivel";
@@ -40,15 +43,18 @@ import { ferramentaCalcularReceitaKm } from "./calcular-receita-km";
 import { ferramentaCalcularCustoDia } from "./calcular-custo-dia";
 import { ferramentaCalcularCustoVeiculoParado } from "./calcular-custo-veiculo-parado";
 import { ferramentaCalcularJornada } from "./calcular-jornada";
+import { ferramentaGerenciarGoogleCalendar } from "./gerenciar-google-calendar";
 import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
  * Todas as ferramentas internas do Frota IA, na ordem em que aparecem na
- * pasta. Todas as 11 ferramentas — `calcular_combustivel`, `calcular_cpk`,
+ * pasta. As 11 primeiras — `calcular_combustivel`, `calcular_cpk`,
  * `comparar_pneus`, `calcular_custo_viagem`, `calcular_margem`,
  * `analisar_frete`, `calcular_valor_minimo_frete`, `calcular_receita_km`,
  * `calcular_custo_dia`, `calcular_custo_veiculo_parado` e
- * `calcular_jornada` — têm a lógica de cálculo implementada (ver README).
+ * `calcular_jornada` — são puras (sem I/O). A partir da Camada 4,
+ * `gerenciar_google_calendar` é a primeira ferramenta de integração externa
+ * (I/O real com Google + Supabase, `executar` assíncrona — ver types.ts).
  */
 export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, ResultadoFerramentaBase>> = [
   ferramentaAnalisarFrete,
@@ -62,4 +68,5 @@ export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, Resu
   ferramentaCalcularCustoDia,
   ferramentaCalcularCustoVeiculoParado,
   ferramentaCalcularJornada,
+  ferramentaGerenciarGoogleCalendar,
 ];

@@ -76,5 +76,13 @@ export interface DefinicaoFerramenta<TEntrada, TSaida extends ResultadoFerrament
   descricao: string;
   objetivo: string;
   parametros: DefinicaoParametroFerramenta[];
-  executar: (entrada: TEntrada) => TSaida;
+  /**
+   * As 11 ferramentas de cálculo são puras e síncronas (sem I/O). A partir
+   * da Camada 4, ferramentas de integração externa (ex.: `gerenciar_google_calendar`)
+   * também seguem este contrato, mas fazem I/O de verdade (rede/Supabase) e
+   * por isso `executar` pode devolver uma Promise — mudança compatível: uma
+   * função síncrona continua satisfazendo `TSaida | Promise<TSaida>` sem
+   * qualquer alteração nas ferramentas de cálculo existentes.
+   */
+  executar: (entrada: TEntrada) => TSaida | Promise<TSaida>;
 }

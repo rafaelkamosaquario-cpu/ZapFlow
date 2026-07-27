@@ -701,6 +701,7 @@ export type Database = {
           granted_scopes: string[]
           id: string
           last_synced_at: string | null
+          refresh_token_secret_id: string | null
           token_expires_at: string | null
           updated_at: string
           user_id: string
@@ -716,6 +717,7 @@ export type Database = {
           granted_scopes?: string[]
           id?: string
           last_synced_at?: string | null
+          refresh_token_secret_id?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id: string
@@ -731,6 +733,7 @@ export type Database = {
           granted_scopes?: string[]
           id?: string
           last_synced_at?: string | null
+          refresh_token_secret_id?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string
@@ -1434,6 +1437,10 @@ export type Database = {
     }
     Functions: {
       default_company_id: { Args: never; Returns: string }
+      delete_google_refresh_token: {
+        Args: { p_google_integration_id: string }
+        Returns: undefined
+      }
       has_company_role: {
         Args: {
           allowed_roles: Database["public"]["Enums"]["company_member_role"][]
@@ -1444,6 +1451,14 @@ export type Database = {
       is_company_member: {
         Args: { target_company_id: string }
         Returns: boolean
+      }
+      read_google_refresh_token: {
+        Args: { p_google_integration_id: string }
+        Returns: string
+      }
+      store_google_refresh_token: {
+        Args: { p_google_integration_id: string; p_refresh_token: string }
+        Returns: string
       }
     }
     Enums: {
