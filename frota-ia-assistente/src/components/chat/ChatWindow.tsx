@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useChat } from "@/hooks/useChat";
+import { useToast } from "@/hooks/useToast";
 import { MessageList } from "./MessageList";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { ChatInput } from "./ChatInput";
@@ -14,7 +15,14 @@ interface ChatWindowProps {
 
 export function ChatWindow({ conversation, onPersist }: ChatWindowProps) {
   const [draft, setDraft] = useState("");
-  const { messages, isTyping, sendMessage } = useChat({ conversation, onPersist });
+  const { messages, isTyping, sendMessage, errorMessage } = useChat({ conversation, onPersist });
+  const { showToast } = useToast();
+
+  useEffect(() => {
+    if (errorMessage) {
+      showToast({ title: "Não foi possível responder", description: errorMessage, variant: "error" });
+    }
+  }, [errorMessage, showToast]);
 
   const handleSend = () => {
     if (!draft.trim()) return;

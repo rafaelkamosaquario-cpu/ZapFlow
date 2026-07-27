@@ -7,16 +7,24 @@ deste repositório — inclusive tem projeto Supabase próprio e isolado).
 
 Estado atual por camada:
 
-- **Chat (Fase 1)**: interface completa, respostas ainda simuladas — a
-  integração real com a Claude API é a Fase 2 (não iniciada).
-- **Ferramentas internas de cálculo**: as 11 ferramentas
-  (`src/ai/tools/`) estão implementadas, testadas e documentadas em
-  `src/ai/tools/README.md`.
+- **Chat (Fase 2)**: login obrigatório (`/login`) + onboarding
+  (`/onboarding`, criar empresa e cadastrar veículo) antes de liberar `/`.
+  O chat fala de verdade com a Claude API (tool use com as 12 ferramentas)
+  e persiste no Supabase — ver
+  [`docs/fase-2-chat-e-onboarding.md`](./docs/fase-2-chat-e-onboarding.md).
+  **Não testado ponta a ponta**: faltam `ANTHROPIC_API_KEY` e as
+  credenciais do Google Cloud (login e Calendar).
+- **Ferramentas internas**: 12 ferramentas em `src/ai/tools/` — 11 de
+  cálculo puro + `gerenciar_google_calendar` (integração externa).
+  Documentadas em `src/ai/tools/README.md`.
 - **Camada 3 — Supabase (identidade, dados, memória)**: schema V1 criado e
   aplicado no projeto Supabase `frotaia`, com RLS, services e camada de
   contexto para as ferramentas. Documentação completa em
-  [`docs/camada-3-supabase.md`](./docs/camada-3-supabase.md). Login com
-  Google está preparado no código, mas pendente de credenciais reais.
+  [`docs/camada-3-supabase.md`](./docs/camada-3-supabase.md).
+- **Camada 4 — Google Calendar**: OAuth próprio, refresh token no Supabase
+  Vault. Documentação em
+  [`docs/camada-4-google-calendar.md`](./docs/camada-4-google-calendar.md).
+  Pendente das credenciais do Google Cloud.
 
 ## Stack
 

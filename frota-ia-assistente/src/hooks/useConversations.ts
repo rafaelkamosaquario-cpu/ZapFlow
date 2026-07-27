@@ -1,68 +1,90 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useLocalStorage } from "./useLocalStorage";
-import { MOCK_CONVERSATIONS } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { deleteConversation as deleteConversationRemote, listConversationMessages, listConversations } from "@/services/chatService";
 import { truncate } from "@/lib/utils";
 import type { ChatMessage, Conversation } from "@/types";
 
-const STORAGE_KEY = "frota-ia:conversations";
-
 /**
  * Gerencia a lista de conversas exibida na barra lateral (histórico).
- * Fase 1: persistência simulada via localStorage, sem backend.
+ * Fase 2: backend real (Supabase, via chatService) — a lista vem do
+ * servidor; as mensagens de cada conversa são buscadas sob demanda (só
+ * quando ela vira a conversa ativa) e ficam em cache local aqui.
  */
 export function useConversations() {
-  const [conversations, setConversations] = useLocalStorage<Conversation[]>(
-    STORAGE_KEY,
-    MOCK_CONVERSATIONS
-  );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [messagesByConversation, setMessagesByConversation] = useState<Record<string, ChatMessage[]>>({});
 
-  const activeConversation =
-    conversations.find((conversation) => conversation.id === activeConversationId) ?? null;
+  useEffect(() => {
+    listConversations()
+      .then(setConversations)
+      .catch(() => setConversations([]));
+  }, []);
 
-  const startNewConversation = useCallback(() => {
+  const activeConversationBase = conversations.find((c) => c.id === activeConversationId) ?? null;
+  const activeConversation: Conversation | null = activeConversationBase
+    ? { ...activeConversationBase, messages: messagesByConversation[activeConversationBase.id] ?? activeConversationBase.messages }
+    : null;
+
+  function startNewConversation() {
     setActiveConversationId(null);
-  }, []);
+  }
 
-  const selectConversation = useCallback((id: string) => {
+  function selectConversation(id: string) {
     setActiveConversationId(id);
-  }, []);
 
-  const deleteConversation = useCallback(
-    (id: string) => {
-      setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
-      setActiveConversationId((current) => (current === id ? null : current));
-    },
-    [setConversations]
-  );
+    if (!(id in messagesByConversation)) {
+      listConversationMessages(id)
+        .then((messages) => {
+          setMessagesByConversation((prev) => ({ ...prev, [id]: messages }));
+        })
+        .catch(() => {
+          // Mantém a conversa selecionada mesmo se o histórico falhar ao
+          // carregar — o usuário ainda pode enviar uma mensagem nova.
+        });
+    }
+  }
 
-  const persistConversation = useCallback(
-    (id: string, messages: ChatMessage[], titleHint?: string) => {
-      setConversations((prev) => {
-        const now = new Date().toISOString();
-        const existing = prev.find((conversation) => conversation.id === id);
+  function deleteConversation(id: string) {
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    setMessagesByConversation((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== id)));
+    setActiveConversationId((current) => (current === id ? null : current));
+    deleteConversationRemote(id).catch(() => {
+      // Melhor esforço: se falhar no servidor, a conversa reaparece no
+      // próximo carregamento da lista — não é uma perda de dado real.
+    });
+  }
 
-        if (existing) {
-          return prev.map((conversation) =>
-            conversation.id === id ? { ...conversation, messages, updatedAt: now } : conversation
-          );
-        }
+  /**
+   * Chamado pelo useChat depois que /api/chat já persistiu as mensagens no
+   * servidor — aqui só atualiza o cache local para refletir na tela sem
+   * precisar buscar de novo.
+   */
+  function persistConversation(id: string, messages: ChatMessage[], titleHint?: string) {
+    setMessagesByConversation((prev) => ({ ...prev, [id]: messages }));
 
-        const created: Conversation = {
-          id,
-          title: titleHint ? truncate(titleHint, 48) : "Nova conversa",
-          messages,
-          createdAt: now,
-          updatedAt: now,
-        };
-        return [created, ...prev];
-      });
-      setActiveConversationId(id);
-    },
-    [setConversations]
-  );
+    setConversations((prev) => {
+      const now = new Date().toISOString();
+      const existing = prev.find((c) => c.id === id);
+
+      if (existing) {
+        const updated = { ...existing, updatedAt: now };
+        return [updated, ...prev.filter((c) => c.id !== id)];
+      }
+
+      const created: Conversation = {
+        id,
+        title: titleHint ? truncate(titleHint, 48) : "Nova conversa",
+        messages,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return [created, ...prev];
+    });
+
+    setActiveConversationId(id);
+  }
 
   return {
     conversations,

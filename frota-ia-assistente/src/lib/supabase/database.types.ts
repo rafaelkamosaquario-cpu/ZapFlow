@@ -1498,6 +1498,7 @@ export type Database = {
         | "calcular_custo_dia"
         | "calcular_custo_veiculo_parado"
         | "calcular_jornada"
+        | "gerenciar_google_calendar"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1697,6 +1698,7 @@ export const Constants = {
         "calcular_custo_dia",
         "calcular_custo_veiculo_parado",
         "calcular_jornada",
+        "gerenciar_google_calendar",
       ],
       fuel_type: [
         "diesel_s10",

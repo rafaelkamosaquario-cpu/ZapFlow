@@ -59,6 +59,41 @@ export async function getOrCreateOpenConversation(
   return createConversation(client, companyId, userId, channelId);
 }
 
+export async function getConversationById(
+  client: SupabaseDbClient,
+  conversationId: string
+): Promise<ConversationRow | null> {
+  const { data, error } = await client.from("conversations").select("*").eq("id", conversationId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/** Conversas mais recentes do usuário (não arquivadas), para a barra lateral. Sem select(*) sem limite. */
+export async function listConversationsForUser(
+  client: SupabaseDbClient,
+  companyId: string,
+  userId: string,
+  limit = 30
+): Promise<ConversationRow[]> {
+  const { data, error } = await client
+    .from("conversations")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("user_id", userId)
+    .neq("status", "archived")
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Soft delete: a conversa nunca é apagada, só sai da lista (status = 'archived'). */
+export async function archiveConversation(client: SupabaseDbClient, conversationId: string): Promise<void> {
+  const { error } = await client.from("conversations").update({ status: "archived" }).eq("id", conversationId);
+  if (error) throw error;
+}
+
 /**
  * Histórico paginado, mais recentes primeiro. Nunca usar select('*') sem
  * limite — mensagens tendem a crescer sem teto.
