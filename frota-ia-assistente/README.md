@@ -1,12 +1,22 @@
 # Frota IA Assistente
 
-Especialista virtual em transporte e gestão de frotas. Este é o app de chat que,
-na próxima fase, será conectado a uma IA real. **Nesta fase (Fase 1)** só existe
-a estrutura, o visual e a experiência de conversa — todas as respostas são
-simuladas.
+Especialista virtual em transporte e gestão de frotas.
 
 Projeto construído do zero (não reaproveita código do ZapFlow que vive na raiz
-deste repositório).
+deste repositório — inclusive tem projeto Supabase próprio e isolado).
+
+Estado atual por camada:
+
+- **Chat (Fase 1)**: interface completa, respostas ainda simuladas — a
+  integração real com a Claude API é a Fase 2 (não iniciada).
+- **Ferramentas internas de cálculo**: as 11 ferramentas
+  (`src/ai/tools/`) estão implementadas, testadas e documentadas em
+  `src/ai/tools/README.md`.
+- **Camada 3 — Supabase (identidade, dados, memória)**: schema V1 criado e
+  aplicado no projeto Supabase `frotaia`, com RLS, services e camada de
+  contexto para as ferramentas. Documentação completa em
+  [`docs/camada-3-supabase.md`](./docs/camada-3-supabase.md). Login com
+  Google está preparado no código, mas pendente de credenciais reais.
 
 ## Stack
 
@@ -16,7 +26,12 @@ deste repositório).
 - [lucide-react](https://lucide.dev) (ícones)
 - [next-themes](https://github.com/pacocoursey/next-themes) (modo claro/escuro)
 
-Nenhuma API de IA, banco de dados ou autenticação foi conectada nesta fase.
+- [@supabase/ssr](https://supabase.com/docs/guides/auth/server-side/nextjs) e [@supabase/supabase-js](https://supabase.com/docs/reference/javascript) (Camada 3)
+- [Zod](https://zod.dev) (validação de entrada antes de qualquer insert/update no Supabase)
+
+A API de IA (Claude) ainda não foi conectada — isso é a Fase 2. Banco de
+dados e autenticação **já existem** (Camada 3, Supabase), mas ainda não são
+usados pela tela de chat em si (que continua 100% Fase 1 por enquanto).
 
 ## Como rodar localmente
 
@@ -45,7 +60,8 @@ frota-ia-assistente/
 │   │   ├── layout.tsx          # fontes, metadata, providers (tema/toast)
 │   │   ├── page.tsx            # tela única do assistente
 │   │   ├── icon.tsx            # favicon gerado (logo)
-│   │   └── globals.css         # tokens de design (cores, animações)
+│   │   ├── globals.css         # tokens de design (cores, animações)
+│   │   └── auth/callback/      # callback do OAuth (Google via Supabase Auth)
 │   ├── components/
 │   │   ├── ui/                 # Button, Input, Textarea, Card, Loading,
 │   │   │                       # EmptyState, Toast, Modal, Dialog
@@ -58,12 +74,30 @@ frota-ia-assistente/
 │   │   └── providers/            # ThemeProvider, ToastProvider
 │   ├── hooks/                   # useChat, useConversations, useLocalStorage,
 │   │                             # useMediaQuery, useToast, useHasMounted
-│   ├── services/                 # aiService, chatService, messageService
-│   │                             # (interfaces vazias, prontas para a Fase 2)
+│   ├── ai/
+│   │   ├── tools/                # as 11 ferramentas puras de cálculo (ver
+│   │   │                         # src/ai/tools/README.md)
+│   │   └── context/               # ponte Supabase → ferramentas
+│   │                               # (loadCustomerContext, saveToolExecution…)
+│   ├── services/
+│   │   ├── aiService.ts, chatService.ts, messageService.ts
+│   │   │                         # (Fase 1: interfaces vazias, prontas p/ Fase 2)
+│   │   └── supabase/              # 1 service por domínio (profile, company,
+│   │                               # vehicle, memory, conversation, google…)
 │   ├── types/                    # ChatMessage, Conversation, SuggestionPrompt
-│   └── lib/                      # utils (cn, formatRelativeDate…), constants
-│                                  # (sugestões, textos), mock-data (histórico
-│                                  # simulado)
+│   ├── lib/
+│   │   ├── utils.ts, constants.ts, mock-data.ts
+│   │   ├── supabase/              # client.ts, server.ts, admin.ts,
+│   │   │                          # database.types.ts (gerado), tables.ts, json.ts
+│   │   └── validation/            # schemas.ts (Zod)
+│   └── proxy.ts                  # refresh de sessão Supabase a cada requisição
+│                                   # (convenção "proxy" desta versão do Next 16,
+│                                   # substitui o antigo middleware.ts)
+├── supabase/
+│   ├── config.toml
+│   └── migrations/                # 7 migrations versionadas da Camada 3
+├── docs/
+│   └── camada-3-supabase.md       # documentação completa da Camada 3
 └── public/                       # assets estáticos
 ```
 
@@ -106,15 +140,16 @@ A aplicação abre direto no assistente — uma única tela, sem login ou painel
 - **Componentes de UI genéricos** (`src/components/ui`) não conhecem nada de
   "frota" ou "chat" — podem ser reaproveitados em telas futuras.
 
-## Próximos passos (Fase 2)
+## Próximos passos
 
-1. Implementar `aiService.requestAICompletion` com a Claude API.
+1. Implementar `aiService.requestAICompletion` com a Claude API (Fase 2 do
+   chat) e conectá-la à camada de contexto da Camada 3
+   (`src/ai/context/customerContext.ts`) e às 11 ferramentas.
 2. Trocar o `setTimeout` de `useChat` pela chamada real ao serviço.
-3. Persistir conversas de verdade em `chatService` (API + banco), substituindo
-   o `localStorage`.
+3. Persistir conversas de verdade via `src/services/supabase/conversationService.ts`,
+   substituindo o `localStorage`.
 4. Streaming de resposta (mensagem do assistente aparecendo token a token).
-5. Fora de escopo por enquanto: RAG, memória, ferramentas de cálculo,
-   cadastro de veículos/empresas/pneus, financeiro, painel administrativo —
-   tudo isso vem depois da Fase 2.
-
-Aguardando autorização para iniciar a Fase 2.
+5. UI de onboarding (criar empresa, cadastrar veículo) sobre os services já
+   prontos da Camada 3.
+6. Ver [`docs/camada-3-supabase.md`](./docs/camada-3-supabase.md), seção
+   "Próximos passos (Camada 4)", para o restante do backlog de dados.
