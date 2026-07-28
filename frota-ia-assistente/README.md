@@ -25,6 +25,11 @@ Estado atual por camada:
   Vault. Documentação em
   [`docs/camada-4-google-calendar.md`](./docs/camada-4-google-calendar.md).
   Pendente das credenciais do Google Cloud.
+- **Camada 5 — WhatsApp (Z-API)**: segundo canal, instância própria
+  (separada do ZapFlow). Webhook de entrada + vínculo de número usam a
+  mesma engine de chat da Fase 2. Documentação em
+  [`docs/camada-5-whatsapp-zapi.md`](./docs/camada-5-whatsapp-zapi.md).
+  Pendente da instância Z-API dedicada ao Frota IA.
 
 ## Stack
 
