@@ -30,7 +30,19 @@ export async function createCompanyAction(
       name,
       companyType: companyType as "autonomo" | "transportadora" | "embarcador" | "outro",
     });
-  } catch {
+  } catch (err) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const jwtPayload = sessionData.session
+      ? JSON.parse(Buffer.from(sessionData.session.access_token.split(".")[1], "base64").toString("utf8"))
+      : null;
+    console.error("[onboarding] falha ao criar empresa", {
+      userId: data.user.id,
+      hasSession: Boolean(sessionData.session),
+      jwtRole: jwtPayload?.role,
+      jwtSub: jwtPayload?.sub,
+      jwtAud: jwtPayload?.aud,
+      error: err instanceof Error ? { name: err.name, message: err.message } : err,
+    });
     return { error: "Não foi possível salvar a empresa. Tente novamente." };
   }
 
