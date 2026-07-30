@@ -62,6 +62,13 @@ export interface GerarRespostaAssistenteParams {
   customerContext: CustomerContext;
   vehicleContext: VehicleContext;
   mensagemUsuario: string;
+  /**
+   * Blocos extras (imagem/documento em base64) só para ESTA rodada — nunca
+   * persistidos no histórico como conteúdo binário (o texto de
+   * `mensagemUsuario` é o que fica salvo). Usado pelo webhook do WhatsApp
+   * (Camada 6, Fase F) quando o usuário manda uma foto ou PDF.
+   */
+  conteudoMultimodal?: Anthropic.ContentBlockParam[];
   /** Campos extras para a mensagem de entrada (ex.: external_message_id, para deduplicar reentregas de webhook). */
   inboundMessageExtra?: Partial<MessageInsert>;
 }
@@ -95,7 +102,12 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
     ...params.inboundMessageExtra,
   });
 
-  mensagensAnthropic.push({ role: "user", content: mensagemUsuario });
+  mensagensAnthropic.push({
+    role: "user",
+    content: params.conteudoMultimodal
+      ? [...params.conteudoMultimodal, { type: "text", text: mensagemUsuario }]
+      : mensagemUsuario,
+  });
 
   const anthropic = createAnthropicClient();
   const system = construirSystemPrompt(customerContext, vehicleContext, new Date());

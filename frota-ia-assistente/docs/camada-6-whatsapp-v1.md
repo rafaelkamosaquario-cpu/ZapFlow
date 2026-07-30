@@ -242,8 +242,55 @@ fase.
   WhatsApp, pelas mesmas razões das fases anteriores (sem instância Z-API
   conectada neste ambiente).
 
-## Fases seguintes (F, G)
+## Fase F — Recebimento de áudio/imagem/documento/localização/contato (seção 13)
 
-Ainda não implementadas nesta sessão: recebimento de áudio/imagem/
-documento (F), suíte de testes dos 9 cenários do prompt + entrega final
-consolidada (G).
+`src/lib/whatsapp/mediaDownloader.ts` — download seguro (timeout de 15s,
+limite de 15 MB, só URLs `http(s)`) da mídia que a Z-API manda no próprio
+payload do webhook. **A URL nunca é exposta de volta ao usuário nem
+aparece em texto puro salvo** — só os bytes baixados (ou o metadado
+`fileName`/`mimeType`) são persistidos.
+
+`gerarRespostaAssistente` ganhou um parâmetro opcional
+`conteudoMultimodal` (blocos extras só para a rodada atual, nunca
+persistidos como binário no histórico) — 100% compatível com o chat web,
+que nunca usa esse campo.
+
+Por tipo de mensagem recebida no WhatsApp:
+
+| Tipo | Comportamento |
+|---|---|
+| Texto | Fluxo normal (Fases A-E) |
+| Imagem (JPEG/PNG/GIF/WebP) | Baixada e enviada como imagem de verdade para a Claude (visão nativa) — a IA pode responder sobre o conteúdo da foto |
+| Documento PDF | Baixado e enviado como documento nativo para a Claude (leitura de PDF nativa) |
+| Documento não-PDF (planilha, Word etc.) | Recebido, registrado (`content_type`/`metadata` em `messages`), mas o conteúdo **não é interpretado** — resposta explica a limitação |
+| Áudio | Recebido e registrado, mas **não transcrito** — resposta explica a limitação |
+| Localização | Convertida em texto descritivo (latitude/longitude/endereço) e enviada à IA normalmente |
+| Contato (vCard) | Convertido em texto descritivo (nome + telefone extraído do vCard) e enviado à IA normalmente |
+
+Nenhuma tabela nova: tudo usa `messages.content_type`/`messages.metadata`,
+colunas que já existiam desde a Camada 3 e nunca eram usadas para nada
+além do padrão `'text'`.
+
+### Por que áudio e planilhas não são interpretados nesta fase
+
+A API da Claude (Messages API) não tem um modo nativo de entrada de áudio
+— transcrever voz exigiria uma API de terceiros (speech-to-text) que não
+faz parte de nenhuma integração já aprovada neste projeto, e adicionar uma
+adicionaria custo/dependência nova fora do escopo desta fase. Parsing de
+planilha (xlsx/csv) também exigiria uma lib de parsing dedicada. Ambos
+ficam registrados como próximo passo, não como funcionalidade quebrada —
+o usuário sempre recebe uma explicação clara, nunca silêncio.
+
+### Limitações conhecidas desta fase
+
+- Sem OCR dedicado — a leitura de imagem/PDF depende inteiramente da
+  visão/leitura de documento nativa da Claude, sem pré-processamento.
+- Não testado com mídia real da Z-API neste ambiente (mesma limitação de
+  todas as fases anteriores) — validado por `tsc`/`lint`/`build` e leitura
+  de código.
+
+## Fase G — Testes e entrega final
+
+Ver seção dedicada mais abaixo neste documento (ou a mensagem de entrega
+final da sessão) para os 9 cenários de teste do prompt original e o
+resumo consolidado de tudo que foi construído nas Fases A-F.

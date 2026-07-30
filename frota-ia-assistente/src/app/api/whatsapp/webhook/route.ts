@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
+import type Anthropic from "@anthropic-ai/sdk";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWhatsappConfig, isWhatsappConfigured } from "@/lib/whatsapp/config";
 import { sendWhatsappText } from "@/lib/whatsapp/zapiClient";
+import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
 import { firstOnboardingMessage, processOnboardingMessage, type OnboardingCollectedData } from "@/ai/whatsapp/onboardingConversation";
 import { finalizeOnboarding } from "@/ai/whatsapp/finalizeOnboarding";
 import { loadCustomerContext, loadVehicleContext } from "@/ai/context/customerContext";
-import { getOrCreateOpenConversation } from "@/services/supabase/conversationService";
+import { getOrCreateOpenConversation, appendMessage } from "@/services/supabase/conversationService";
 import { gerarRespostaAssistente } from "@/ai/chat/gerarRespostaAssistente";
 import { AnthropicConfigError } from "@/lib/anthropic/client";
 import { isUniqueViolation } from "@/lib/supabase/errors";
+import type { MessageInsert } from "@/lib/supabase/tables";
 
 /**
  * Webhook de mensagem recebida da instância Z-API própria do Frota IA
@@ -26,9 +29,13 @@ import { isUniqueViolation } from "@/lib/supabase/errors";
  * 1. número desconhecido → cria o usuário na hora (WhatsApp é a porta de
  *    entrada, não exige painel/senha) e inicia o onboarding conversacional;
  * 2. onboarding em andamento → processa uma pergunta por vez via
- *    processOnboardingMessage, sem passar pela IA;
+ *    processOnboardingMessage, sem passar pela IA (só entende texto);
  * 3. onboarding concluído → mesma engine de chat da web
- *    (gerarRespostaAssistente), resposta enviada de volta por texto.
+ *    (gerarRespostaAssistente). Imagem e PDF são enviados de verdade pra
+ *    IA (Claude lê imagem/documento nativamente); áudio e outros tipos de
+ *    documento (planilha etc.) são reconhecidos e registrados, mas ainda
+ *    não têm o conteúdo interpretado — ver limitações no
+ *    docs/camada-6-whatsapp-v1.md (Fase F).
  */
 
 interface ZApiWebhookBody {
@@ -37,12 +44,24 @@ interface ZApiWebhookBody {
   messageId?: string;
   senderName?: string;
   text?: { message?: string };
+  image?: { imageUrl?: string; caption?: string; mimeType?: string };
+  document?: { documentUrl?: string; fileName?: string; mimeType?: string; caption?: string };
+  audio?: { audioUrl?: string; mimeType?: string };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
+  contact?: { displayName?: string; vcard?: string };
 }
+
+const TIPOS_IMAGEM_SUPORTADOS = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 function tokensMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
   return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}
+
+function extrairTelefoneDoVcard(vcard?: string): string | null {
+  const match = vcard?.match(/TEL[^:]*:([+\d()\-\s]+)/i);
+  return match?.[1]?.trim() ?? null;
 }
 
 export async function POST(request: Request) {
@@ -69,10 +88,10 @@ export async function POST(request: Request) {
   }
 
   const phoneE164 = toPhoneE164(body.phone);
-  const textoRecebido = body.text?.message?.trim();
+  const textoDireto = body.text?.message?.trim();
 
-  if (!textoRecebido) {
-    await sendWhatsappText(phoneE164, "Por enquanto só consigo entender mensagens de texto.").catch(() => {});
+  // Callback sem nenhum tipo reconhecido (ex.: status de entrega/leitura) — ignora.
+  if (!textoDireto && !body.image && !body.document && !body.audio && !body.location && !body.contact) {
     return NextResponse.json({ ok: true });
   }
 
@@ -102,10 +121,15 @@ export async function POST(request: Request) {
   }
 
   if (session.state !== "completed") {
+    if (!textoDireto) {
+      await sendWhatsappText(phoneE164, "Por enquanto, durante o cadastro, preciso que você responda em texto.").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
     const resultado = processOnboardingMessage(
       session.state,
       (session.collected_data ?? {}) as OnboardingCollectedData,
-      textoRecebido
+      textoDireto
     );
 
     await updateOnboardingSession(admin, userId, {
@@ -144,6 +168,102 @@ export async function POST(request: Request) {
   const companyId = customerContext.company.id;
   const vehicleContext = await loadVehicleContext(admin, companyId);
   const conversation = await getOrCreateOpenConversation(admin, companyId, userId, channelId);
+  const inboundBase: Partial<MessageInsert> = body.messageId ? { external_message_id: body.messageId } : {};
+
+  // Resolve o conteúdo desta mensagem: texto direto, ou mídia (Fase F).
+  let mensagemUsuario: string | null = null;
+  let conteudoMultimodal: Anthropic.ContentBlockParam[] | undefined;
+  let inboundExtra: Partial<MessageInsert> = inboundBase;
+
+  if (textoDireto) {
+    mensagemUsuario = textoDireto;
+  } else if (body.image?.imageUrl) {
+    const mimeType = body.image.mimeType ?? "image/jpeg";
+    if (!TIPOS_IMAGEM_SUPORTADOS.has(mimeType)) {
+      await appendMessage(admin, {
+        conversation_id: conversation.id,
+        company_id: companyId,
+        user_id: userId,
+        role: "user",
+        direction: "inbound",
+        content: "[imagem recebida — formato não suportado]",
+        content_type: "image",
+        metadata: { mimeType },
+        ...inboundBase,
+      });
+      await sendWhatsappText(phoneE164, "Recebi a imagem, mas esse formato ainda não é suportado. Pode mandar em JPEG, PNG, GIF ou WebP?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    const midia = await baixarMidia(body.image.imageUrl);
+    if (!midia) {
+      await sendWhatsappText(phoneE164, "Não consegui baixar a imagem agora. Pode tentar enviar de novo?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    mensagemUsuario = body.image.caption?.trim() || "[imagem recebida]";
+    conteudoMultimodal = [{ type: "image", source: { type: "base64", media_type: mimeType as "image/jpeg", data: paraBase64(midia.bytes) } }];
+    inboundExtra = { ...inboundBase, content_type: "image", metadata: { mimeType, hadCaption: Boolean(body.image.caption) } };
+  } else if (body.document?.documentUrl) {
+    const mimeType = body.document.mimeType ?? "application/octet-stream";
+    const fileName = body.document.fileName ?? "documento";
+
+    if (mimeType !== "application/pdf") {
+      await appendMessage(admin, {
+        conversation_id: conversation.id,
+        company_id: companyId,
+        user_id: userId,
+        role: "user",
+        direction: "inbound",
+        content: `[documento recebido: ${fileName} — conteúdo não interpretado]`,
+        content_type: "document",
+        metadata: { fileName, mimeType },
+        ...inboundBase,
+      });
+      await sendWhatsappText(
+        phoneE164,
+        "Recebi o arquivo, mas por enquanto só consigo ler o conteúdo de PDFs — outros formatos de documento ainda não são interpretados."
+      ).catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    const midia = await baixarMidia(body.document.documentUrl);
+    if (!midia) {
+      await sendWhatsappText(phoneE164, "Não consegui baixar o documento agora. Pode tentar enviar de novo?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    mensagemUsuario = body.document.caption?.trim() || `[documento recebido: ${fileName}]`;
+    conteudoMultimodal = [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: paraBase64(midia.bytes) } }];
+    inboundExtra = { ...inboundBase, content_type: "document", metadata: { fileName, mimeType } };
+  } else if (body.audio) {
+    await appendMessage(admin, {
+      conversation_id: conversation.id,
+      company_id: companyId,
+      user_id: userId,
+      role: "user",
+      direction: "inbound",
+      content: "[áudio recebido — não transcrito]",
+      content_type: "audio",
+      metadata: { mimeType: body.audio.mimeType ?? null },
+      ...inboundBase,
+    });
+    await sendWhatsappText(phoneE164, "Recebi seu áudio, mas ainda não consigo entender mensagens de voz — pode escrever, por favor?").catch(() => {});
+    return NextResponse.json({ ok: true });
+  } else if (body.location) {
+    const { latitude, longitude, name, address } = body.location;
+    const partes = [name, address].filter(Boolean).join(", ");
+    mensagemUsuario = `Localização recebida${partes ? ` (${partes})` : ""}: latitude ${latitude}, longitude ${longitude}.`;
+    inboundExtra = { ...inboundBase, content_type: "location", metadata: { latitude: latitude ?? null, longitude: longitude ?? null, name: name ?? null, address: address ?? null } };
+  } else if (body.contact) {
+    const telefone = extrairTelefoneDoVcard(body.contact.vcard);
+    mensagemUsuario = `Contato recebido: ${body.contact.displayName ?? "sem nome"}${telefone ? ` (${telefone})` : ""}.`;
+    inboundExtra = { ...inboundBase, content_type: "contact", metadata: { displayName: body.contact.displayName ?? null, telefone } };
+  }
+
+  if (!mensagemUsuario) {
+    return NextResponse.json({ ok: true });
+  }
 
   try {
     const resposta = await gerarRespostaAssistente({
@@ -153,8 +273,9 @@ export async function POST(request: Request) {
       conversation,
       customerContext,
       vehicleContext,
-      mensagemUsuario: textoRecebido,
-      inboundMessageExtra: body.messageId ? { external_message_id: body.messageId } : undefined,
+      mensagemUsuario,
+      conteudoMultimodal,
+      inboundMessageExtra: inboundExtra,
     });
 
     await sendWhatsappText(phoneE164, resposta.message.content);
