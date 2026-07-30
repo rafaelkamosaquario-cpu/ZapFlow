@@ -78,6 +78,9 @@ export type ScheduledAlertRow = PublicTables["scheduled_alerts"]["Row"];
 export type ScheduledAlertInsert = PublicTables["scheduled_alerts"]["Insert"];
 export type ScheduledAlertUpdate = PublicTables["scheduled_alerts"]["Update"];
 
+export type GeneratedDocumentRow = PublicTables["generated_documents"]["Row"];
+export type GeneratedDocumentInsert = PublicTables["generated_documents"]["Insert"];
+
 export type CompanyMemberRole = PublicEnums["company_member_role"];
 export type OnboardingState = PublicEnums["onboarding_state"];
 export type ScheduledAlertStatus = PublicEnums["scheduled_alert_status"];

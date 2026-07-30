@@ -42,3 +42,33 @@ export async function sendWhatsappText(phoneE164: string, message: string): Prom
     throw new ZApiRequestError(response.status, bodyText);
   }
 }
+
+/**
+ * Envia um PDF gerado na hora — sem depender de Storage/URL pública: o
+ * Z-API aceita o documento em base64 diretamente no endpoint send-document.
+ */
+export async function sendWhatsappPdf(phoneE164: string, pdfBytes: Uint8Array, fileName: string): Promise<void> {
+  const { ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN, ZAPI_CLIENT_TOKEN } = getWhatsappConfig();
+  const base64 = Buffer.from(pdfBytes).toString("base64");
+
+  const response = await fetch(
+    `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_INSTANCE_TOKEN}/send-document/pdf`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Client-Token": ZAPI_CLIENT_TOKEN,
+      },
+      body: JSON.stringify({
+        phone: normalizePhone(phoneE164),
+        document: `data:application/pdf;base64,${base64}`,
+        fileName,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => "");
+    throw new ZApiRequestError(response.status, bodyText);
+  }
+}

@@ -33,6 +33,7 @@ export * from "./calcular-jornada";
 export * from "./gerenciar-google-calendar";
 export * from "./consultar-historico";
 export * from "./gerenciar-alerta";
+export * from "./gerar-documento";
 
 import { ferramentaAnalisarFrete } from "./analisar-frete";
 import { ferramentaCalcularCombustivel } from "./calcular-combustivel";
@@ -48,6 +49,7 @@ import { ferramentaCalcularJornada } from "./calcular-jornada";
 import { ferramentaGerenciarGoogleCalendar } from "./gerenciar-google-calendar";
 import { ferramentaConsultarHistorico } from "./consultar-historico";
 import { ferramentaGerenciarAlerta } from "./gerenciar-alerta";
+import { ferramentaGerarDocumento } from "./gerar-documento";
 import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
@@ -75,4 +77,5 @@ export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, Resu
   ferramentaGerenciarGoogleCalendar,
   ferramentaConsultarHistorico,
   ferramentaGerenciarAlerta,
+  ferramentaGerarDocumento,
 ];

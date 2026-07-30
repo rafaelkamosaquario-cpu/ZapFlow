@@ -258,6 +258,7 @@ export const frotaIaToolNameSchema = z.enum([
   "gerenciar_google_calendar",
   "consultar_historico",
   "gerenciar_alerta",
+  "gerar_documento",
 ]);
 
 export const toolExecutionCreateSchema = z.object({

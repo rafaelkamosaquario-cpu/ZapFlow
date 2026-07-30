@@ -508,6 +508,67 @@ export type Database = {
           },
         ]
       }
+      generated_documents: {
+        Row: {
+          analysis_run_id: string | null
+          company_id: string
+          conversation_id: string | null
+          created_at: string
+          delivered: boolean
+          document_type: string
+          file_name: string
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          analysis_run_id?: string | null
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered?: boolean
+          document_type: string
+          file_name: string
+          id?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          analysis_run_id?: string | null
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered?: boolean
+          document_type?: string
+          file_name?: string
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_documents_analysis_run_id_fkey"
+            columns: ["analysis_run_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_integrations: {
         Row: {
           calendar_enabled: boolean
@@ -1320,6 +1381,7 @@ export type Database = {
         | "gerenciar_google_calendar"
         | "consultar_historico"
         | "gerenciar_alerta"
+        | "gerar_documento"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1532,6 +1594,7 @@ export const Constants = {
         "gerenciar_google_calendar",
         "consultar_historico",
         "gerenciar_alerta",
+        "gerar_documento",
       ],
       fuel_type: [
         "diesel_s10",

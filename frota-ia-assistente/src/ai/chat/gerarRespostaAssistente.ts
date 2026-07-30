@@ -182,7 +182,7 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
         resultadosFerramentas.push({
           type: "tool_result",
           tool_use_id: bloco.id,
-          content: JSON.stringify(resultado),
+          content: JSON.stringify(analysisRunId ? { ...resultado, analysisRunId } : resultado),
           is_error: !resultado.sucesso,
         });
       } catch {

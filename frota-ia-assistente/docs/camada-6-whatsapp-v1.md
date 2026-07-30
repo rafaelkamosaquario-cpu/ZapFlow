@@ -198,8 +198,52 @@ resolvido no banco.
   provisionado) — a rota foi validada por leitura de código e
   `tsc`/`lint`/`build`, não por execução ponta a ponta.
 
-## Fases seguintes (D, F, G)
+## Correção de base: `analysis_runs` nunca era gravada
 
-Ainda não implementadas nesta sessão — continuam como tarefas em aberto:
-geração de PDF (D), recebimento de áudio/imagem/documento (F), suíte de
-testes dos 9 cenários do prompt + entrega final consolidada (G).
+Auditando a Fase E, descobri que `startAnalysisRun`/`completeAnalysisRun`
+(Camada 3) existiam desde sempre mas nunca eram chamados pelo loop de tool
+use — `analysis_runs` ficava sempre vazia. `consultar_historico` (Fase E)
+nunca encontraria nada de verdade sem isso. Corrigido em
+`src/ai/chat/gerarRespostaAssistente.ts`: as 11 ferramentas de cálculo
+(não as de integração) agora geram um registro por chamada, com o
+resultado completo e vinculado ao `tool_executions` correspondente. O
+`analysisRunId` também passou a vir de volta no próprio resultado da
+ferramenta para a IA poder referenciar numa chamada seguinte de
+`gerar_documento`.
+
+## Fase D — Geração e envio de documentos PDF (seção 11)
+
+Nova dependência: `pdf-lib` (zero dependências nativas, testado e
+gerando PDF válido — `%PDF-` no cabeçalho — neste ambiente). Nova tabela
+`generated_documents` — só metadados (título, tipo, nome do arquivo,
+se foi entregue), **nunca o arquivo em si**: o PDF é gerado na hora e
+enviado direto em base64 pela Z-API (`sendWhatsappPdf`,
+`send-document/pdf`), sem precisar de bucket do Supabase Storage — decisão
+deliberada para não introduzir mais uma peça de infraestrutura nova nesta
+fase.
+
+- `src/services/documents/pdfGenerator.ts` — layout simples (título, data
+  de geração, cliente, empresa, período, pedido, resumo, linhas
+  chave/valor, observações, rodapé com identificação do Frota IA).
+- Nova ferramenta `gerar_documento` (15ª ferramenta): recebe
+  `analysisRunId` (preferencial — puxa uma análise já feita) ou
+  `titulo`+`conteudo` livre. Nunca inventa dado ausente — se faltar os
+  dois, pede antes de gerar.
+
+### Limitações conhecidas desta fase
+
+- Só entrega por WhatsApp — se o usuário não tiver um canal de WhatsApp
+  verificado vinculado (caso raro na V1, já que o WhatsApp é o ponto de
+  entrada), a ferramenta explica que não conseguiu entregar em vez de
+  tentar outro canal.
+- Sem gráficos/tabelas — texto corrido, formatação simples.
+- Testado isoladamente (geração de PDF válido, confirmado o cabeçalho
+  `%PDF-`) — não testado o envio real via Z-API nem ponta a ponta pelo
+  WhatsApp, pelas mesmas razões das fases anteriores (sem instância Z-API
+  conectada neste ambiente).
+
+## Fases seguintes (F, G)
+
+Ainda não implementadas nesta sessão: recebimento de áudio/imagem/
+documento (F), suíte de testes dos 9 cenários do prompt + entrega final
+consolidada (G).
