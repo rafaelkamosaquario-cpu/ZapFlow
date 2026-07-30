@@ -250,6 +250,13 @@ export const frotaIaToolNameSchema = z.enum([
   "calcular_custo_dia",
   "calcular_custo_veiculo_parado",
   "calcular_jornada",
+  // Corrigido na Camada 6: "gerenciar_google_calendar" existe desde a
+  // Camada 4 mas nunca tinha sido adicionado aqui — toda chamada da
+  // ferramenta de Agenda vinha reportando falha de gravação em
+  // tool_executions (ZodError silencioso, mascarado como "a ferramenta
+  // falhou" na resposta da IA) mesmo quando a ação no Google funcionava.
+  "gerenciar_google_calendar",
+  "consultar_historico",
 ]);
 
 export const toolExecutionCreateSchema = z.object({

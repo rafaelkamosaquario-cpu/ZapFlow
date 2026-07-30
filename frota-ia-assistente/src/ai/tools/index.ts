@@ -31,6 +31,7 @@ export * from "./calcular-custo-dia";
 export * from "./calcular-custo-veiculo-parado";
 export * from "./calcular-jornada";
 export * from "./gerenciar-google-calendar";
+export * from "./consultar-historico";
 
 import { ferramentaAnalisarFrete } from "./analisar-frete";
 import { ferramentaCalcularCombustivel } from "./calcular-combustivel";
@@ -44,6 +45,7 @@ import { ferramentaCalcularCustoDia } from "./calcular-custo-dia";
 import { ferramentaCalcularCustoVeiculoParado } from "./calcular-custo-veiculo-parado";
 import { ferramentaCalcularJornada } from "./calcular-jornada";
 import { ferramentaGerenciarGoogleCalendar } from "./gerenciar-google-calendar";
+import { ferramentaConsultarHistorico } from "./consultar-historico";
 import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
@@ -69,4 +71,5 @@ export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, Resu
   ferramentaCalcularCustoVeiculoParado,
   ferramentaCalcularJornada,
   ferramentaGerenciarGoogleCalendar,
+  ferramentaConsultarHistorico,
 ];

@@ -108,11 +108,52 @@ update public.profiles set is_admin = true where id = '<uuid do usuário>';
   configurada neste ambiente) — `tsc`/`lint`/`build` limpos, fluxo
   validado por leitura de código, não por execução ponta a ponta.
 
-## Fases seguintes (B a G)
+## Fase B — Conectar Google pelo WhatsApp (seção 7)
+
+Não precisou de fluxo novo — o link seguro de conexão já existia desde a
+Camada 4 (`buildSecureConnectLink`, independente de canal). O que faltava
+era a ferramenta `gerenciar_google_calendar` **devolver esse link** quando
+a Agenda não está conectada, para a IA poder repassá-lo pelo WhatsApp.
+
+- `gerenciar_google_calendar` ganhou o campo `linkConexao` no resultado,
+  preenchido em `VERIFICAR_CONEXAO` e em qualquer chamada que falhe por
+  `GoogleCalendarNotConnectedError` — só quando `isGoogleCalendarConfigured()`
+  é verdadeiro (nunca devolve um link que sabe que vai falhar).
+- Regra nova no system prompt: se a Agenda não estiver conectada, repassar
+  o `linkConexao` exatamente como veio, nunca pedir login/senha do Google
+  na conversa.
+
+**Bug real encontrado e corrigido nesta fase**: `gerenciar_google_calendar`
+nunca tinha sido adicionado ao enum Zod `frotaIaToolNameSchema`
+(`src/lib/validation/schemas.ts`) usado por `recordToolExecution` — desde
+a Camada 4, toda chamada dessa ferramenta gravava uma falha de validação
+ao tentar registrar em `tool_executions`, o que fazia o loop de tool use
+reportar a chamada como erro pra IA (`"A ferramenta falhou..."`) mesmo
+quando a ação no Google Calendar tinha funcionado. Corrigido junto com
+esta fase.
+
+## Fase E — Busca de histórico em linguagem natural (seção 10)
+
+Nova ferramenta `consultar_historico` (13ª ferramenta), mesmo padrão de
+I/O real de `gerenciar_google_calendar`: consulta `analysis_runs`
+(Camada 3, sem tabela nova) por texto livre (`ilike` em pedido do
+usuário/resumo/tipo) e período, sempre busca estruturada — nunca depende
+só da memória textual da conversa. Migration
+`add_history_search_tool_to_enum` adiciona o valor ao enum
+`frota_ia_tool_name` do Postgres (mesmo procedimento já usado para
+`gerenciar_google_calendar` na Camada 4).
+
+Resolução de datas relativas ("semana passada", "dia 20") e desambiguação
+quando há mais de um resultado ficam a cargo da IA (mesmo princípio já
+estabelecido: a ferramenta nunca interpreta linguagem natural) — regra
+adicionada ao system prompt.
+
+`tsc`, `lint` e `build` limpos após B e E.
+
+## Fases seguintes (C, D, F, G)
 
 Ainda não implementadas nesta sessão — continuam como tarefas em aberto:
-conectar Google pelo WhatsApp como ação de texto (B), busca de histórico
-em linguagem natural (E), alertas agendados (C, depende de decisão sobre
-mecanismo de cron no Railway), geração de PDF (D), recebimento de
-áudio/imagem/documento (F), suíte de testes dos 9 cenários do prompt +
-entrega final consolidada (G).
+alertas agendados (C — mecanismo escolhido: serviço de cron dentro do
+próprio Railway), geração de PDF (D), recebimento de áudio/imagem/
+documento (F), suíte de testes dos 9 cenários do prompt + entrega final
+consolidada (G).

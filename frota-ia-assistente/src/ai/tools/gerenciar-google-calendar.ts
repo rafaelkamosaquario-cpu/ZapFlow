@@ -12,6 +12,8 @@ import {
   GoogleCalendarNotConnectedError,
 } from "@/services/google/googleCalendarService";
 import type { GoogleCalendarEvent, GoogleCalendarListEntry } from "@/lib/google/calendarClient";
+import { buildSecureConnectLink } from "@/services/google/googleCalendarConnectLink";
+import { isGoogleCalendarConfigured } from "@/lib/google/config";
 
 /**
  * Ferramenta: gerenciar_google_calendar
@@ -107,6 +109,23 @@ export interface GerenciarGoogleCalendarResultado extends ResultadoFerramentaBas
   calendarios?: CalendarioGoogleResumo[];
   eventos?: EventoGoogleCalendarResumo[];
   evento?: EventoGoogleCalendarResumo;
+  /**
+   * Link seguro de conexão OAuth (Camada 4), presente quando a Agenda não
+   * está conectada. Funciona igual pelo WhatsApp ou pela web — é a IA que
+   * decide como entregar (Camada 6, seção 7: conectar Google pelo
+   * WhatsApp). Nunca peça senha do Google na conversa; sempre ofereça este link.
+   */
+  linkConexao?: string;
+}
+
+/** null quando as credenciais do Google Cloud ainda não estão configuradas — a ferramenta nunca inventa um link quebrado. */
+function linkConexaoSeDisponivel(userId: string, companyId?: string): string | undefined {
+  if (!isGoogleCalendarConfigured()) return undefined;
+  try {
+    return buildSecureConnectLink(userId, companyId ?? null);
+  } catch {
+    return undefined;
+  }
 }
 
 const ISO_COM_OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/;
@@ -171,6 +190,7 @@ async function executar(entrada: GerenciarGoogleCalendarEntrada): Promise<Gerenc
     switch (modo) {
       case "VERIFICAR_CONEXAO": {
         const status = await checkCalendarConnection(userId);
+        const linkConexao = status.connected ? undefined : linkConexaoSeDisponivel(userId, entrada.companyId);
         return {
           sucesso: true,
           modo,
@@ -180,6 +200,7 @@ async function executar(entrada: GerenciarGoogleCalendarEntrada): Promise<Gerenc
           conectado: status.connected,
           emailConta: status.email,
           calendarioPadraoId: status.defaultCalendarId,
+          linkConexao,
           mensagemResumo: status.connected
             ? `Agenda conectada (${status.email}).`
             : "Agenda Google não conectada.",
@@ -371,6 +392,7 @@ async function executar(entrada: GerenciarGoogleCalendarEntrada): Promise<Gerenc
       alertas: [alerta],
       premissas: [],
       dadosFaltantes: [],
+      linkConexao: foiDesconectado ? linkConexaoSeDisponivel(userId, entrada.companyId) : undefined,
       mensagemResumo: alerta,
     };
   }
