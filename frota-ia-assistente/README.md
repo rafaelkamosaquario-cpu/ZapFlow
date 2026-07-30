@@ -30,6 +30,12 @@ Estado atual por camada:
   mesma engine de chat da Fase 2. Documentação em
   [`docs/camada-5-whatsapp-zapi.md`](./docs/camada-5-whatsapp-zapi.md).
   Pendente da instância Z-API dedicada ao Frota IA.
+- **Camada 6 — V1 centrada no WhatsApp (em andamento, por fases)**: número
+  desconhecido no WhatsApp cria conta e faz onboarding conversacional
+  (uma pergunta por vez) sem precisar do painel. Painel web preservado no
+  código, mas atrás da flag `CUSTOMER_PANEL_ENABLED` (só admins entram na
+  V1). Diagnóstico completo, o que já está pronto e o que falta em
+  [`docs/camada-6-whatsapp-v1.md`](./docs/camada-6-whatsapp-v1.md).
 
 ## Stack
 

@@ -3,8 +3,11 @@ import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWhatsappConfig, isWhatsappConfigured } from "@/lib/whatsapp/config";
 import { sendWhatsappText } from "@/lib/whatsapp/zapiClient";
-import { buildWhatsappConnectLink } from "@/services/whatsapp/whatsappConnectLink";
-import { findChannelByExternalId } from "@/services/supabase/channelIdentityService";
+import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
+import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
+import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
+import { firstOnboardingMessage, processOnboardingMessage, type OnboardingCollectedData } from "@/ai/whatsapp/onboardingConversation";
+import { finalizeOnboarding } from "@/ai/whatsapp/finalizeOnboarding";
 import { loadCustomerContext, loadVehicleContext } from "@/ai/context/customerContext";
 import { getOrCreateOpenConversation } from "@/services/supabase/conversationService";
 import { gerarRespostaAssistente } from "@/ai/chat/gerarRespostaAssistente";
@@ -19,12 +22,12 @@ import { isUniqueViolation } from "@/lib/supabase/errors";
  * O token na query string é a validação de origem — a Z-API não assina o
  * corpo da requisição.
  *
- * Fluxo por mensagem recebida:
- * 1. número desconhecido → manda de volta um link seguro para vincular a
- *    conta (precisa já ter se cadastrado no site);
- * 2. número vinculado mas sem cadastro completo (empresa/veículo) → pede
- *    para terminar o cadastro no site;
- * 3. número vinculado e cadastro completo → mesma engine de chat da web
+ * Camada 6 (V1 centrada no WhatsApp) — fluxo por mensagem recebida:
+ * 1. número desconhecido → cria o usuário na hora (WhatsApp é a porta de
+ *    entrada, não exige painel/senha) e inicia o onboarding conversacional;
+ * 2. onboarding em andamento → processa uma pergunta por vez via
+ *    processOnboardingMessage, sem passar pela IA;
+ * 3. onboarding concluído → mesma engine de chat da web
  *    (gerarRespostaAssistente), resposta enviada de volta por texto.
  */
 
@@ -65,8 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const phoneDigits = body.phone.replace(/\D/g, "");
-  const phoneE164 = `+${phoneDigits}`;
+  const phoneE164 = toPhoneE164(body.phone);
   const textoRecebido = body.text?.message?.trim();
 
   if (!textoRecebido) {
@@ -75,36 +77,78 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const canal = await findChannelByExternalId(admin, "z_api", phoneDigits);
+  const { userId, channelId, isNew } = await resolveOrCreateUserByPhone(admin, body.phone, body.senderName);
 
-  if (!canal) {
-    const link = buildWhatsappConnectLink(phoneE164, body.senderName);
-    const { APP_URL } = getWhatsappConfig();
-    await sendWhatsappText(
-      phoneE164,
-      `Olá! Ainda não conheço este número no Frota IA. Crie sua conta em ${APP_URL} e depois abra este link, já logado, para conectar este WhatsApp à sua conta:\n\n${link}`
-    ).catch(() => {});
+  if (isNew) {
+    // resolveOrCreateUserByPhone já criou a sessão de onboarding em awaiting_name.
+    await sendWhatsappText(phoneE164, firstOnboardingMessage()).catch(() => {});
     return NextResponse.json({ ok: true });
   }
 
-  const customerContext = await loadCustomerContext(admin, canal.user_id);
+  let session = await getOnboardingSession(admin, userId);
+
+  if (!session) {
+    // Usuário anterior à Camada 6 (ex.: veio do vínculo web da Camada 5).
+    // Se já tem empresa, trata como onboarding concluído — nunca reabre o
+    // onboarding de quem já usa o Frota IA. Se não tem, inicia agora.
+    const contextoExistente = await loadCustomerContext(admin, userId);
+    if (contextoExistente.company) {
+      session = await createOnboardingSession(admin, userId, "completed");
+    } else {
+      session = await createOnboardingSession(admin, userId, "awaiting_name");
+      await sendWhatsappText(phoneE164, firstOnboardingMessage()).catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  if (session.state !== "completed") {
+    const resultado = processOnboardingMessage(
+      session.state,
+      (session.collected_data ?? {}) as OnboardingCollectedData,
+      textoRecebido
+    );
+
+    await updateOnboardingSession(admin, userId, {
+      state: resultado.nextState,
+      collectedData: resultado.collectedData as Record<string, unknown>,
+    });
+
+    if (resultado.finalize) {
+      try {
+        await finalizeOnboarding(admin, userId, resultado.collectedData);
+      } catch {
+        await sendWhatsappText(
+          phoneE164,
+          "Tive um problema ao salvar seu cadastro agora. Pode mandar novamente sua última resposta?"
+        ).catch(() => {});
+        await updateOnboardingSession(admin, userId, { state: "awaiting_primary_vehicle" });
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    await sendWhatsappText(phoneE164, resultado.reply).catch(() => {});
+    return NextResponse.json({ ok: true });
+  }
+
+  const customerContext = await loadCustomerContext(admin, userId);
 
   if (!customerContext.company) {
     await sendWhatsappText(
       phoneE164,
-      "Falta concluir seu cadastro (empresa e veículo) no site do Frota IA antes de conversar por aqui."
+      "Falta concluir seu cadastro antes de conversar por aqui. Pode me dizer seu nome para começarmos?"
     ).catch(() => {});
+    await updateOnboardingSession(admin, userId, { state: "awaiting_name" });
     return NextResponse.json({ ok: true });
   }
 
   const companyId = customerContext.company.id;
   const vehicleContext = await loadVehicleContext(admin, companyId);
-  const conversation = await getOrCreateOpenConversation(admin, companyId, canal.user_id, canal.id);
+  const conversation = await getOrCreateOpenConversation(admin, companyId, userId, channelId);
 
   try {
     const resposta = await gerarRespostaAssistente({
       client: admin,
-      userId: canal.user_id,
+      userId,
       companyId,
       conversation,
       customerContext,

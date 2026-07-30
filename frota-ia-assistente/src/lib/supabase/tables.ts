@@ -70,7 +70,12 @@ export type GoogleIntegrationUpdate = PublicTables["google_integrations"]["Updat
 export type CalendarActionLogRow = PublicTables["calendar_action_logs"]["Row"];
 export type CalendarActionLogInsert = PublicTables["calendar_action_logs"]["Insert"];
 
+export type OnboardingSessionRow = PublicTables["onboarding_sessions"]["Row"];
+export type OnboardingSessionInsert = PublicTables["onboarding_sessions"]["Insert"];
+export type OnboardingSessionUpdate = PublicTables["onboarding_sessions"]["Update"];
+
 export type CompanyMemberRole = PublicEnums["company_member_role"];
+export type OnboardingState = PublicEnums["onboarding_state"];
 export type VehicleTypeEnum = PublicEnums["vehicle_type"];
 export type FuelTypeEnum = PublicEnums["fuel_type"];
 export type TireCategoryEnum = PublicEnums["tire_category"];

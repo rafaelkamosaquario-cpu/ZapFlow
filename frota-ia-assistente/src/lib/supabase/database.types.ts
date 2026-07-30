@@ -117,57 +117,6 @@ export type Database = {
           },
         ]
       }
-      alertas: {
-        Row: {
-          acao_recomendada: string | null
-          checklist_id: number | null
-          criado_em: string | null
-          descricao: string | null
-          id: number
-          motorista_id: number | null
-          nivel: string
-          resolvido: boolean | null
-          whatsapp: string
-        }
-        Insert: {
-          acao_recomendada?: string | null
-          checklist_id?: number | null
-          criado_em?: string | null
-          descricao?: string | null
-          id?: number
-          motorista_id?: number | null
-          nivel: string
-          resolvido?: boolean | null
-          whatsapp: string
-        }
-        Update: {
-          acao_recomendada?: string | null
-          checklist_id?: number | null
-          criado_em?: string | null
-          descricao?: string | null
-          id?: number
-          motorista_id?: number | null
-          nivel?: string
-          resolvido?: boolean | null
-          whatsapp?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "alertas_checklist_id_fkey"
-            columns: ["checklist_id"]
-            isOneToOne: false
-            referencedRelation: "checklists"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "alertas_motorista_id_fkey"
-            columns: ["motorista_id"]
-            isOneToOne: false
-            referencedRelation: "motoristas"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       analysis_runs: {
         Row: {
           analysis_type: string
@@ -316,91 +265,6 @@ export type Database = {
             columns: ["google_integration_id"]
             isOneToOne: false
             referencedRelation: "google_integrations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      checklist_logs: {
-        Row: {
-          criado_em: string | null
-          data: string
-          horario_resposta: string | null
-          id: number
-          motorista_id: number
-          respondido: boolean | null
-          resposta: string | null
-          tentativas: number | null
-        }
-        Insert: {
-          criado_em?: string | null
-          data: string
-          horario_resposta?: string | null
-          id?: number
-          motorista_id: number
-          respondido?: boolean | null
-          resposta?: string | null
-          tentativas?: number | null
-        }
-        Update: {
-          criado_em?: string | null
-          data?: string
-          horario_resposta?: string | null
-          id?: number
-          motorista_id?: number
-          respondido?: boolean | null
-          resposta?: string | null
-          tentativas?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "checklist_logs_motorista_id_fkey"
-            columns: ["motorista_id"]
-            isOneToOne: false
-            referencedRelation: "motoristas"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      checklists: {
-        Row: {
-          acao_recomendada: string | null
-          classificacao: string | null
-          criado_em: string | null
-          id: number
-          mensagem_original: string
-          motorista_id: number | null
-          resposta_texto: string | null
-          resumo: string | null
-          whatsapp: string
-        }
-        Insert: {
-          acao_recomendada?: string | null
-          classificacao?: string | null
-          criado_em?: string | null
-          id?: number
-          mensagem_original: string
-          motorista_id?: number | null
-          resposta_texto?: string | null
-          resumo?: string | null
-          whatsapp: string
-        }
-        Update: {
-          acao_recomendada?: string | null
-          classificacao?: string | null
-          criado_em?: string | null
-          id?: number
-          mensagem_original?: string
-          motorista_id?: number | null
-          resposta_texto?: string | null
-          resumo?: string | null
-          whatsapp?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "checklists_motorista_id_fkey"
-            columns: ["motorista_id"]
-            isOneToOne: false
-            referencedRelation: "motoristas"
             referencedColumns: ["id"]
           },
         ]
@@ -581,24 +445,6 @@ export type Database = {
           },
         ]
       }
-      configuracoes: {
-        Row: {
-          chave: string
-          id: number
-          valor: string | null
-        }
-        Insert: {
-          chave: string
-          id?: number
-          valor?: string | null
-        }
-        Update: {
-          chave?: string
-          id?: number
-          valor?: string | null
-        }
-        Relationships: []
-      }
       conversations: {
         Row: {
           channel_id: string | null
@@ -662,33 +508,6 @@ export type Database = {
           },
         ]
       }
-      documentos: {
-        Row: {
-          criado_em: string | null
-          id: number
-          referencia: string
-          renovado: boolean | null
-          tipo: string
-          vencimento: string
-        }
-        Insert: {
-          criado_em?: string | null
-          id?: number
-          referencia: string
-          renovado?: boolean | null
-          tipo: string
-          vencimento: string
-        }
-        Update: {
-          criado_em?: string | null
-          id?: number
-          referencia?: string
-          renovado?: boolean | null
-          tipo?: string
-          vencimento?: string
-        }
-        Relationships: []
-      }
       google_integrations: {
         Row: {
           calendar_enabled: boolean
@@ -744,44 +563,6 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      manutencoes: {
-        Row: {
-          agendada: boolean | null
-          concluida: boolean | null
-          criado_em: string | null
-          id: number
-          tipo: string
-          veiculo_id: number
-          vencimento: string
-        }
-        Insert: {
-          agendada?: boolean | null
-          concluida?: boolean | null
-          criado_em?: string | null
-          id?: number
-          tipo: string
-          veiculo_id: number
-          vencimento: string
-        }
-        Update: {
-          agendada?: boolean | null
-          concluida?: boolean | null
-          criado_em?: string | null
-          id?: number
-          tipo?: string
-          veiculo_id?: number
-          vencimento?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "manutencoes_veiculo_id_fkey"
-            columns: ["veiculo_id"]
-            isOneToOne: false
-            referencedRelation: "veiculos"
             referencedColumns: ["id"]
           },
         ]
@@ -853,43 +634,32 @@ export type Database = {
           },
         ]
       }
-      motoristas: {
+      onboarding_sessions: {
         Row: {
-          ativo: boolean | null
-          criado_em: string | null
-          id: number
-          nome: string
-          veiculo_atual_id: number | null
-          veiculo_placa: string | null
-          whatsapp: string
+          channel: Database["public"]["Enums"]["channel_type"]
+          collected_data: Json
+          created_at: string
+          state: Database["public"]["Enums"]["onboarding_state"]
+          updated_at: string
+          user_id: string
         }
         Insert: {
-          ativo?: boolean | null
-          criado_em?: string | null
-          id?: number
-          nome: string
-          veiculo_atual_id?: number | null
-          veiculo_placa?: string | null
-          whatsapp: string
+          channel?: Database["public"]["Enums"]["channel_type"]
+          collected_data?: Json
+          created_at?: string
+          state?: Database["public"]["Enums"]["onboarding_state"]
+          updated_at?: string
+          user_id: string
         }
         Update: {
-          ativo?: boolean | null
-          criado_em?: string | null
-          id?: number
-          nome?: string
-          veiculo_atual_id?: number | null
-          veiculo_placa?: string | null
-          whatsapp?: string
+          channel?: Database["public"]["Enums"]["channel_type"]
+          collected_data?: Json
+          created_at?: string
+          state?: Database["public"]["Enums"]["onboarding_state"]
+          updated_at?: string
+          user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "motoristas_veiculo_atual_id_fkey"
-            columns: ["veiculo_atual_id"]
-            isOneToOne: false
-            referencedRelation: "veiculos"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -898,6 +668,7 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          is_admin: boolean
           locale: string
           onboarding_completed: boolean
           phone_e164: string | null
@@ -910,6 +681,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          is_admin?: boolean
           locale?: string
           onboarding_completed?: boolean
           phone_e164?: string | null
@@ -922,6 +694,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          is_admin?: boolean
           locale?: string
           onboarding_completed?: boolean
           phone_e164?: string | null
@@ -1404,33 +1177,6 @@ export type Database = {
           },
         ]
       }
-      veiculos: {
-        Row: {
-          ano: number | null
-          ativo: boolean | null
-          criado_em: string | null
-          id: number
-          modelo: string | null
-          placa: string
-        }
-        Insert: {
-          ano?: number | null
-          ativo?: boolean | null
-          criado_em?: string | null
-          id?: number
-          modelo?: string | null
-          placa: string
-        }
-        Update: {
-          ano?: number | null
-          ativo?: boolean | null
-          criado_em?: string | null
-          id?: number
-          modelo?: string | null
-          placa?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
@@ -1514,6 +1260,15 @@ export type Database = {
         | "error"
       message_direction: "inbound" | "outbound" | "internal"
       message_role: "user" | "assistant" | "system" | "tool"
+      onboarding_state:
+        | "not_started"
+        | "awaiting_name"
+        | "awaiting_profile"
+        | "awaiting_base_location"
+        | "awaiting_vehicle_count"
+        | "awaiting_primary_vehicle"
+        | "completed"
+        | "paused"
       route_data_source: "manual" | "google_routes" | "outro"
       run_status: "started" | "completed" | "failed" | "cancelled"
       tire_category:
@@ -1717,6 +1472,16 @@ export const Constants = {
       ],
       message_direction: ["inbound", "outbound", "internal"],
       message_role: ["user", "assistant", "system", "tool"],
+      onboarding_state: [
+        "not_started",
+        "awaiting_name",
+        "awaiting_profile",
+        "awaiting_base_location",
+        "awaiting_vehicle_count",
+        "awaiting_primary_vehicle",
+        "completed",
+        "paused",
+      ],
       route_data_source: ["manual", "google_routes", "outro"],
       run_status: ["started", "completed", "failed", "cancelled"],
       tire_category: [
@@ -1741,4 +1506,3 @@ export const Constants = {
     },
   },
 } as const
-

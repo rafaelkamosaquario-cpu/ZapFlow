@@ -1,0 +1,118 @@
+# Camada 6 — Frota IA V1 centrada no WhatsApp
+
+Implementação em fases do prompt "FROTA IA V1 CENTRADA NO WHATSAPP". Este
+documento é atualizado a cada fase concluída — a seção 0 tem o diagnóstico
+completo feito antes de qualquer alteração, como pedido no prompt.
+
+## 0. Diagnóstico da estrutura encontrada (antes de qualquer mudança)
+
+O prompt presume um conjunto de integrações "já existentes" que **não
+existem** neste repositório. Registrado aqui para não gerar confusão sobre
+o que esta fase alterou vs. o que nunca existiu:
+
+**Existe de verdade** (Camadas 1-5, sessões anteriores):
+- 11 ferramentas de cálculo puro + `gerenciar_google_calendar` (12 no
+  total) — `src/ai/tools/`
+- Supabase: `profiles`, `companies`, `company_members`, `vehicles`,
+  `user_channels`, `conversations`, `messages`, `ai_memories`,
+  `analysis_runs`, `tool_executions`, `google_integrations`,
+  `calendar_action_logs`, todas com RLS
+- Google Calendar OAuth com link seguro de conexão (Camada 4)
+- WhatsApp/Z-API: webhook de entrada, motor de resposta compartilhado com
+  a web (Camada 5)
+- Painel web com login Google + onboarding por formulário (Fase 2)
+
+**NÃO existe** (o prompt trata como pronto, mas é construção nova):
+Google Maps, rotas, pedágios, clima, ANTT, ANP, legislação, geração de
+documentos/PDF, agendador de alertas proativos, busca de histórico em
+linguagem natural como ferramenta, feature flags, onboarding conversacional
+por estados, processamento de áudio/imagem/documento recebido.
+
+Dado o tamanho real do escopo, a implementação foi dividida em fases (A a
+G) — ver tarefas no início desta sessão. Este documento cresce conforme
+cada fase é concluída e testada.
+
+## Fase A — Identidade por telefone + onboarding conversacional + feature flags
+
+### Identidade por telefone (seção 2 do prompt)
+
+`src/lib/identity/phoneNormalizer.ts` — normaliza dígitos, corrige DDI
+duplicado (`5555...` → `55...`), gera E.164. **Não usa telefone como chave
+primária**: ele só localiza o `user_id` real via `user_channels.external_user_id`
+(já existente desde a Camada 3, reaproveitado — nenhuma tabela nova para
+identidade).
+
+`src/services/supabase/userIdentityService.ts` —
+`resolveOrCreateUserByPhone`: para um número desconhecido, cria um usuário
+de verdade em `auth.users` via Admin API (`phone` + `phone_confirm: true`,
+sem e-mail/senha) — necessário porque todo o schema (RLS via `auth.uid()`,
+FKs de `companies`/`vehicles`) depende de um `auth.users.id` real. O
+número é considerado verificado de imediato (a mensagem chegou por aquele
+número na própria instância Z-API).
+
+### Onboarding conversacional (seções 3-6)
+
+Nova migration `create_onboarding_sessions`: tabela `onboarding_sessions`
+(estado explícito — `not_started` a `completed`/`paused` — em vez de
+depender do histórico de texto) + coluna `profiles.is_admin`. Nenhuma
+tabela duplicada: `onboarding_sessions.collected_data` é só rascunho até
+`completed`, quando os dados viram `companies`/`vehicles` de verdade via os
+mesmos services já usados pelo onboarding web (`createCompanyWithOwner`,
+`createVehicle` — zero duplicação de lógica).
+
+`src/ai/whatsapp/onboardingConversation.ts` — função pura, uma pergunta
+por vez: nome → perfil (autônomo/dono de frota/gestor de frota/
+transportadora/outro, mapeado para o enum `company_type` já existente) →
+cidade/UF base → quantidade de veículos → veículo principal (opcional,
+aceita "depois"). Reconhece `cancelar`, `continuar depois`/`pausar` e
+`pular` em qualquer etapa opcional.
+
+`src/ai/whatsapp/finalizeOnboarding.ts` — ao concluir, cria a empresa
+(`createCompanyWithOwner`), grava a quantidade de veículos como uma
+memória estruturada (`ai_memories`, reaproveitando a Camada 3 em vez de
+criar coluna nova) e cria o veículo principal se informado.
+
+O webhook (`src/app/api/whatsapp/webhook/route.ts`) foi reescrito para:
+número novo → cria usuário + começa onboarding; onboarding em andamento →
+processa a próxima pergunta sem passar pela IA; onboarding concluído →
+segue exatamente como antes (mesma engine de chat da Camada 5). Usuários
+que já existiam antes desta fase (vindos do vínculo web da Camada 5) e já
+têm empresa são tratados como onboarding concluído — nunca reabrimos o
+onboarding de quem já usa o Frota IA.
+
+### Feature flags (seção 14)
+
+`src/lib/featureFlags.ts` — `CUSTOMER_PANEL_ENABLED` (padrão `false` na
+V1) e `ADMIN_PANEL_ENABLED`. `src/app/page.tsx` e
+`src/app/onboarding/page.tsx` (painel web) redirecionam para `/login` se a
+flag estiver desligada e o usuário não tiver `profiles.is_admin = true`.
+**Nenhuma rota, componente ou service do painel foi removido** — só
+ganhou um gate a mais na entrada. `is_admin` nunca é setado pelo próprio
+usuário, só via SQL direto por quem administra o projeto:
+
+```sql
+update public.profiles set is_admin = true where id = '<uuid do usuário>';
+```
+
+### Limitações conhecidas desta fase
+
+- Extração de marca/modelo/ano do veículo principal é só texto livre
+  (guardado em `vehicles.notes`) — não há parsing estruturado.
+- Mensagens trocadas durante o onboarding não entram em `conversations`/
+  `messages` (essas tabelas exigem `company_id`, que só existe depois do
+  onboarding concluído) — não aparecem no histórico.
+- `pausado` → ao retomar, a pergunta é escolhida pelo que falta em
+  `collected_data`, não por um estado salvo separado do que já foi
+  respondido.
+- Não testado com tráfego real do Z-API (sem instância dedicada
+  configurada neste ambiente) — `tsc`/`lint`/`build` limpos, fluxo
+  validado por leitura de código, não por execução ponta a ponta.
+
+## Fases seguintes (B a G)
+
+Ainda não implementadas nesta sessão — continuam como tarefas em aberto:
+conectar Google pelo WhatsApp como ação de texto (B), busca de histórico
+em linguagem natural (E), alertas agendados (C, depende de decisão sobre
+mecanismo de cron no Railway), geração de PDF (D), recebimento de
+áudio/imagem/documento (F), suíte de testes dos 9 cenários do prompt +
+entrega final consolidada (G).
