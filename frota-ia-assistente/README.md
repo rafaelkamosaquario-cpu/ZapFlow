@@ -14,9 +14,10 @@ Estado atual por camada:
   [`docs/fase-2-chat-e-onboarding.md`](./docs/fase-2-chat-e-onboarding.md).
   **Não testado ponta a ponta**: faltam `ANTHROPIC_API_KEY` e as
   credenciais do Google Cloud (login e Calendar).
-- **Ferramentas internas**: 13 ferramentas em `src/ai/tools/` — 11 de
-  cálculo puro + `gerenciar_google_calendar` e `consultar_historico`
-  (integrações externas). Documentadas em `src/ai/tools/README.md`.
+- **Ferramentas internas**: 14 ferramentas em `src/ai/tools/` — 11 de
+  cálculo puro + `gerenciar_google_calendar`, `consultar_historico` e
+  `gerenciar_alerta` (integrações externas). Documentadas em
+  `src/ai/tools/README.md`.
 - **Camada 3 — Supabase (identidade, dados, memória)**: schema V1 criado e
   aplicado no projeto Supabase `frotaia`, com RLS, services e camada de
   contexto para as ferramentas. Documentação completa em

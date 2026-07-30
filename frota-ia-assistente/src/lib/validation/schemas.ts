@@ -257,6 +257,7 @@ export const frotaIaToolNameSchema = z.enum([
   // falhou" na resposta da IA) mesmo quando a ação no Google funcionava.
   "gerenciar_google_calendar",
   "consultar_historico",
+  "gerenciar_alerta",
 ]);
 
 export const toolExecutionCreateSchema = z.object({

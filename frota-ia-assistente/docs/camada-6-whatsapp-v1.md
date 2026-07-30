@@ -150,10 +150,56 @@ adicionada ao system prompt.
 
 `tsc`, `lint` e `build` limpos após B e E.
 
-## Fases seguintes (C, D, F, G)
+## Fase C — Alertas agendados (seções 8-9)
+
+Nova migration `create_scheduled_alerts`: tabela `scheduled_alerts`
+(título, categoria livre, `scheduled_for` absoluto, status
+pending/sent/cancelled/failed) — independente de `calendar_action_logs`
+(que só registra ações já feitas na Agenda) e independente de um evento
+no Google Calendar (o usuário pode ter os dois, criados separadamente,
+sem nenhum vínculo automático entre eles nesta fase).
+
+Nova ferramenta `gerenciar_alerta` (14ª ferramenta) — CRIAR/LISTAR/CANCELAR,
+mesmo princípio de nunca interpretar "daqui a 15 dias" (a IA resolve pra
+ISO absoluto antes de chamar, mesma regra de `gerenciar_google_calendar`).
+Deixa explícito ao usuário que o alerta é baseado no horário planejado,
+não em rastreamento — não há telemetria neste projeto.
+
+**Disparo real**: `src/app/api/alerts/dispatch/route.ts` — rota protegida
+por token (`ALERTS_DISPATCH_SECRET`, mesmo padrão do webhook do
+WhatsApp), busca alertas `pending` com `scheduled_for` vencido, resolve o
+número de WhatsApp do usuário (`user_channels`) e envia via
+`sendWhatsappText`. Não interpreta nada — só dispara o que já está
+resolvido no banco.
+
+### Configuração necessária no Railway (você escolheu: cron dentro do próprio Railway)
+
+1. No mesmo projeto Railway do serviço "frota-ia-assistente", clique em
+   **"+ New"** → **"Cron Job"** (ou "Empty Service" com schedule, dependendo
+   da versão da UI do Railway).
+2. **Comando**:
+   ```
+   curl -fsS "https://<seu-domínio-railway>/api/alerts/dispatch?token=$ALERTS_DISPATCH_SECRET"
+   ```
+3. **Schedule** (cron padrão): `*/5 * * * *` (a cada 5 minutos — ajuste
+   conforme a granularidade que fizer sentido).
+4. Nas **Variables** desse serviço cron, adicione `ALERTS_DISPATCH_SECRET`
+   com o **mesmo valor** configurado no serviço principal (`frota-ia-assistente`).
+5. No serviço principal, gere e configure `ALERTS_DISPATCH_SECRET`
+   (`openssl rand -base64 32`) se ainda não existir.
+
+### Limitações conhecidas desta fase
+
+- Só considera o primeiro canal de WhatsApp verificado do usuário — sem
+  suporte a múltiplos números por conta.
+- Sem retry automático: um alerta que falha ao enviar (ex.: Z-API fora do
+  ar no momento exato) fica marcado `failed` e não é reenviado sozinho.
+- Não testado com cron real neste ambiente (sem serviço de cron
+  provisionado) — a rota foi validada por leitura de código e
+  `tsc`/`lint`/`build`, não por execução ponta a ponta.
+
+## Fases seguintes (D, F, G)
 
 Ainda não implementadas nesta sessão — continuam como tarefas em aberto:
-alertas agendados (C — mecanismo escolhido: serviço de cron dentro do
-próprio Railway), geração de PDF (D), recebimento de áudio/imagem/
-documento (F), suíte de testes dos 9 cenários do prompt + entrega final
-consolidada (G).
+geração de PDF (D), recebimento de áudio/imagem/documento (F), suíte de
+testes dos 9 cenários do prompt + entrega final consolidada (G).

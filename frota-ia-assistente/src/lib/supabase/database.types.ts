@@ -799,6 +799,79 @@ export type Database = {
           },
         ]
       }
+      scheduled_alerts: {
+        Row: {
+          category: string | null
+          company_id: string
+          conversation_id: string | null
+          created_at: string
+          error_message_safe: string | null
+          id: string
+          notes: string | null
+          scheduled_for: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["scheduled_alert_status"]
+          title: string
+          updated_at: string
+          user_id: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          category?: string | null
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string
+          error_message_safe?: string | null
+          id?: string
+          notes?: string | null
+          scheduled_for: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["scheduled_alert_status"]
+          title: string
+          updated_at?: string
+          user_id: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          category?: string | null
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          error_message_safe?: string | null
+          id?: string
+          notes?: string | null
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["scheduled_alert_status"]
+          title?: string
+          updated_at?: string
+          user_id?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_alerts_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_alerts_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tool_executions: {
         Row: {
           analysis_run_id: string | null
@@ -1246,6 +1319,7 @@ export type Database = {
         | "calcular_jornada"
         | "gerenciar_google_calendar"
         | "consultar_historico"
+        | "gerenciar_alerta"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1272,6 +1346,7 @@ export type Database = {
         | "paused"
       route_data_source: "manual" | "google_routes" | "outro"
       run_status: "started" | "completed" | "failed" | "cancelled"
+      scheduled_alert_status: "pending" | "sent" | "cancelled" | "failed"
       tire_category:
         | "novo_nacional"
         | "novo_importado"
@@ -1456,6 +1531,7 @@ export const Constants = {
         "calcular_jornada",
         "gerenciar_google_calendar",
         "consultar_historico",
+        "gerenciar_alerta",
       ],
       fuel_type: [
         "diesel_s10",
@@ -1486,6 +1562,7 @@ export const Constants = {
       ],
       route_data_source: ["manual", "google_routes", "outro"],
       run_status: ["started", "completed", "failed", "cancelled"],
+      scheduled_alert_status: ["pending", "sent", "cancelled", "failed"],
       tire_category: [
         "novo_nacional",
         "novo_importado",

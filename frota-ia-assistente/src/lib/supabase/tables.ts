@@ -74,8 +74,13 @@ export type OnboardingSessionRow = PublicTables["onboarding_sessions"]["Row"];
 export type OnboardingSessionInsert = PublicTables["onboarding_sessions"]["Insert"];
 export type OnboardingSessionUpdate = PublicTables["onboarding_sessions"]["Update"];
 
+export type ScheduledAlertRow = PublicTables["scheduled_alerts"]["Row"];
+export type ScheduledAlertInsert = PublicTables["scheduled_alerts"]["Insert"];
+export type ScheduledAlertUpdate = PublicTables["scheduled_alerts"]["Update"];
+
 export type CompanyMemberRole = PublicEnums["company_member_role"];
 export type OnboardingState = PublicEnums["onboarding_state"];
+export type ScheduledAlertStatus = PublicEnums["scheduled_alert_status"];
 export type VehicleTypeEnum = PublicEnums["vehicle_type"];
 export type FuelTypeEnum = PublicEnums["fuel_type"];
 export type TireCategoryEnum = PublicEnums["tire_category"];
