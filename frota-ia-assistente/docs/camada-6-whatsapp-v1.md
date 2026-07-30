@@ -291,6 +291,53 @@ o usuário sempre recebe uma explicação clara, nunca silêncio.
 
 ## Fase G — Testes e entrega final
 
-Ver seção dedicada mais abaixo neste documento (ou a mensagem de entrega
-final da sessão) para os 9 cenários de teste do prompt original e o
-resumo consolidado de tudo que foi construído nas Fases A-F.
+`npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase
+(A a F), sempre antes do commit. Além disso, três lotes de teste
+executados de verdade nesta fase (não é papel — resultado real reproduzido
+abaixo):
+
+### 1. Máquina de estados do onboarding (`npx tsx`, 20 asserções, todas passaram)
+
+Cobre: mensagem inicial pede só o nome (uma pergunta por vez); fluxo
+completo nome → perfil → base → frota → veículo, cada resposta avançando
+o estado certo e salvando o dado certo; mapeamento de perfil livre
+("sou motorista autônomo") para o enum `company_type`; parsing de
+"Curitiba, PR" em cidade+UF; parsing de quantidade em número; pular o
+veículo principal ainda finaliza; `cancelar` pausa em qualquer etapa;
+retomar depois de pausado pula direto para a pergunta que falta (não
+reinicia do zero).
+
+### 2. Deduplicação de mensagem (SQL real contra o Supabase, dentro de uma transação com rollback — nenhum dado ficou no banco)
+
+Inseri a mesma `external_message_id` duas vezes em `messages`: a segunda
+tentativa falhou com `23505 duplicate key value violates unique
+constraint "idx_messages_external_message_id"` — exatamente o código que
+`isUniqueViolation()` reconhece no webhook para não reenviar resposta.
+Confirmado depois que zero linhas de teste ficaram no banco.
+
+### 3. Geração de PDF (Node real, não simulado)
+
+`pdf-lib` gerando um PDF de 867 bytes com cabeçalho `%PDF-` válido neste
+ambiente — ver Fase D.
+
+### Cobertura dos 9 testes obrigatórios do prompt original
+
+| # | Cenário | Status |
+|---|---|---|
+| 1 | Usuário novo → onboarding iniciado | Mensagem inicial testada (acima); criação de usuário via Admin API verificada por leitura de código, não executável sem instância Z-API real |
+| 2 | Onboarding até `completed` | **Testado de verdade** (acima) |
+| 3 | Usuário retorna, é reconhecido | Verificado por leitura de código (`session.state === 'completed'` pula onboarding) — não executado ponta a ponta |
+| 4 | Conectar Google pelo WhatsApp | Geração do link reaproveita código já testado na Camada 4; a decisão da IA de chamar a ferramenta ao ouvir "conecte minha agenda" depende de uma chamada real à Claude, não testável aqui |
+| 5 | Criar alerta | Ferramenta e rota de disparo com tipos corretos e build limpo; sem cron real neste ambiente para dispersar de verdade |
+| 6 | Buscar histórico | Lógica de busca e o fix de `analysis_runs` verificados por leitura de código; sem dado real de produção para consultar |
+| 7 | Gerar PDF | **Geração testada de verdade** (acima); envio real pela Z-API não testado |
+| 8 | Painel bloqueado com `CUSTOMER_PANEL_ENABLED=false` | Lógica compilada e presente nas rotas (`/` e `/onboarding`); não executado contra uma sessão real logada |
+| 9 | Mensagem duplicada | **Testado de verdade** (acima) |
+
+**Por que não dá pra ir além disso neste ambiente**: os testes 1, 3, 4, 5,
+6 e 8 exigem pelo menos um destes três: uma instância Z-API real enviando
+webhooks, uma chamada de verdade à Claude API decidindo qual ferramenta
+chamar, ou uma sessão de navegador autenticada contra o deploy em
+produção — nenhum dos três está disponível neste sandbox de
+desenvolvimento. Isso é consistente com a mesma limitação já registrada em
+todas as fases anteriores (Camada 3, 4, 5) desta sessão.
