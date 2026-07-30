@@ -5,10 +5,33 @@ import { construirFerramentasAnthropic, CAMPOS_DE_CONTEXTO_RESERVADOS } from "@/
 import { construirSystemPrompt } from "@/lib/anthropic/systemPrompt";
 import { saveToolExecution, type CustomerContext, type VehicleContext } from "@/ai/context/customerContext";
 import { appendMessage, listMessages } from "@/services/supabase/conversationService";
+import { startAnalysisRun, completeAnalysisRun, failAnalysisRun } from "@/services/supabase/analysisHistoryService";
 import { FERRAMENTAS_FROTA_IA } from "@/ai/tools";
 import { truncate } from "@/lib/utils";
 import type { SupabaseDbClient } from "@/services/supabase/types";
 import type { ConversationRow, FrotaIaToolName, MessageInsert, MessageRow } from "@/lib/supabase/tables";
+import type { ResultadoFerramentaBase } from "@/ai/tools/types";
+
+/**
+ * As 11 ferramentas de cálculo puro viram um registro em analysis_runs
+ * (Camada 3) — as ferramentas de integração (Agenda, alertas, histórico)
+ * não são "análises", não geram linha aqui. Sem isso, consultar_historico
+ * (Camada 6, Fase E) nunca encontraria nada: nada escrevia em
+ * analysis_runs antes desta correção.
+ */
+const FERRAMENTAS_DE_ANALISE = new Set<string>([
+  "analisar_frete",
+  "calcular_combustivel",
+  "calcular_cpk",
+  "comparar_pneus",
+  "calcular_custo_viagem",
+  "calcular_margem",
+  "calcular_valor_minimo_frete",
+  "calcular_receita_km",
+  "calcular_custo_dia",
+  "calcular_custo_veiculo_parado",
+  "calcular_jornada",
+]);
 
 /**
  * Motor de resposta do Frota IA (Fase 2): monta o histórico, chama a Claude
@@ -125,13 +148,36 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
         conversationId: conversation.id,
       };
 
+      const ehAnalise = FERRAMENTAS_DE_ANALISE.has(bloco.name);
+      const analysisRunId = ehAnalise
+        ? await startAnalysisRun(client, companyId, {
+            userId,
+            vehicleId: vehicleContext.vehicle?.id,
+            conversationId: conversation.id,
+            analysisType: bloco.name,
+            userRequest: mensagemUsuario,
+            inputSnapshot: entradaFinal,
+          })
+            .then((run) => run.id)
+            .catch(() => undefined)
+        : undefined;
+
       try {
         const resultado = await saveToolExecution(
           client,
           companyId,
-          { userId, toolName: bloco.name as FrotaIaToolName, inputData: entradaFinal, conversationId: conversation.id },
+          { userId, toolName: bloco.name as FrotaIaToolName, inputData: entradaFinal, conversationId: conversation.id, analysisRunId },
           () => ferramenta.executar(entradaFinal as never)
         );
+
+        if (analysisRunId) {
+          const resultadoBase = resultado as ResultadoFerramentaBase;
+          if (resultadoBase.sucesso) {
+            await completeAnalysisRun(client, analysisRunId, resultadoBase.mensagemResumo, { ...resultadoBase }).catch(() => {});
+          } else {
+            await failAnalysisRun(client, analysisRunId, "TOOL_FAILURE", resultadoBase.mensagemResumo).catch(() => {});
+          }
+        }
 
         resultadosFerramentas.push({
           type: "tool_result",
@@ -140,6 +186,9 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
           is_error: !resultado.sucesso,
         });
       } catch {
+        if (analysisRunId) {
+          await failAnalysisRun(client, analysisRunId, "EXECUTION_ERROR", "A ferramenta falhou ao processar os dados recebidos.").catch(() => {});
+        }
         resultadosFerramentas.push({
           type: "tool_result",
           tool_use_id: bloco.id,
