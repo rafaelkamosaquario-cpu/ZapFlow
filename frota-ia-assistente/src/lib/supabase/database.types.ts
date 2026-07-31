@@ -1465,6 +1465,7 @@ export type Database = {
         | "verificar_piso_minimo_antt"
         | "consultar_rota"
         | "registrar_despesa"
+        | "gerenciar_veiculo"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1695,6 +1696,7 @@ export const Constants = {
         "verificar_piso_minimo_antt",
         "consultar_rota",
         "registrar_despesa",
+        "gerenciar_veiculo",
       ],
       fuel_type: [
         "diesel_s10",

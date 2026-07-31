@@ -68,9 +68,16 @@ export async function createVehicle(
   return data;
 }
 
+/**
+ * `companyId` é filtro obrigatório (não só `id`) — mesmo princípio de
+ * `gerenciar_alerta.cancelAlert`: nunca confiar só num id vindo do modelo
+ * (via `registrar_veiculo`/`gerenciar_veiculo`) sem escopar pela empresa do
+ * contexto, mesmo usando o client admin (sem RLS).
+ */
 export async function updateVehicle(
   client: SupabaseDbClient,
   vehicleId: string,
+  companyId: string,
   userId: string,
   input: unknown
 ): Promise<VehicleRow> {
@@ -94,6 +101,26 @@ export async function updateVehicle(
       updated_by: userId,
     })
     .eq("id", vehicleId)
+    .eq("company_id", companyId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/** O trigger ensure_single_default_vehicle (migration Camada 3) já garante no máximo um padrão por empresa. */
+export async function setDefaultVehicle(
+  client: SupabaseDbClient,
+  vehicleId: string,
+  companyId: string,
+  userId: string
+): Promise<VehicleRow> {
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ is_default: true, updated_by: userId })
+    .eq("id", vehicleId)
+    .eq("company_id", companyId)
     .select("*")
     .single();
 
