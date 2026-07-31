@@ -12,13 +12,19 @@ import type { VehicleRow, VehicleTypeEnum, FuelTypeEnum, TireCategoryEnum, Vehic
  * vehicle_cost_profiles, vehicle_tire_profiles), mesmo padrão de
  * `gerenciar_alerta`/`registrar_despesa`.
  *
- * Fecha duas lacunas reais: (1) o onboarding só grava o veículo principal
- * como texto livre (name/notes) — nenhum campo estruturado (tipo,
- * combustível, consumo etc.) era preenchido automaticamente, e nenhuma
- * ferramenta existia pra IA gravar isso depois, a partir do que o cliente
- * conta na própria conversa; (2) `createVehicle` só era chamado a partir do
- * onboarding (WhatsApp ou web) — não existia NENHUM caminho pra adicionar um
- * segundo veículo à mesma empresa. CRIAR aqui não tem limite de quantidade.
+ * Fecha a lacuna real: o onboarding só grava o veículo principal como texto
+ * livre (name/notes) — nenhum campo estruturado (tipo, combustível, consumo
+ * etc.) era preenchido automaticamente, e nenhuma ferramenta existia pra IA
+ * completar/corrigir isso depois, a partir do que o cliente conta na própria
+ * conversa.
+ *
+ * Regra de produto desta V1: no máximo 1 veículo ATIVO por conta/empresa
+ * (motorista autônomo / operação pequena) — CRIAR verifica isso antes de
+ * escrever (ver `listVehicles` abaixo) e o índice único parcial
+ * `vehicles_one_active_per_company_idx` (migration 20260731120000) garante o
+ * mesmo em qualquer caminho de escrita, não só por esta ferramenta. Quando já
+ * existe um veículo, o caminho certo é ATUALIZAR (ou DEFINIR_CUSTO/
+ * DEFINIR_PNEU) — nunca CRIAR outro.
  *
  * `vehicleId` sempre é verificado contra `companyId` antes de qualquer
  * escrita (ver `verificarPropriedade`) — nunca confia soh no id que o
@@ -191,6 +197,13 @@ async function executar(entrada: GerenciarVeiculoEntrada): Promise<GerenciarVeic
     if (modo === "CRIAR") {
       if (!entrada.nome && !entrada.placa) {
         return respostaFalha(modo, ["Preciso de ao menos um nome/apelido ou a placa para cadastrar o veículo."], ["nome", "placa"]);
+      }
+
+      const veiculosExistentes = await listVehicles(admin, companyId);
+      if (veiculosExistentes.length > 0) {
+        return respostaFalha(modo, [
+          "Esta conta já tem um veículo cadastrado — nesta versão só é permitido 1 veículo por conta. Use ATUALIZAR para corrigir/completar os dados dele, em vez de cadastrar outro.",
+        ]);
       }
 
       const criado = await createVehicle(admin, companyId, userId, {
@@ -398,7 +411,7 @@ export const ferramentaGerenciarVeiculo: DefinicaoFerramenta<GerenciarVeiculoEnt
   nome: "gerenciar_veiculo",
   descricao: "Cadastra, lista e atualiza veículos da empresa (dados básicos, perfil de custo e perfil de pneu) a partir do que o cliente conta na conversa.",
   objetivo:
-    "Transformar dado de veículo mencionado na conversa (tipo, combustível, consumo, placa, custos, pneu) num registro estruturado reaproveitável pelas outras ferramentas, em vez de se perder a cada conversa nova. CRIAR não tem limite de quantidade — a empresa pode ter mais de um veículo. Nunca inventa um valor não informado pelo usuário.",
+    "Transformar dado de veículo mencionado na conversa (tipo, combustível, consumo, placa, custos, pneu) num registro estruturado reaproveitável pelas outras ferramentas, em vez de se perder a cada conversa nova. Nesta V1, cada conta tem no máximo 1 veículo — CRIAR só deve ser usado quando a conta ainda não tiver nenhum (LISTAR confirma); com um já existente, use ATUALIZAR/DEFINIR_CUSTO/DEFINIR_PNEU. Nunca inventa um valor não informado pelo usuário.",
   parametros: PARAMETROS,
   executar,
 };
