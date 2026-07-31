@@ -531,6 +531,24 @@ exata da resolução vigente, depois ler essa URL por completo com
   própria ferramenta da Claude) — por isso depende de `web_search` rodar
   primeiro; não funciona como ferramenta isolada.
 
+## Fase M — Estender o fluxo busca→leitura completa pra ANP/legislação
+
+Testando com tráfego real: legislação (Lei do Motorista) funcionou de
+primeira só com `web_search`. ANP (preço do diesel) teve o mesmo padrão
+já visto na ANTT — a IA não inventou o preço da semana atual (achou só
+dados de março/maio, disse isso claramente e recomendou o link oficial),
+mas não entregou o dado mais recente sozinha.
+
+**Correção**: só texto no system prompt, nenhuma ferramenta nova — a
+`web_fetch` já estava disponível pra todos os domínios oficiais desde a
+Fase L, só faltava instruir explicitamente esse mesmo fluxo (buscar
+primeiro, `web_fetch` na página mais relevante se a busca só trouxer
+resumo/dado desatingido) também pra ANP/legislação, não só pra ANTT.
+
+### Limitações conhecidas desta fase
+
+- Não retestado com tráfego real após esta correção específica.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase
