@@ -260,6 +260,7 @@ export const frotaIaToolNameSchema = z.enum([
   "gerenciar_alerta",
   "gerar_documento",
   "verificar_piso_minimo_antt",
+  "consultar_rota",
 ]);
 
 export const toolExecutionCreateSchema = z.object({

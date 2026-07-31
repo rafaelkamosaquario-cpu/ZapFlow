@@ -35,6 +35,7 @@ export * from "./consultar-historico";
 export * from "./gerenciar-alerta";
 export * from "./gerar-documento";
 export * from "./verificar-piso-minimo-antt";
+export * from "./consultar-rota";
 
 import { ferramentaAnalisarFrete } from "./analisar-frete";
 import { ferramentaCalcularCombustivel } from "./calcular-combustivel";
@@ -52,6 +53,7 @@ import { ferramentaConsultarHistorico } from "./consultar-historico";
 import { ferramentaGerenciarAlerta } from "./gerenciar-alerta";
 import { ferramentaGerarDocumento } from "./gerar-documento";
 import { ferramentaVerificarPisoMinimoAntt } from "./verificar-piso-minimo-antt";
+import { ferramentaConsultarRota } from "./consultar-rota";
 import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
@@ -81,4 +83,5 @@ export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, Resu
   ferramentaGerenciarAlerta,
   ferramentaGerarDocumento,
   ferramentaVerificarPisoMinimoAntt,
+  ferramentaConsultarRota,
 ];

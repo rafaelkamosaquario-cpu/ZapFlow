@@ -394,6 +394,61 @@ Claude API.
 - Google Maps/Routes (item 2), pedágios/Maplink (item 3) continuam fora de
   escopo — não implementados nesta fase, por decisão do Rafael.
 
+## Fase J — Google Maps Platform (Geocoding API + Routes API)
+
+Implementa o item 2 da checklist de integrações do Rafael (ver memória do
+projeto). Diferente do Google Calendar (Camada 4, OAuth por cliente), usa
+uma **chave de API única do servidor** (`GOOGLE_MAPS_API_KEY`) — não
+depende de nenhum login/autorização do cliente. Custo confirmado antes de
+implementar: 10.000 chamadas grátis/mês por API (Geocoding e Routes),
+depois US$5/1000 até 100k.
+
+- **`src/lib/google/mapsConfig.ts`** — mesmo padrão de `config.ts`
+  (Calendar): `isGoogleMapsConfigured()`/`getGoogleMapsConfig()`, nunca
+  vaza valor de variável em erro.
+- **`src/lib/google/mapsClient.ts`** — cliente mínimo via fetch direto
+  (sem SDK), com duas funções: `geocodificarEndereco` (Geocoding API,
+  devolve `null` em `ZERO_RESULTS` — não é erro, é resultado válido de
+  "não achei") e `calcularRota` (Routes API `computeRoutes`, sempre com
+  coordenadas — nunca endereço em texto direto pra Routes, porque o
+  formato de campo `address` daquela API não foi verificado contra a
+  documentação oficial antes de implementar).
+- **Nova ferramenta `consultar_rota`** (17ª ferramenta,
+  `src/ai/tools/consultar-rota.ts`) — ferramenta de integração (I/O,
+  `executar` assíncrona, mesmo padrão de `gerenciar_google_calendar`).
+  Modos: `GEOCODIFICAR_ENDERECO` (localizar/confirmar um endereço) e
+  `CALCULAR_DISTANCIA_ROTA` (geocodifica origem e destino, depois calcula
+  distância/duração). Alimenta `distanciaKm` nas outras ferramentas
+  (`calcular_custo_viagem`, `analisar_frete`, `verificar_piso_minimo_antt`
+  etc.) sem o motorista precisar informar o km manualmente.
+- `consultar_rota` adicionado ao enum `frota_ia_tool_name` (migration) e
+  ao Zod `frotaIaToolNameSchema`. **Não** entra em `FERRAMENTAS_DE_ANALISE`
+  (é consulta/utilidade, não uma análise financeira — mesmo tratamento de
+  `gerenciar_google_calendar`/`consultar_historico`).
+- System prompt atualizado: usar `consultar_rota` antes de pedir distância
+  manualmente quando o usuário informar origem/destino em texto; se a
+  ferramenta falhar (endereço não encontrado ou integração não
+  configurada), pedir a distância direto ao usuário — nunca estimar de
+  memória geográfica.
+
+### Limitações conhecidas desta fase
+
+- Não testado com chamada real à Google Maps Platform neste ambiente
+  (`GOOGLE_MAPS_API_KEY` pendente de configuração) — `tsc`/`lint`/`build`
+  limpos, formato de request/response da Geocoding API e da Routes API
+  (`computeRoutes`) confirmado contra a documentação oficial do Google,
+  não por execução real.
+- Rota calculada é a sugestão padrão do Google Maps para veículos de
+  passeio — não considera restrições específicas de caminhão (altura,
+  peso, rotas proibidas). Isso já vem explicitado em `limitacoes` no
+  resultado da ferramenta, para a IA repassar ao usuário.
+- Item 3 (pedágio, Maplink) continua bloqueado — precisa de uma rota
+  calculada (polyline) como entrada, que esta fase entrega só como
+  distância/duração agregada, não como geometria de rota. Se/quando o
+  item 3 avançar, `calcularRota` provavelmente precisa devolver também
+  `polyline.encodedPolyline` (já suportado pela Routes API, só não pedido
+  no fieldMask atual).
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase
