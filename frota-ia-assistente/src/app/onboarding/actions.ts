@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createCompanyWithOwner } from "@/services/supabase/companyService";
 import { createVehicle } from "@/services/supabase/vehicleService";
 import { loadCustomerContext } from "@/ai/context/customerContext";
@@ -10,6 +11,17 @@ export interface OnboardingActionState {
   error?: string;
 }
 
+/**
+ * Escreve com o client admin (mesmo padrão do onboarding via WhatsApp em
+ * finalizeOnboarding.ts) — não com o client de sessão do navegador. O
+ * insert de `companies`/`vehicles` pela sessão do usuário estava sendo
+ * rejeitado pela policy de RLS mesmo com `auth.getUser()` confirmando login
+ * válido logo antes (auth.uid() não chegava resolvido no momento do
+ * insert via Postgrest, causa raiz não identificada com certeza). A
+ * checagem `getUser()` abaixo continua sendo o controle de acesso — só
+ * quem está logado chega a chamar esta action; o client admin só evita o
+ * bug de propagação de sessão na escrita em si.
+ */
 export async function createCompanyAction(
   _prevState: OnboardingActionState,
   formData: FormData
@@ -26,21 +38,14 @@ export async function createCompanyAction(
   }
 
   try {
-    await createCompanyWithOwner(supabase, data.user.id, {
+    const admin = createAdminClient();
+    await createCompanyWithOwner(admin, data.user.id, {
       name,
       companyType: companyType as "autonomo" | "transportadora" | "embarcador" | "outro",
     });
   } catch (err) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const jwtPayload = sessionData.session
-      ? JSON.parse(Buffer.from(sessionData.session.access_token.split(".")[1], "base64").toString("utf8"))
-      : null;
     console.error("[onboarding] falha ao criar empresa", {
       userId: data.user.id,
-      hasSession: Boolean(sessionData.session),
-      jwtRole: jwtPayload?.role,
-      jwtSub: jwtPayload?.sub,
-      jwtAud: jwtPayload?.aud,
       error: err instanceof Error ? { name: err.name, message: err.message } : err,
     });
     return { error: "Não foi possível salvar a empresa. Tente novamente." };
@@ -73,7 +78,8 @@ export async function createVehicleAction(
   }
 
   try {
-    await createVehicle(supabase, context.company.id, data.user.id, {
+    const admin = createAdminClient();
+    await createVehicle(admin, context.company.id, data.user.id, {
       name: name || undefined,
       plate: plate || undefined,
       vehicleType,
