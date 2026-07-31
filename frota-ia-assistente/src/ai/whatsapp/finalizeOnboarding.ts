@@ -39,6 +39,28 @@ export async function finalizeOnboarding(
     });
   }
 
+  if (collectedData.region) {
+    await saveMemory(admin, company.id, userId, {
+      memoryType: "operational",
+      key: "operating_region",
+      valueJson: { region: collectedData.region },
+      summary: `Região de atuação informada no onboarding: ${collectedData.region}.`,
+      sourceType: "user_explicit",
+      confirmedByUser: true,
+    });
+  }
+
+  if (collectedData.hasFixedRoute !== undefined) {
+    await saveMemory(admin, company.id, userId, {
+      memoryType: "operational",
+      key: "has_fixed_route",
+      valueJson: { hasFixedRoute: collectedData.hasFixedRoute },
+      summary: `Rota fixa informada no onboarding: ${collectedData.hasFixedRoute ? "sim" : "não"}.`,
+      sourceType: "user_explicit",
+      confirmedByUser: true,
+    });
+  }
+
   if (collectedData.primaryVehicleRaw && !collectedData.primaryVehicleSkipped) {
     await createVehicle(admin, company.id, userId, {
       name: truncate(collectedData.primaryVehicleRaw, 120),

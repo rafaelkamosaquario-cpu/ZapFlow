@@ -3,12 +3,12 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWhatsappConfig, isWhatsappConfigured } from "@/lib/whatsapp/config";
-import { sendWhatsappText } from "@/lib/whatsapp/zapiClient";
+import { sendWhatsappText, sendWhatsappOptionList, sendWhatsappButtons } from "@/lib/whatsapp/zapiClient";
 import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
-import { firstOnboardingMessage, processOnboardingMessage, type OnboardingCollectedData } from "@/ai/whatsapp/onboardingConversation";
+import { firstOnboardingMessage, processOnboardingMessage, type OnboardingCollectedData, type OnboardingReply } from "@/ai/whatsapp/onboardingConversation";
 import { finalizeOnboarding } from "@/ai/whatsapp/finalizeOnboarding";
 import { loadCustomerContext, loadVehicleContext } from "@/ai/context/customerContext";
 import { getOrCreateOpenConversation, appendMessage } from "@/services/supabase/conversationService";
@@ -49,6 +49,8 @@ interface ZApiWebhookBody {
   audio?: { audioUrl?: string; mimeType?: string };
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
   contact?: { displayName?: string; vcard?: string };
+  listResponseMessage?: { selectedRowId?: string; title?: string; message?: string };
+  buttonsResponseMessage?: { buttonId?: string; message?: string };
 }
 
 const TIPOS_IMAGEM_SUPORTADOS = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -57,6 +59,29 @@ function tokensMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
   return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Resolve a entrada do onboarding a partir do que o WhatsApp mandou: toque
+ * numa lista (`listResponseMessage.selectedRowId`), toque num botão
+ * (`buttonsResponseMessage.buttonId`) ou texto livre — nessa ordem de
+ * prioridade, já que uma mesma mensagem nunca traz mais de um desses tipos.
+ */
+function resolverEntradaOnboarding(body: ZApiWebhookBody): string | undefined {
+  return body.listResponseMessage?.selectedRowId ?? body.buttonsResponseMessage?.buttonId ?? body.text?.message?.trim();
+}
+
+/** Envia a `reply` estruturada do onboarding usando o método certo da Z-API conforme o `kind`. */
+async function enviarRespostaOnboarding(phoneE164: string, reply: OnboardingReply): Promise<void> {
+  if (reply.kind === "list") {
+    await sendWhatsappOptionList(phoneE164, reply.text, reply.title, reply.buttonLabel, reply.options);
+    return;
+  }
+  if (reply.kind === "buttons") {
+    await sendWhatsappButtons(phoneE164, reply.text, reply.options);
+    return;
+  }
+  await sendWhatsappText(phoneE164, reply.text);
 }
 
 function extrairTelefoneDoVcard(vcard?: string): string | null {
@@ -89,9 +114,10 @@ export async function POST(request: Request) {
 
   const phoneE164 = toPhoneE164(body.phone);
   const textoDireto = body.text?.message?.trim();
+  const entradaOnboarding = resolverEntradaOnboarding(body);
 
   // Callback sem nenhum tipo reconhecido (ex.: status de entrega/leitura) — ignora.
-  if (!textoDireto && !body.image && !body.document && !body.audio && !body.location && !body.contact) {
+  if (!entradaOnboarding && !body.image && !body.document && !body.audio && !body.location && !body.contact) {
     return NextResponse.json({ ok: true });
   }
 
@@ -121,15 +147,15 @@ export async function POST(request: Request) {
   }
 
   if (session.state !== "completed") {
-    if (!textoDireto) {
-      await sendWhatsappText(phoneE164, "Por enquanto, durante o cadastro, preciso que você responda em texto.").catch(() => {});
+    if (!entradaOnboarding) {
+      await sendWhatsappText(phoneE164, "Por enquanto, durante o cadastro, preciso que você responda em texto ou toque numa das opções.").catch(() => {});
       return NextResponse.json({ ok: true });
     }
 
     const resultado = processOnboardingMessage(
       session.state,
       (session.collected_data ?? {}) as OnboardingCollectedData,
-      textoDireto
+      entradaOnboarding
     );
 
     await updateOnboardingSession(admin, userId, {
@@ -150,7 +176,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await sendWhatsappText(phoneE164, resultado.reply).catch(() => {});
+    await enviarRespostaOnboarding(phoneE164, resultado.reply).catch(() => {});
     return NextResponse.json({ ok: true });
   }
 

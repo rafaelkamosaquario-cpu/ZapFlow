@@ -289,6 +289,58 @@ o usuário sempre recebe uma explicação clara, nunca silêncio.
   todas as fases anteriores) — validado por `tsc`/`lint`/`build` e leitura
   de código.
 
+## Fase H — Onboarding com listas/botões nativos e novas perguntas (região, rota fixa)
+
+Redesenho do roteiro de onboarding (identidade permanece obrigatória e
+curta; detalhe de configuração de veículo/implemento continua fora daqui —
+progressivo, perguntado pela IA sob demanda quando uma ferramenta precisar,
+não implementado nesta fase):
+
+- **Novo enum** `onboarding_state`: `awaiting_region` e `awaiting_fixed_route`,
+  entre `awaiting_base_location` e `awaiting_vehicle_count` (migration
+  `add_region_fixed_route_to_onboarding_state`).
+- **Pergunta de perfil** (`awaiting_profile`) deixou de aceitar só texto
+  livre: agora envia uma **lista nativa do WhatsApp** (`sendWhatsappOptionList`,
+  endpoint `send-option-list` da Z-API) com 5 opções (motorista autônomo,
+  apenas motorista, dono de empresa, gestor de frota, transportador). Texto
+  livre continua funcionando como *fallback* (`parseCompanyType` primeiro
+  tenta casar pelo `id` da opção, depois cai na heurística de texto de
+  sempre) — importante para quem responde por engano em texto em vez de
+  tocar na lista.
+- **Pergunta de rota fixa** (`awaiting_fixed_route`, nova): **botões nativos**
+  Sim/Não (`sendWhatsappButtons`, endpoint `send-button-actions`, tipo
+  `REPLY`), mesmo princípio de fallback em texto (`parseFixedRoute`).
+- **Região de atuação** (`awaiting_region`, nova): texto livre, sem lista —
+  a variação de resposta (estados, corredores, "Sudeste todo") não cabe bem
+  numa lista fechada de até 10 itens.
+- `zapiClient.ts` ganhou `sendWhatsappOptionList`/`sendWhatsappButtons`. O
+  webhook resolve a entrada do onboarding em ordem de prioridade:
+  `listResponseMessage.selectedRowId` → `buttonsResponseMessage.buttonId` →
+  `text.message` (`resolverEntradaOnboarding`), e envia a `reply` (agora um
+  tipo estruturado `OnboardingReply` com `kind: "text" | "list" | "buttons"`,
+  não mais uma string solta) pelo método certo (`enviarRespostaOnboarding`).
+- **Região** e **rota fixa** viram `ai_memories` estruturadas
+  (`operating_region`, `has_fixed_route`) em `finalizeOnboarding.ts` — mesmo
+  padrão já usado para `fleet_vehicle_count`, nenhuma coluna nova em
+  `companies`.
+- **Mensagem de conclusão** reforçada com exemplos concretos de uso
+  (incluindo lembrete/Agenda), para tornar a integração com Google Calendar
+  descobrível sem forçar a conexão durante o cadastro — a lógica de
+  conexão em si (reativa, só quando a IA precisa mesmo da ferramenta)
+  não mudou.
+
+### Limitações conhecidas desta fase
+
+- Não testado com tráfego real de lista/botão via Z-API neste ambiente
+  (mesma limitação de todas as fases anteriores) — `tsc`/`lint`/`build`
+  limpos, formato de payload de envio e de webhook confirmado contra a
+  documentação oficial da Z-API, não contra uma resposta real de usuário.
+- Configuração detalhada de veículo (tipo: toco/truck/bitruck/cavalo
+  mecânico + implemento, quando aplicável) **não foi implementada** — fica
+  como próximo passo, disparado pela IA quando uma ferramenta que precisa
+  desse dado for usada (ex.: comparar pneus, calcular CPK), não durante o
+  onboarding.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase

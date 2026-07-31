@@ -1,9 +1,4 @@
-// Gerado por: npx supabase gen types typescript --project-id kqquswdrtcqicyfcvvuv --schema public
-// (aplicado via ferramenta MCP generate_typescript_types, equivalente funcional do comando acima
-// — a conexao direta ao Postgres do projeto remoto nao e alcancavel a partir deste sandbox).
-// NAO EDITAR A MAO. Regerar apos qualquer nova migration.
-
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1402,6 +1397,8 @@ export type Database = {
         | "awaiting_name"
         | "awaiting_profile"
         | "awaiting_base_location"
+        | "awaiting_region"
+        | "awaiting_fixed_route"
         | "awaiting_vehicle_count"
         | "awaiting_primary_vehicle"
         | "completed"
@@ -1618,6 +1615,8 @@ export const Constants = {
         "awaiting_name",
         "awaiting_profile",
         "awaiting_base_location",
+        "awaiting_region",
+        "awaiting_fixed_route",
         "awaiting_vehicle_count",
         "awaiting_primary_vehicle",
         "completed",
