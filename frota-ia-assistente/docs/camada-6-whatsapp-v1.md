@@ -495,6 +495,42 @@ que vale só para evitar uma segunda chave de API.
 - Sem retry automático em caso de falha de transcrição — o usuário
   precisa reenviar manualmente.
 
+## Fase L — `web_fetch` para leitura completa de fontes oficiais (correção pós-teste real)
+
+Testando `verificar_piso_minimo_antt` com tráfego real do Rafael (mensagem
+pedindo o piso mínimo pra carga geral, 5 eixos), `web_search` sozinha não
+conseguiu extrair o CCD/CC — trouxe resumo/estrutura de outras
+combinações, não o valor exato pedido. A IA reagiu corretamente (não
+inventou o número, pediu confirmação ao usuário), mas isso não entrega o
+valor automaticamente como pretendido.
+
+**Diagnóstico confirmado manualmente**: a página da Resolução ANTT em
+vigor (`anttlegis.antt.gov.br`) **tem** a tabela completa de coeficientes
+embutida como texto — `calculadorafrete.antt.gov.br` (a calculadora
+interativa) é que provavelmente não é fetchável por ser um app
+JavaScript. `web_search` só devolve resumo/trecho da página, insuficiente
+pra ler um valor de dentro de uma tabela grande.
+
+**Correção**: nova ferramenta `construirFerramentaLeituraOficial()`
+(`web_fetch_20260209`, mesma lista de domínios oficiais,
+`max_content_tokens: 8000`) adicionada ao array de `tools` em
+`gerarRespostaAssistente.ts`, ao lado de `web_search`. Fluxo agora
+esperado (reforçado no system prompt): buscar primeiro pra achar a URL
+exata da resolução vigente, depois ler essa URL por completo com
+`web_fetch` antes de extrair o CCD/CC e chamar
+`verificar_piso_minimo_antt`.
+
+### Limitações conhecidas desta fase
+
+- Não retestado com tráfego real após esta correção — `tsc`/`lint`/
+  `build` limpos, e o achado de que anttlegis.antt.gov.br tem a tabela em
+  texto foi confirmado manualmente via WebFetch nesta sessão, mas o fluxo
+  busca→leitura completa dentro do loop de tool use da produção ainda não
+  foi validado ponta a ponta.
+- `web_fetch` só lê uma URL que já apareceu na conversa (limitação da
+  própria ferramenta da Claude) — por isso depende de `web_search` rodar
+  primeiro; não funciona como ferramenta isolada.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase

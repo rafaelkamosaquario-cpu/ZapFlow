@@ -1,7 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import { createAnthropicClient, CLAUDE_MODEL } from "@/lib/anthropic/client";
-import { construirFerramentasAnthropic, construirFerramentaBuscaOficial, CAMPOS_DE_CONTEXTO_RESERVADOS } from "@/lib/anthropic/tools";
+import { construirFerramentasAnthropic, construirFerramentaBuscaOficial, construirFerramentaLeituraOficial, CAMPOS_DE_CONTEXTO_RESERVADOS } from "@/lib/anthropic/tools";
 import { construirSystemPrompt } from "@/lib/anthropic/systemPrompt";
 import { saveToolExecution, type CustomerContext, type VehicleContext } from "@/ai/context/customerContext";
 import { appendMessage, listMessages } from "@/services/supabase/conversationService";
@@ -112,7 +112,7 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
 
   const anthropic = createAnthropicClient();
   const system = construirSystemPrompt(customerContext, vehicleContext, new Date());
-  const tools = [...construirFerramentasAnthropic(), construirFerramentaBuscaOficial()];
+  const tools = [...construirFerramentasAnthropic(), construirFerramentaBuscaOficial(), construirFerramentaLeituraOficial()];
 
   let textoFinal = "";
 

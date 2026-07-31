@@ -108,3 +108,23 @@ export function construirFerramentaBuscaOficial(): Anthropic.WebSearchTool202602
     allowed_domains: DOMINIOS_OFICIAIS,
   };
 }
+
+/**
+ * Ferramenta de leitura de página completa (server-side, nativa da Claude)
+ * — complementa a busca. `web_search` só devolve resumo/trecho dos
+ * resultados, o que não é suficiente para extrair um valor numérico exato
+ * de dentro de uma tabela (ex.: coeficiente CCD/CC de uma resolução ANTT).
+ * `web_fetch` só consegue ler uma URL que já apareceu na conversa — por
+ * isso o fluxo esperado é sempre buscar primeiro (achar a página da
+ * resolução) e só então ler ela por completo com esta ferramenta, nunca
+ * usada isolada. Mesma lista de domínios oficiais da busca.
+ */
+export function construirFerramentaLeituraOficial(): Anthropic.WebFetchTool20260209 {
+  return {
+    type: "web_fetch_20260209",
+    name: "web_fetch",
+    max_uses: 3,
+    allowed_domains: DOMINIOS_OFICIAIS,
+    max_content_tokens: 8000,
+  };
+}

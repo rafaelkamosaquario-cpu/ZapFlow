@@ -2396,9 +2396,25 @@ esse fluxo.
 
 ### Limitações conhecidas
 
-- Não testado com busca real neste ambiente (mesma limitação de todas as
-  integrações externas do projeto) — `tsc`/`lint`/`build` limpos, formato
-  do parâmetro confirmado contra a documentação oficial da Claude API.
 - Lista de domínios mantida manualmente — se a ANTT/ANP mudar de domínio
   ou criar um subdomínio novo relevante, precisa atualizar
   `DOMINIOS_OFICIAIS` manualmente.
+
+### Achado real em teste (2026-07-31) e correção: `web_fetch`
+
+Testando `verificar_piso_minimo_antt` com tráfego real, `web_search`
+sozinha **não conseguiu** extrair o valor numérico do CCD/CC — os
+resultados de busca trazem só resumo/trecho, insuficiente pra ler um
+número de dentro de uma tabela. A IA corretamente se recusou a estimar e
+pediu o valor ao usuário (comportamento de segurança funcionando como
+projetado), mas isso não entrega a experiência completa sozinha.
+
+**Correção**: adicionada `construirFerramentaLeituraOficial()`
+(`web_fetch_20260209`, mesma lista de domínios oficiais) — a IA busca
+primeiro (acha a URL da resolução, ex. em anttlegis.antt.gov.br), depois
+lê essa URL específica por completo com `web_fetch` pra localizar a
+tabela de coeficientes de verdade. Confirmado manualmente que a página da
+Resolução ANTT nº 6.084/2026 em anttlegis.antt.gov.br **tem** a tabela
+completa embutida como texto (não é um app JavaScript trancado como
+`calculadorafrete.antt.gov.br`) — por isso o fluxo busca→leitura completa
+funciona, enquanto busca sozinha não.
