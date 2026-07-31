@@ -449,6 +449,52 @@ depois US$5/1000 até 100k.
   `polyline.encodedPolyline` (já suportado pela Routes API, só não pedido
   no fieldMask atual).
 
+## Fase K — Transcrição de áudio (OpenAI)
+
+Resolve a maior lacuna registrada desde o início do projeto: mensagens de
+voz chegavam e só geravam a resposta "ainda não consigo entender áudio".
+Decisão explícita do Rafael (após discutir se valeria trocar toda a IA
+pra OpenAI pra evitar duas APIs): **manter a Claude como o único
+"cérebro"** (entende, decide ferramenta, calcula, responde) e usar a
+OpenAI só para a conversão áudio→texto — nada além disso. Justificativa:
+o Jão iAgro (referência de mercado) já usa 6+ provedores diferentes por
+trás de um "cérebro" principal; duas APIs não é incomum nem incorreto, e
+trocar a Claude pelo GPT como cérebro custaria muito mais (reconstruir
+prompt, ferramentas, disciplina de "nunca inventar dado" já validada) do
+que vale só para evitar uma segunda chave de API.
+
+- **`src/lib/openai/whisperConfig.ts` / `whisperClient.ts`** — mesmo
+  padrão de fetch direto (sem SDK) já usado em `calendarClient.ts`,
+  `zapiClient.ts` e `mapsClient.ts`. Chama
+  `POST api.openai.com/v1/audio/transcriptions` com o modelo
+  `gpt-4o-mini-transcribe` (mais barato que o Whisper clássico,
+  ~US$0,003/minuto), `language: "pt"`.
+- **`src/app/api/whatsapp/webhook/route.ts`** (branch `else if (body.audio)`):
+  se `OPENAI_API_KEY` não estiver configurada, mantém o comportamento
+  antigo (explica a limitação). Se estiver, baixa o áudio
+  (`baixarMidia`, já existia da Fase F) e transcreve; o texto resultante
+  vira `mensagemUsuario` normal, seguindo o mesmo fluxo de qualquer
+  mensagem digitada (mesma IA, mesmas 17 ferramentas) — a OpenAI não
+  participa de mais nada depois de devolver o texto. Se a transcrição
+  falhar (áudio incompreensível, erro de rede, formato rejeitado), avisa
+  o usuário e pede pra tentar de novo ou escrever — nunca falha em
+  silêncio.
+
+### Limitações conhecidas desta fase
+
+- **Formato de áudio não validado com teste real.** O WhatsApp manda
+  `.ogg` com codec Opus; a documentação oficial da OpenAI não confirma
+  esse formato de forma inequívoca (relatos de desenvolvedores variam
+  entre "funciona direto" e "precisa converter"). Só será confirmado
+  testando com um áudio real depois do deploy — se a API rejeitar o
+  formato, o próximo passo seria adicionar conversão (ex.: reencodar para
+  mp3/wav) antes de enviar.
+- Não testado com áudio real neste ambiente — `tsc`/`lint`/`build`
+  limpos, formato de request (multipart `FormData`) confirmado contra a
+  documentação oficial da OpenAI, não por execução real.
+- Sem retry automático em caso de falha de transcrição — o usuário
+  precisa reenviar manualmente.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase

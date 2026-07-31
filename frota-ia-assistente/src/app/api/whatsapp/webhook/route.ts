@@ -5,6 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getWhatsappConfig, isWhatsappConfigured } from "@/lib/whatsapp/config";
 import { sendWhatsappText, sendWhatsappOptionList, sendWhatsappButtons } from "@/lib/whatsapp/zapiClient";
 import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
+import { isWhisperConfigured } from "@/lib/openai/whisperConfig";
+import { transcreverAudio } from "@/lib/openai/whisperClient";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
@@ -263,19 +265,49 @@ export async function POST(request: Request) {
     conteudoMultimodal = [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: paraBase64(midia.bytes) } }];
     inboundExtra = { ...inboundBase, content_type: "document", metadata: { fileName, mimeType } };
   } else if (body.audio) {
-    await appendMessage(admin, {
-      conversation_id: conversation.id,
-      company_id: companyId,
-      user_id: userId,
-      role: "user",
-      direction: "inbound",
-      content: "[áudio recebido — não transcrito]",
-      content_type: "audio",
-      metadata: { mimeType: body.audio.mimeType ?? null },
-      ...inboundBase,
-    });
-    await sendWhatsappText(phoneE164, "Recebi seu áudio, mas ainda não consigo entender mensagens de voz — pode escrever, por favor?").catch(() => {});
-    return NextResponse.json({ ok: true });
+    const audioMimeType = body.audio.mimeType ?? "audio/ogg";
+
+    if (!isWhisperConfigured() || !body.audio.audioUrl) {
+      await appendMessage(admin, {
+        conversation_id: conversation.id,
+        company_id: companyId,
+        user_id: userId,
+        role: "user",
+        direction: "inbound",
+        content: "[áudio recebido — não transcrito]",
+        content_type: "audio",
+        metadata: { mimeType: audioMimeType },
+        ...inboundBase,
+      });
+      await sendWhatsappText(phoneE164, "Recebi seu áudio, mas ainda não consigo entender mensagens de voz — pode escrever, por favor?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    const midiaAudio = await baixarMidia(body.audio.audioUrl);
+    if (!midiaAudio) {
+      await sendWhatsappText(phoneE164, "Não consegui baixar seu áudio agora. Pode tentar enviar de novo, ou escrever a mensagem?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
+
+    try {
+      const textoTranscrito = await transcreverAudio(midiaAudio.bytes, midiaAudio.contentType || audioMimeType);
+      mensagemUsuario = textoTranscrito;
+      inboundExtra = { ...inboundBase, content_type: "audio", metadata: { mimeType: audioMimeType, transcrito: true } };
+    } catch {
+      await appendMessage(admin, {
+        conversation_id: conversation.id,
+        company_id: companyId,
+        user_id: userId,
+        role: "user",
+        direction: "inbound",
+        content: "[áudio recebido — falha ao transcrever]",
+        content_type: "audio",
+        metadata: { mimeType: audioMimeType, transcrito: false },
+        ...inboundBase,
+      });
+      await sendWhatsappText(phoneE164, "Recebi seu áudio, mas não consegui entender o que foi dito. Pode tentar de novo, mais claro, ou escrever a mensagem?").catch(() => {});
+      return NextResponse.json({ ok: true });
+    }
   } else if (body.location) {
     const { latitude, longitude, name, address } = body.location;
     const partes = [name, address].filter(Boolean).join(", ");
