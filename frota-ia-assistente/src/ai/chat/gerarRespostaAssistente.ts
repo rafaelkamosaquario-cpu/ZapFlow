@@ -1,7 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import { createAnthropicClient, CLAUDE_MODEL } from "@/lib/anthropic/client";
-import { construirFerramentasAnthropic, CAMPOS_DE_CONTEXTO_RESERVADOS } from "@/lib/anthropic/tools";
+import { construirFerramentasAnthropic, construirFerramentaBuscaOficial, CAMPOS_DE_CONTEXTO_RESERVADOS } from "@/lib/anthropic/tools";
 import { construirSystemPrompt } from "@/lib/anthropic/systemPrompt";
 import { saveToolExecution, type CustomerContext, type VehicleContext } from "@/ai/context/customerContext";
 import { appendMessage, listMessages } from "@/services/supabase/conversationService";
@@ -31,6 +31,7 @@ const FERRAMENTAS_DE_ANALISE = new Set<string>([
   "calcular_custo_dia",
   "calcular_custo_veiculo_parado",
   "calcular_jornada",
+  "verificar_piso_minimo_antt",
 ]);
 
 /**
@@ -111,7 +112,7 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
 
   const anthropic = createAnthropicClient();
   const system = construirSystemPrompt(customerContext, vehicleContext, new Date());
-  const tools = construirFerramentasAnthropic();
+  const tools = [...construirFerramentasAnthropic(), construirFerramentaBuscaOficial()];
 
   let textoFinal = "";
 
@@ -128,6 +129,15 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
     const blocosFerramenta = resposta.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
     textoFinal = blocosTexto.map((b) => b.text).join("\n").trim();
+
+    // pause_turn: a busca web (server-side) bateu no limite interno de
+    // iterações da própria Anthropic — não é um tool_use nosso, não exige
+    // tool_result. Só reenviar a conversa (com o turno pausado incluído)
+    // pra ela continuar de onde parou, sem mensagem extra tipo "continue".
+    if (resposta.stop_reason === "pause_turn" && rodada < MAX_TOOL_ROUNDS) {
+      mensagensAnthropic.push({ role: "assistant", content: resposta.content });
+      continue;
+    }
 
     if (resposta.stop_reason !== "tool_use" || blocosFerramenta.length === 0 || rodada === MAX_TOOL_ROUNDS) {
       break;

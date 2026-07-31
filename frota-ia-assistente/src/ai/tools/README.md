@@ -2225,6 +2225,13 @@ Ainda não há Supabase neste projeto. Quando existir, o uso esperado é:
 
 ## Integração com Google Routes / ANTT / ANP / Clima / Pedágios / dados de fabricantes
 
+**Atualização**: ANTT (piso mínimo legal) e ANP/legislação (como referência
+em tempo real, via busca) **saíram de "fora de escopo" nesta fase** — ver
+`verificar_piso_minimo_antt` e "Busca em fontes oficiais (web_search)"
+abaixo. Google Routes/Maps, pedágios (Maplink), clima e dados de
+fabricantes continuam fora de escopo. O texto abaixo (histórico, mantido
+para contexto) ainda vale para essas integrações pendentes.
+
 Fora de escopo nesta fase. Quando chegar a hora: essas integrações também
 devem alimentar a `entrada` de uma ferramenta existente (ex.: distância via
 Google Routes viraria `distanciaKm`), e não misturar chamadas de rede dentro
@@ -2305,3 +2312,93 @@ nunca como regra legal aplicada silenciosamente. Nenhuma dessas
 integrações foi implementada; só os tipos e pontos de entrada (`periodos`,
 `etapas`, `motoristas`, `regrasConformidade`) já suportam recebê-las sem
 quebrar a API atual.
+
+## `verificar_piso_minimo_antt`
+
+Calcula o piso mínimo **legal** de frete (Lei nº 13.703/2018 — Política
+Nacional de Pisos Mínimos do Transporte Rodoviário de Cargas), usando a
+fórmula pública da ANTT, e opcionalmente compara com um valor ofertado.
+Diferente de `calcular_valor_minimo_frete` (piso **econômico**, baseado
+nos custos que o cliente informa) — os dois nunca devem ser confundidos.
+
+```
+pisoIda     = distânciaKm × CCD + CC
+pisoRetorno = temRetornoVazio ? 0,92 × distânciaRetornoKm × CCD : 0
+pisoMínimo  = pisoIda + pisoRetorno
+```
+
+Onde **CCD** (Coeficiente de Custo de Deslocamento, R$/km) e **CC** (Custo
+de Carga e Descarga, R$) variam por tipo de carga e número de eixos, e são
+atualizados pela ANTT semestralmente (ou extraordinariamente, se o diesel
+variar 5%+).
+
+### Por que não existe uma tabela de coeficientes embutida
+
+De propósito. Uma tabela CCD/CC hardcoded neste arquivo ficaria
+desatualizada a cada nova resolução — o próprio princípio de "nunca
+inventar dado ausente" que rege todas as outras ferramentas se aplica aqui
+com força redobrada, porque um piso mínimo errado tem consequência legal
+real (multa, indenização em dobro, risco de RNTRC). `coeficienteDeslocamentoReaisPorKm`
+é sempre um parâmetro obrigatório — a forma correta de obtê-lo é a IA
+consultar a fonte oficial via `web_search` (ver seção seguinte) antes de
+chamar esta ferramenta, nunca estimar de memória.
+
+### Modos
+
+| Modo | O que faz |
+|---|---|
+| `CALCULAR_PISO_MINIMO` | Só calcula o piso mínimo legal |
+| `COMPARAR_COM_OFERTA` | Calcula o piso e classifica um `valorFreteOfertado` como `ABAIXO_DO_PISO_LEGAL` ou `DENTRO_DO_PISO_LEGAL` |
+
+### Limitações conhecidas
+
+- Não calcula, busca ou valida o CCD/CC — são sempre entrada explícita.
+- É uma aplicação direta da fórmula pública da lei — não substitui
+  verificação oficial em caso de disputa ou fiscalização.
+- Sem persistência de coeficientes: cada chamada é isolada, não há cache
+  de "última resolução consultada" entre conversas.
+
+## Busca em fontes oficiais (`web_search`)
+
+Diferente das 16 ferramentas acima, a busca web **não é uma ferramenta
+interna** (`src/ai/tools/`) — é a ferramenta server-side nativa da Claude
+API (`web_search_20260209`), declarada em `construirFerramentaBuscaOficial()`
+(`src/lib/anthropic/tools.ts`) e adicionada ao array de `tools` em
+`gerarRespostaAssistente.ts` junto das ferramentas internas. Roda na
+infraestrutura da própria Anthropic — nunca passa pelo loop de execução
+local (`FERRAMENTAS_FROTA_IA.find(...)`), então não gera `tool_executions`
+nem `analysis_runs`.
+
+Restrita por `allowed_domains` a uma lista curada de domínios oficiais
+(ANTT, ANP, Planalto, DOU/in.gov.br, DNIT, SENATRAN, LexML — ver a
+constante `DOMINIOS_OFICIAIS`) — nunca busca livre na web. Isso é o que
+torna a resposta confiável para dado regulatório: nunca traz opinião de
+blog ou terceiro como se fosse fonte oficial.
+
+**Usos pretendidos**:
+- Encontrar o CCD/CC vigente (por tipo de carga/eixos) antes de chamar
+  `verificar_piso_minimo_antt` (item ANTT).
+- Preço de referência de combustível — **sempre contextual, nunca
+  substitui** `precoCombustivelLitro` informado ou salvo do cliente (item
+  ANP).
+- Perguntas de legislação/normas de trânsito e transporte em geral (ex.:
+  "quantas horas posso dirigir por dia") — sem manter uma base de
+  conhecimento própria indexada, que exigiria manutenção constante pra não
+  ficar desatualizada. É deliberadamente **busca em tempo real**, não RAG.
+
+`max_uses: 3` limita o número de buscas por resposta (controle de custo —
+US$ 10 por 1.000 buscas + tokens normais de input pelo conteúdo
+retornado). O loop de tool use em `gerarRespostaAssistente.ts` trata o
+`stop_reason: "pause_turn"` (limite interno de 10 iterações de busca da
+própria Anthropic) reenviando a conversa para continuar, sem precisar de
+um `tool_result` — só as ferramentas internas (`tool_use`) passam por
+esse fluxo.
+
+### Limitações conhecidas
+
+- Não testado com busca real neste ambiente (mesma limitação de todas as
+  integrações externas do projeto) — `tsc`/`lint`/`build` limpos, formato
+  do parâmetro confirmado contra a documentação oficial da Claude API.
+- Lista de domínios mantida manualmente — se a ANTT/ANP mudar de domínio
+  ou criar um subdomínio novo relevante, precisa atualizar
+  `DOMINIOS_OFICIAIS` manualmente.

@@ -67,3 +67,44 @@ export function construirFerramentasAnthropic(): Anthropic.Tool[] {
     };
   });
 }
+
+/**
+ * Domínios oficiais aos quais a busca web fica restrita — cobre a ANTT
+ * (piso mínimo, RNTRC, resoluções), a ANP (preço de combustível) e as
+ * principais fontes de legislação/trânsito. Restringir a domínios (em vez
+ * de busca livre) é o que torna essa ferramenta segura para dado
+ * regulatório: nunca traz opinião de blog/terceiro como se fosse fonte
+ * oficial. Lista mantida manualmente — ampliar conforme necessário, nunca
+ * remover um domínio "porque não achou nada" numa busca isolada.
+ */
+const DOMINIOS_OFICIAIS: string[] = [
+  "gov.br",
+  "antt.gov.br",
+  "anttlegis.antt.gov.br",
+  "calculadorafrete.antt.gov.br",
+  "anp.gov.br",
+  "planalto.gov.br",
+  "in.gov.br",
+  "dnit.gov.br",
+  "senatran.gov.br",
+  "lexml.gov.br",
+];
+
+/**
+ * Ferramenta de busca web nativa da Claude (server-side — não é uma das
+ * FERRAMENTAS_FROTA_IA, roda na infraestrutura da Anthropic, não passa pelo
+ * loop de execução local de gerarRespostaAssistente.ts). Restrita aos
+ * domínios oficiais acima, para consultar piso mínimo/RNTRC (ANTT), preço
+ * de referência de combustível (ANP) e legislação/normas de trânsito —
+ * sempre como pesquisa em tempo real, nunca como base de conhecimento
+ * própria mantida por este projeto (mais simples de manter, sempre
+ * atualizada). `max_uses` limita buscas por resposta, controlando custo.
+ */
+export function construirFerramentaBuscaOficial(): Anthropic.WebSearchTool20260209 {
+  return {
+    type: "web_search_20260209",
+    name: "web_search",
+    max_uses: 3,
+    allowed_domains: DOMINIOS_OFICIAIS,
+  };
+}

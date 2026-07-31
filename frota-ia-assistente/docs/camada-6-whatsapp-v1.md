@@ -341,6 +341,59 @@ não implementado nesta fase):
   desse dado for usada (ex.: comparar pneus, calcular CPK), não durante o
   onboarding.
 
+## Fase I — Piso mínimo ANTT e busca em fontes oficiais (ANP/legislação)
+
+Implementa os itens 5 (ANTT), 6 (ANP) e 7 (legislação/fontes oficiais) de
+uma lista de integrações que o Rafael avaliou item a item contra o código
+real antes de decidir o que construir (ver checklist completo na memória
+do projeto). Decisão: nada de RAG/base de conhecimento própria — busca em
+tempo real restrita a domínios oficiais, seguindo o mesmo padrão que o
+Jão iAgro usa (Perplexity API) só que com a ferramenta nativa da própria
+Claude API.
+
+- **Nova ferramenta `verificar_piso_minimo_antt`** (16ª ferramenta,
+  `src/ai/tools/verificar-piso-minimo-antt.ts`): calcula o piso mínimo
+  **legal** de frete (Lei 13.703/2018, fórmula pública da ANTT:
+  `distância × CCD + CC`, mais 0,92 × distância de retorno × CCD se houver
+  retorno vazio). **Nunca inventa o CCD/CC** — são sempre entrada
+  obrigatória, nunca uma tabela hardcoded (ficaria desatualizada a cada
+  resolução nova, e um piso errado tem consequência legal real). Ver
+  `src/ai/tools/README.md` para detalhe completo, incluindo por que essa
+  decisão é deliberada.
+- **Ferramenta de busca web nativa da Claude** (`web_search_20260209`,
+  `construirFerramentaBuscaOficial()` em `src/lib/anthropic/tools.ts`) —
+  diferente das 16 ferramentas internas, roda server-side na própria
+  Anthropic, restrita por `allowed_domains` a uma lista curada de domínios
+  oficiais (ANTT, ANP, Planalto, DOU/in.gov.br, DNIT, SENATRAN, LexML).
+  Usada pela IA para: (1) encontrar o CCD/CC vigente antes de chamar
+  `verificar_piso_minimo_antt`; (2) preço de referência de combustível da
+  ANP — sempre contextual, nunca substitui o preço informado/salvo do
+  cliente; (3) perguntas gerais de legislação/trânsito.
+- `gerarRespostaAssistente.ts`: `tools` passou a combinar as 16 ferramentas
+  internas + a ferramenta de busca; o loop de tool use ganhou tratamento de
+  `stop_reason: "pause_turn"` (limite interno de 10 iterações de busca da
+  própria Anthropic) — reenvia a conversa pra continuar, sem exigir
+  `tool_result` (só as ferramentas internas passam por esse fluxo).
+- `verificar_piso_minimo_antt` adicionado ao enum `frota_ia_tool_name`
+  (migration) e ao Zod `frotaIaToolNameSchema`, e às ferramentas "de
+  análise" (gera `analysis_runs`, pesquisável depois por
+  `consultar_historico` e referenciável por `gerar_documento`) — mesmo
+  tratamento das 11 ferramentas de cálculo puro.
+
+### Limitações conhecidas desta fase
+
+- Não testado com busca real neste ambiente (mesma limitação de todas as
+  fases anteriores que dependem de integração externa) — `tsc`/`lint`/
+  `build` limpos, formato do parâmetro (`allowed_domains`, `max_uses`) e
+  do tipo `WebSearchTool20260209` confirmados pelo próprio compilador
+  TypeScript contra o SDK oficial, não por execução real.
+- `verificar_piso_minimo_antt` não busca o CCD/CC sozinha — depende da IA
+  chamar `web_search` antes e passar o valor encontrado. Se a IA não
+  encontrar um valor claro na busca, o comportamento esperado (reforçado
+  no system prompt) é avisar o usuário, nunca estimar.
+- Google Maps/Routes (item 2), pedágios/Maplink (item 3) continuam fora de
+  escopo — não implementados nesta fase, por decisão do Rafael.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase
