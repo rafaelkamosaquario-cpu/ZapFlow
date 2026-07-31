@@ -47,6 +47,13 @@ export interface ConsultarRotaResultado extends ResultadoFerramentaBase {
   destinoFormatado?: string;
   distanciaKm?: number;
   duracaoMinutos?: number;
+  /**
+   * Geometria da rota (Google Encoded Polyline) — reservada para o item 3
+   * (pedágio, Maplink Toll API), que precisa de uma rota já calculada como
+   * entrada. Nenhuma ferramenta consome isso ainda; não é mencionada na
+   * resposta ao usuário (não é informação legível/útil pra ele).
+   */
+  polylineCodificada?: string;
 
   limitacoes: string[];
 }
@@ -192,6 +199,7 @@ async function executar(entrada: ConsultarRotaEntrada): Promise<ConsultarRotaRes
       destinoFormatado: destinoGeo.enderecoFormatado,
       distanciaKm,
       duracaoMinutos,
+      polylineCodificada: rota.polylineCodificada,
       limitacoes: LIMITACOES_PADRAO,
     };
   } catch (err) {

@@ -549,6 +549,22 @@ resumo/dado desatingido) também pra ANP/legislação, não só pra ANTT.
 
 - Não retestado com tráfego real após esta correção específica.
 
+## Fase N — Polyline no `consultar_rota` (preparação pro item 3)
+
+`calcularRota` (mapsClient.ts) passou a pedir também
+`routes.polyline.encodedPolyline` no fieldMask da Routes API — mesma
+chamada, sem custo adicional. `consultar_rota` expõe isso como
+`polylineCodificada` no resultado. Nenhuma ferramenta consome esse campo
+ainda; é preparação para o item 3 (pedágio, Maplink Toll API), que
+precisa de uma rota já calculada (geometria) como entrada — a Toll API
+não calcula rota sozinha.
+
+**O que ainda falta pro item 3 de verdade**: Rafael criar conta na
+Maplink e contratar a Toll API; e obter o schema real de request/response
+dela (não documentado publicamente em detalhe) antes de escrever a
+integração — mesmo princípio de nunca implementar contra uma API sem
+schema verificado, já aplicado ao Google Maps e à ANTT.
+
 ## Fase G — Testes e entrega final
 
 `npx tsc --noEmit`, `npm run lint` e `npm run build` limpos em cada fase

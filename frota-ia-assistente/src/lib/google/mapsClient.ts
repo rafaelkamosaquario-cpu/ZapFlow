@@ -70,6 +70,15 @@ export async function geocodificarEndereco(endereco: string): Promise<Coordenada
 export interface RotaCalculada {
   distanciaMetros: number;
   duracaoSegundos: number;
+  /**
+   * Geometria da rota codificada (Google Encoded Polyline). Não usada por
+   * nenhuma ferramenta ainda — pedida desde já porque o item 3 (pedágio,
+   * Maplink Toll API) precisa de uma rota já calculada como entrada, e é
+   * mais barato pedir esse campo agora (mesma chamada) do que ter que
+   * alterar o fieldMask de novo quando a integração com a Maplink for
+   * decidida. Ver docs/camada-6-whatsapp-v1.md (item 3 na checklist).
+   */
+  polylineCodificada?: string;
 }
 
 export async function calcularRota(
@@ -83,7 +92,7 @@ export async function calcularRota(
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
     },
     body: JSON.stringify({
       origin: { location: { latLng: { latitude: origem.latitude, longitude: origem.longitude } } },
@@ -100,7 +109,7 @@ export async function calcularRota(
   }
 
   const body = (await response.json()) as {
-    routes?: Array<{ distanceMeters: number; duration: string }>;
+    routes?: Array<{ distanceMeters: number; duration: string; polyline?: { encodedPolyline?: string } }>;
   };
 
   if (!body.routes || body.routes.length === 0) {
@@ -110,5 +119,5 @@ export async function calcularRota(
   const [rota] = body.routes;
   const duracaoSegundos = Number(rota.duration.replace("s", ""));
 
-  return { distanciaMetros: rota.distanceMeters, duracaoSegundos };
+  return { distanciaMetros: rota.distanceMeters, duracaoSegundos, polylineCodificada: rota.polyline?.encodedPolyline };
 }
