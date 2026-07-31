@@ -503,6 +503,80 @@ export type Database = {
           },
         ]
       }
+      expenses: {
+        Row: {
+          amount: number
+          company_id: string
+          conversation_id: string | null
+          created_at: string
+          description: string | null
+          expense_date: string
+          expense_type: Database["public"]["Enums"]["expense_type"]
+          id: string
+          source_message_id: string | null
+          user_id: string
+          vehicle_id: string | null
+          vendor: string | null
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string
+          description?: string | null
+          expense_date: string
+          expense_type: Database["public"]["Enums"]["expense_type"]
+          id?: string
+          source_message_id?: string | null
+          user_id: string
+          vehicle_id?: string | null
+          vendor?: string | null
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          description?: string | null
+          expense_date?: string
+          expense_type?: Database["public"]["Enums"]["expense_type"]
+          id?: string
+          source_message_id?: string | null
+          user_id?: string
+          vehicle_id?: string | null
+          vendor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_documents: {
         Row: {
           analysis_run_id: string | null
@@ -1361,6 +1435,17 @@ export type Database = {
       company_member_status: "active" | "invited" | "removed"
       company_type: "autonomo" | "transportadora" | "embarcador" | "outro"
       conversation_status: "open" | "closed" | "archived"
+      expense_type:
+        | "combustivel"
+        | "manutencao"
+        | "pedagio"
+        | "alimentacao"
+        | "hospedagem"
+        | "documentacao"
+        | "pneu"
+        | "seguro"
+        | "multa"
+        | "outro"
       frota_ia_tool_name:
         | "analisar_frete"
         | "calcular_combustivel"
@@ -1379,6 +1464,7 @@ export type Database = {
         | "gerar_documento"
         | "verificar_piso_minimo_antt"
         | "consultar_rota"
+        | "registrar_despesa"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1578,6 +1664,18 @@ export const Constants = {
       company_member_status: ["active", "invited", "removed"],
       company_type: ["autonomo", "transportadora", "embarcador", "outro"],
       conversation_status: ["open", "closed", "archived"],
+      expense_type: [
+        "combustivel",
+        "manutencao",
+        "pedagio",
+        "alimentacao",
+        "hospedagem",
+        "documentacao",
+        "pneu",
+        "seguro",
+        "multa",
+        "outro",
+      ],
       frota_ia_tool_name: [
         "analisar_frete",
         "calcular_combustivel",
@@ -1596,6 +1694,7 @@ export const Constants = {
         "gerar_documento",
         "verificar_piso_minimo_antt",
         "consultar_rota",
+        "registrar_despesa",
       ],
       fuel_type: [
         "diesel_s10",

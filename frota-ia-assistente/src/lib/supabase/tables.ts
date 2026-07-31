@@ -81,6 +81,10 @@ export type ScheduledAlertUpdate = PublicTables["scheduled_alerts"]["Update"];
 export type GeneratedDocumentRow = PublicTables["generated_documents"]["Row"];
 export type GeneratedDocumentInsert = PublicTables["generated_documents"]["Insert"];
 
+export type ExpenseRow = PublicTables["expenses"]["Row"];
+export type ExpenseInsert = PublicTables["expenses"]["Insert"];
+export type ExpenseUpdate = PublicTables["expenses"]["Update"];
+
 export type CompanyMemberRole = PublicEnums["company_member_role"];
 export type OnboardingState = PublicEnums["onboarding_state"];
 export type ScheduledAlertStatus = PublicEnums["scheduled_alert_status"];
@@ -90,4 +94,5 @@ export type TireCategoryEnum = PublicEnums["tire_category"];
 export type AiMemoryTypeEnum = PublicEnums["ai_memory_type"];
 export type AiMemorySourceTypeEnum = PublicEnums["ai_memory_source_type"];
 export type FrotaIaToolName = PublicEnums["frota_ia_tool_name"];
+export type ExpenseTypeEnum = PublicEnums["expense_type"];
 export type RunStatus = PublicEnums["run_status"];

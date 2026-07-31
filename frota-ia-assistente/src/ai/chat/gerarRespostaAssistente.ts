@@ -93,7 +93,7 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
     .map(paraMensagemAnthropic)
     .filter((m): m is Anthropic.MessageParam => m !== null);
 
-  await appendMessage(client, {
+  const mensagemEntradaSalva = await appendMessage(client, {
     conversation_id: conversation.id,
     company_id: companyId,
     user_id: userId,
@@ -168,6 +168,7 @@ export async function gerarRespostaAssistente(params: GerarRespostaAssistentePar
         userId,
         companyId,
         conversationId: conversation.id,
+        sourceMessageId: mensagemEntradaSalva.id,
       };
 
       const ehAnalise = FERRAMENTAS_DE_ANALISE.has(bloco.name);

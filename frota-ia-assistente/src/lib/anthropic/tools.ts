@@ -13,7 +13,11 @@ import type { DefinicaoParametroFerramenta } from "@/ai/tools";
  * campos ao Claude) e pela rota /api/chat (para sobrescrever o que o
  * modelo tiver enviado nesses campos, se algo).
  */
-export const CAMPOS_DE_CONTEXTO_RESERVADOS = new Set(["userId", "companyId", "conversationId"]);
+// sourceMessageId segue o mesmo princípio: é a mensagem inbound desta rodada
+// (ex.: a foto da nota fiscal), sempre injetada por gerarRespostaAssistente.ts
+// — o modelo nunca sabe o id real da mensagem, só que "esta rodada" pode ter
+// uma origem (ver registrar_despesa).
+export const CAMPOS_DE_CONTEXTO_RESERVADOS = new Set(["userId", "companyId", "conversationId", "sourceMessageId"]);
 
 function parametroParaJsonSchema(parametro: DefinicaoParametroFerramenta): Record<string, unknown> {
   const base: Record<string, unknown> = { description: parametro.descricao };
