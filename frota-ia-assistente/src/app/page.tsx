@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { loadCustomerContext, loadVehicleContext } from "@/ai/context/customerContext";
+import { loadCustomerContext } from "@/ai/context/customerContext";
 import { checkCalendarConnection } from "@/services/google/googleCalendarService";
 import { isCustomerPanelEnabled } from "@/lib/featureFlags";
 import { HomeClient } from "./HomeClient";
@@ -29,11 +29,11 @@ export default async function Home() {
     redirect("/onboarding");
   }
 
-  const vehicleContext = await loadVehicleContext(supabase, context.company.id);
-  if (!vehicleContext.vehicle) {
-    redirect("/onboarding");
-  }
-
+  // Veiculo e opcional (mesmo principio do onboarding via WhatsApp: coleta
+  // progressiva, perguntada sob demanda pela IA quando uma ferramenta
+  // precisar — ver systemPrompt.ts). Nunca gatear a entrada no painel por
+  // ele existir ou nao, senao "Cadastrar depois" (skipVehicleAction) vira
+  // um loop infinito com o redirect de onboarding/page.tsx.
   const calendarConnected = await checkCalendarConnection(data.user.id)
     .then((status) => status.connected)
     .catch(() => false);
