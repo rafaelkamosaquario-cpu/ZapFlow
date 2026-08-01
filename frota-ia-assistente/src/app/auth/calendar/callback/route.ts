@@ -15,30 +15,36 @@ interface CalendarOAuthState extends Record<string, unknown> {
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+  // Mesmo motivo do connect/route.ts: `origin` reflete o bind interno
+  // (localhost:8080) atrás do proxy do Railway — usa APP_URL pra
+  // redirecionar pro domínio público de verdade, inclusive no caminho de
+  // sucesso (sem isso, até uma conexão bem-sucedida quebrava no final).
+  const appOrigin = process.env.APP_URL ?? origin;
+
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const oauthError = searchParams.get("error");
 
   if (oauthError) {
-    return NextResponse.redirect(`${origin}/?calendar_conectado=cancelado`);
+    return NextResponse.redirect(`${appOrigin}/?calendar_conectado=cancelado`);
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${origin}/?calendar_erro=parametros_ausentes`);
+    return NextResponse.redirect(`${appOrigin}/?calendar_erro=parametros_ausentes`);
   }
 
   let payload: CalendarOAuthState;
   try {
     payload = verifySignedToken<CalendarOAuthState>(state);
   } catch {
-    return NextResponse.redirect(`${origin}/?calendar_erro=state_invalido`);
+    return NextResponse.redirect(`${appOrigin}/?calendar_erro=state_invalido`);
   }
 
   try {
     await connectGoogleCalendar({ userId: payload.userId, companyId: payload.companyId, code });
   } catch {
-    return NextResponse.redirect(`${origin}/?calendar_erro=falha_conexao`);
+    return NextResponse.redirect(`${appOrigin}/?calendar_erro=falha_conexao`);
   }
 
-  return NextResponse.redirect(`${origin}/?calendar_conectado=1`);
+  return NextResponse.redirect(`${appOrigin}/?calendar_conectado=1`);
 }

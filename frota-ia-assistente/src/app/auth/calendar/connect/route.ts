@@ -16,9 +16,15 @@ const STATE_TTL_SECONDS = 10 * 60;
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+  // `origin` vem de `request.url`, que atrás do proxy do Railway reflete o
+  // bind interno (http://localhost:8080), não o domínio público — usar
+  // APP_URL (mesma variável já usada em buildSecureConnectLink) evita
+  // redirecionar o navegador do cliente para um endereço que só existe
+  // dentro do container.
+  const appOrigin = process.env.APP_URL ?? origin;
 
   if (!isGoogleCalendarConfigured()) {
-    return NextResponse.redirect(`${origin}/?calendar_erro=nao_configurado`);
+    return NextResponse.redirect(`${appOrigin}/?calendar_erro=nao_configurado`);
   }
 
   const supabase = await createClient();
@@ -32,12 +38,12 @@ export async function GET(request: Request) {
       userId = payload.userId;
       companyId = payload.companyId;
     } catch {
-      return NextResponse.redirect(`${origin}/?calendar_erro=link_invalido`);
+      return NextResponse.redirect(`${appOrigin}/?calendar_erro=link_invalido`);
     }
   } else {
     const { data } = await supabase.auth.getUser();
     if (!data.user) {
-      return NextResponse.redirect(`${origin}/?calendar_erro=login_necessario`);
+      return NextResponse.redirect(`${appOrigin}/?calendar_erro=login_necessario`);
     }
     userId = data.user.id;
     const context = await loadCustomerContext(supabase, userId);

@@ -8,6 +8,10 @@ import { createClient } from "@/lib/supabase/server";
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+  // `origin` reflete o bind interno (localhost:8080) atrás do proxy do
+  // Railway, não o domínio público — usa APP_URL pra redirecionar certo
+  // (ver mesmo fix em src/app/auth/calendar/connect|callback/route.ts).
+  const appOrigin = process.env.APP_URL ?? origin;
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/";
 
@@ -15,9 +19,9 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(`${appOrigin}${next}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/?erro_login=1`);
+  return NextResponse.redirect(`${appOrigin}/?erro_login=1`);
 }
