@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
+
+// Logo oficial (public/frota-ia-logo.jpg) embutida como data URI — ImageResponse
+// roda fora do runtime normal do Next e não resolve caminho relativo de /public.
+const logoDataUri = `data:image/jpeg;base64,${readFileSync(join(process.cwd(), "public/frota-ia-logo.jpg")).toString("base64")}`;
 
 export default function Icon() {
   return new ImageResponse(
@@ -13,20 +19,12 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: 9,
-          background: "linear-gradient(135deg, #2563eb 0%, #06b6d4 100%)",
+          borderRadius: "50%",
+          overflow: "hidden",
         }}
       >
-        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
-          <path
-            d="M8 20.5 13.5 11l3.2 5.6L19.5 12 24 20.5"
-            stroke="white"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="24" cy="9.5" r="2.2" fill="white" />
-        </svg>
+        {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse (Satori) exige <img>, não aceita next/image */}
+        <img src={logoDataUri} width={32} height={32} style={{ objectFit: "cover" }} alt="" />
       </div>
     ),
     { ...size }
