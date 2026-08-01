@@ -1466,6 +1466,7 @@ export type Database = {
         | "consultar_rota"
         | "registrar_despesa"
         | "gerenciar_veiculo"
+        | "definir_estilo_resposta"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1697,6 +1698,7 @@ export const Constants = {
         "consultar_rota",
         "registrar_despesa",
         "gerenciar_veiculo",
+        "definir_estilo_resposta",
       ],
       fuel_type: [
         "diesel_s10",
