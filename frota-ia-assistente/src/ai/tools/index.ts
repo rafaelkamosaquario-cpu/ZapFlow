@@ -39,6 +39,7 @@ export * from "./consultar-rota";
 export * from "./registrar-despesa";
 export * from "./gerenciar-veiculo";
 export * from "./definir-estilo-resposta";
+export * from "./consultar-conhecimento-operacional";
 
 import { ferramentaAnalisarFrete } from "./analisar-frete";
 import { ferramentaCalcularCombustivel } from "./calcular-combustivel";
@@ -60,6 +61,7 @@ import { ferramentaConsultarRota } from "./consultar-rota";
 import { ferramentaRegistrarDespesa } from "./registrar-despesa";
 import { ferramentaGerenciarVeiculo } from "./gerenciar-veiculo";
 import { ferramentaDefinirEstiloResposta } from "./definir-estilo-resposta";
+import { ferramentaConsultarConhecimentoOperacional } from "./consultar-conhecimento-operacional";
 import type { DefinicaoFerramenta, ResultadoFerramentaBase } from "./types";
 
 /**
@@ -93,4 +95,5 @@ export const FERRAMENTAS_FROTA_IA: ReadonlyArray<DefinicaoFerramenta<never, Resu
   ferramentaRegistrarDespesa,
   ferramentaGerenciarVeiculo,
   ferramentaDefinirEstiloResposta,
+  ferramentaConsultarConhecimentoOperacional,
 ];
