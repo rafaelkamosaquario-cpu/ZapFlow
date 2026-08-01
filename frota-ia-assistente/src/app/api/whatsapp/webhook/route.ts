@@ -7,6 +7,7 @@ import { sendWhatsappText, sendWhatsappOptionList, sendWhatsappButtons } from "@
 import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
 import { isWhisperConfigured } from "@/lib/openai/whisperConfig";
 import { transcreverAudio } from "@/lib/openai/whisperClient";
+import { planilhaParaTexto, MIME_TYPES_PLANILHA_SUPORTADOS, SpreadsheetParseError } from "@/lib/spreadsheet/spreadsheetParser";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
@@ -34,10 +35,11 @@ import type { MessageInsert } from "@/lib/supabase/tables";
  *    processOnboardingMessage, sem passar pela IA (só entende texto);
  * 3. onboarding concluído → mesma engine de chat da web
  *    (gerarRespostaAssistente). Imagem e PDF são enviados de verdade pra
- *    IA (Claude lê imagem/documento nativamente); áudio e outros tipos de
- *    documento (planilha etc.) são reconhecidos e registrados, mas ainda
- *    não têm o conteúdo interpretado — ver limitações no
- *    docs/camada-6-whatsapp-v1.md (Fase F).
+ *    IA (Claude lê imagem/documento nativamente); áudio é transcrito antes
+ *    de chegar no modelo; planilha (.xlsx/.csv) é convertida em texto (ver
+ *    src/lib/spreadsheet/spreadsheetParser.ts) pelo mesmo motivo — o Claude
+ *    não lê .xlsx nativamente. Outros tipos de documento ainda não são
+ *    interpretados — ver limitações no docs/camada-6-whatsapp-v1.md (Fase F).
  */
 
 interface ZApiWebhookBody {
@@ -236,7 +238,35 @@ export async function POST(request: Request) {
     const mimeType = body.document.mimeType ?? "application/octet-stream";
     const fileName = body.document.fileName ?? "documento";
 
-    if (mimeType !== "application/pdf") {
+    if (MIME_TYPES_PLANILHA_SUPORTADOS.has(mimeType)) {
+      const midiaPlanilha = await baixarMidia(body.document.documentUrl);
+      if (!midiaPlanilha) {
+        await sendWhatsappText(phoneE164, "Não consegui baixar a planilha agora. Pode tentar enviar de novo?").catch(() => {});
+        return NextResponse.json({ ok: true });
+      }
+
+      try {
+        const textoPlanilha = await planilhaParaTexto(midiaPlanilha.bytes, mimeType);
+        const legenda = body.document.caption?.trim();
+        mensagemUsuario = `${legenda ? `${legenda}\n\n` : ""}[planilha recebida: ${fileName}]\n${textoPlanilha}`;
+        inboundExtra = { ...inboundBase, content_type: "document", metadata: { fileName, mimeType, planilhaInterpretada: true } };
+      } catch (err) {
+        const motivo = err instanceof SpreadsheetParseError ? err.message : "Não consegui ler o conteúdo dessa planilha agora.";
+        await appendMessage(admin, {
+          conversation_id: conversation.id,
+          company_id: companyId,
+          user_id: userId,
+          role: "user",
+          direction: "inbound",
+          content: `[planilha recebida: ${fileName} — falha ao interpretar]`,
+          content_type: "document",
+          metadata: { fileName, mimeType, planilhaInterpretada: false },
+          ...inboundBase,
+        });
+        await sendWhatsappText(phoneE164, motivo).catch(() => {});
+        return NextResponse.json({ ok: true });
+      }
+    } else if (mimeType !== "application/pdf") {
       await appendMessage(admin, {
         conversation_id: conversation.id,
         company_id: companyId,
@@ -250,20 +280,20 @@ export async function POST(request: Request) {
       });
       await sendWhatsappText(
         phoneE164,
-        "Recebi o arquivo, mas por enquanto só consigo ler o conteúdo de PDFs — outros formatos de documento ainda não são interpretados."
+        "Recebi o arquivo, mas só consigo ler o conteúdo de PDF, planilha (.xlsx) ou CSV — outros formatos de documento ainda não são interpretados."
       ).catch(() => {});
       return NextResponse.json({ ok: true });
-    }
+    } else {
+      const midia = await baixarMidia(body.document.documentUrl);
+      if (!midia) {
+        await sendWhatsappText(phoneE164, "Não consegui baixar o documento agora. Pode tentar enviar de novo?").catch(() => {});
+        return NextResponse.json({ ok: true });
+      }
 
-    const midia = await baixarMidia(body.document.documentUrl);
-    if (!midia) {
-      await sendWhatsappText(phoneE164, "Não consegui baixar o documento agora. Pode tentar enviar de novo?").catch(() => {});
-      return NextResponse.json({ ok: true });
+      mensagemUsuario = body.document.caption?.trim() || `[documento recebido: ${fileName}]`;
+      conteudoMultimodal = [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: paraBase64(midia.bytes) } }];
+      inboundExtra = { ...inboundBase, content_type: "document", metadata: { fileName, mimeType } };
     }
-
-    mensagemUsuario = body.document.caption?.trim() || `[documento recebido: ${fileName}]`;
-    conteudoMultimodal = [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: paraBase64(midia.bytes) } }];
-    inboundExtra = { ...inboundBase, content_type: "document", metadata: { fileName, mimeType } };
   } else if (body.audio) {
     const audioMimeType = body.audio.mimeType ?? "audio/ogg";
 
