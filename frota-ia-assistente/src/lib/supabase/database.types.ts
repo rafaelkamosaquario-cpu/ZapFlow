@@ -1308,6 +1308,7 @@ export type Database = {
           active: boolean
           average_consumption_km_l: number | null
           average_speed_kmh: number | null
+          axle_count: number | null
           brand: string | null
           company_id: string
           created_at: string
@@ -1330,6 +1331,7 @@ export type Database = {
           active?: boolean
           average_consumption_km_l?: number | null
           average_speed_kmh?: number | null
+          axle_count?: number | null
           brand?: string | null
           company_id: string
           created_at?: string
@@ -1352,6 +1354,7 @@ export type Database = {
           active?: boolean
           average_consumption_km_l?: number | null
           average_speed_kmh?: number | null
+          axle_count?: number | null
           brand?: string | null
           company_id?: string
           created_at?: string

@@ -57,6 +57,7 @@ export async function createVehicle(
       average_speed_kmh: parsed.averageSpeedKmh,
       load_capacity_kg: parsed.loadCapacityKg,
       current_odometer_km: parsed.currentOdometerKm,
+      axle_count: parsed.axleCount,
       notes: parsed.notes,
       created_by: userId,
       updated_by: userId,
@@ -97,6 +98,7 @@ export async function updateVehicle(
       average_speed_kmh: parsed.averageSpeedKmh,
       load_capacity_kg: parsed.loadCapacityKg,
       current_odometer_km: parsed.currentOdometerKm,
+      axle_count: parsed.axleCount,
       notes: parsed.notes,
       updated_by: userId,
     })

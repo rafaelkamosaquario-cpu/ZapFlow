@@ -71,6 +71,7 @@ export interface GerenciarVeiculoEntrada {
   velocidadeMediaKmh?: number;
   capacidadeCargaKg?: number;
   hodometroAtualKm?: number;
+  numeroEixos?: number;
   observacoes?: string;
 
   // DEFINIR_CUSTO — campo não informado carrega o valor já salvo do perfil ativo, nunca apaga silenciosamente.
@@ -109,6 +110,7 @@ export interface VeiculoResumo {
   velocidadeMediaKmh: number | null;
   capacidadeCargaKg: number | null;
   hodometroAtualKm: number | null;
+  numeroEixos: number | null;
   padrao: boolean;
 }
 
@@ -156,6 +158,7 @@ function mapaVeiculo(row: VehicleRow): VeiculoResumo {
     velocidadeMediaKmh: row.average_speed_kmh,
     capacidadeCargaKg: row.load_capacity_kg,
     hodometroAtualKm: row.current_odometer_km,
+    numeroEixos: row.axle_count,
     padrao: row.is_default,
   };
 }
@@ -218,6 +221,7 @@ async function executar(entrada: GerenciarVeiculoEntrada): Promise<GerenciarVeic
         averageSpeedKmh: entrada.velocidadeMediaKmh,
         loadCapacityKg: entrada.capacidadeCargaKg,
         currentOdometerKm: entrada.hodometroAtualKm,
+        axleCount: entrada.numeroEixos,
         notes: entrada.observacoes,
       });
 
@@ -268,6 +272,7 @@ async function executar(entrada: GerenciarVeiculoEntrada): Promise<GerenciarVeic
         averageSpeedKmh: entrada.velocidadeMediaKmh,
         loadCapacityKg: entrada.capacidadeCargaKg,
         currentOdometerKm: entrada.hodometroAtualKm,
+        axleCount: entrada.numeroEixos,
         notes: entrada.observacoes,
       });
 
@@ -386,6 +391,7 @@ const PARAMETROS: DefinicaoParametroFerramenta[] = [
   { nome: "velocidadeMediaKmh", tipo: "number", obrigatorio: false, descricao: "Velocidade média operacional em km/h." },
   { nome: "capacidadeCargaKg", tipo: "number", obrigatorio: false, descricao: "Capacidade de carga em kg." },
   { nome: "hodometroAtualKm", tipo: "number", obrigatorio: false, descricao: "Hodômetro atual em km." },
+  { nome: "numeroEixos", tipo: "number", obrigatorio: false, descricao: "Número de eixos do veículo/conjunto (1 a 12) — nunca estimar a partir do tipo, sempre confirmado pelo cliente." },
   { nome: "observacoes", tipo: "string", obrigatorio: false, descricao: "Observações livres sobre o veículo." },
   { nome: "precoCombustivelLitro", tipo: "number", obrigatorio: false, descricao: "DEFINIR_CUSTO: preço do combustível por litro." },
   { nome: "custoFixoDia", tipo: "number", obrigatorio: false, descricao: "DEFINIR_CUSTO: custo fixo diário." },

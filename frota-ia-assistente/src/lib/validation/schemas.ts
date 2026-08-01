@@ -103,6 +103,7 @@ export const vehicleCreateSchema = z.object({
   averageSpeedKmh: speedKmhSchema.optional(),
   loadCapacityKg: z.number().finite().nonnegative().optional(),
   currentOdometerKm: z.number().finite().nonnegative().optional(),
+  axleCount: z.number().int().min(1).max(12).optional(),
   notes: maxText(2000, "Observações").optional(),
 });
 
