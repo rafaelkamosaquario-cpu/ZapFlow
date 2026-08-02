@@ -72,6 +72,8 @@ export interface GerenciarVeiculoEntrada {
   capacidadeCargaKg?: number;
   hodometroAtualKm?: number;
   numeroEixos?: number;
+  vencimentoSeguro?: string;
+  vencimentoLicenciamento?: string;
   observacoes?: string;
 
   // DEFINIR_CUSTO — campo não informado carrega o valor já salvo do perfil ativo, nunca apaga silenciosamente.
@@ -111,6 +113,8 @@ export interface VeiculoResumo {
   capacidadeCargaKg: number | null;
   hodometroAtualKm: number | null;
   numeroEixos: number | null;
+  vencimentoSeguro: string | null;
+  vencimentoLicenciamento: string | null;
   padrao: boolean;
 }
 
@@ -159,6 +163,8 @@ function mapaVeiculo(row: VehicleRow): VeiculoResumo {
     capacidadeCargaKg: row.load_capacity_kg,
     hodometroAtualKm: row.current_odometer_km,
     numeroEixos: row.axle_count,
+    vencimentoSeguro: row.insurance_expiry_date,
+    vencimentoLicenciamento: row.licensing_expiry_date,
     padrao: row.is_default,
   };
 }
@@ -222,6 +228,8 @@ async function executar(entrada: GerenciarVeiculoEntrada): Promise<GerenciarVeic
         loadCapacityKg: entrada.capacidadeCargaKg,
         currentOdometerKm: entrada.hodometroAtualKm,
         axleCount: entrada.numeroEixos,
+        insuranceExpiryDate: entrada.vencimentoSeguro,
+        licensingExpiryDate: entrada.vencimentoLicenciamento,
         notes: entrada.observacoes,
       });
 
@@ -273,6 +281,8 @@ async function executar(entrada: GerenciarVeiculoEntrada): Promise<GerenciarVeic
         loadCapacityKg: entrada.capacidadeCargaKg,
         currentOdometerKm: entrada.hodometroAtualKm,
         axleCount: entrada.numeroEixos,
+        insuranceExpiryDate: entrada.vencimentoSeguro,
+        licensingExpiryDate: entrada.vencimentoLicenciamento,
         notes: entrada.observacoes,
       });
 
@@ -392,6 +402,8 @@ const PARAMETROS: DefinicaoParametroFerramenta[] = [
   { nome: "capacidadeCargaKg", tipo: "number", obrigatorio: false, descricao: "Capacidade de carga em kg." },
   { nome: "hodometroAtualKm", tipo: "number", obrigatorio: false, descricao: "Hodômetro atual em km." },
   { nome: "numeroEixos", tipo: "number", obrigatorio: false, descricao: "Número de eixos do veículo/conjunto (1 a 12) — nunca estimar a partir do tipo, sempre confirmado pelo cliente." },
+  { nome: "vencimentoSeguro", tipo: "string", obrigatorio: false, descricao: "Data de vencimento do seguro do veículo, formato YYYY-MM-DD — lida de foto do comprovante ou informada pelo cliente." },
+  { nome: "vencimentoLicenciamento", tipo: "string", obrigatorio: false, descricao: "Data de vencimento do licenciamento/CRLV, formato YYYY-MM-DD — lida de foto do documento ou informada pelo cliente." },
   { nome: "observacoes", tipo: "string", obrigatorio: false, descricao: "Observações livres sobre o veículo." },
   { nome: "precoCombustivelLitro", tipo: "number", obrigatorio: false, descricao: "DEFINIR_CUSTO: preço do combustível por litro." },
   { nome: "custoFixoDia", tipo: "number", obrigatorio: false, descricao: "DEFINIR_CUSTO: custo fixo diário." },

@@ -1316,7 +1316,9 @@ export type Database = {
           current_odometer_km: number | null
           fuel_type: Database["public"]["Enums"]["fuel_type"] | null
           id: string
+          insurance_expiry_date: string | null
           is_default: boolean
+          licensing_expiry_date: string | null
           load_capacity_kg: number | null
           model: string | null
           model_year: number | null
@@ -1339,7 +1341,9 @@ export type Database = {
           current_odometer_km?: number | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
           id?: string
+          insurance_expiry_date?: string | null
           is_default?: boolean
+          licensing_expiry_date?: string | null
           load_capacity_kg?: number | null
           model?: string | null
           model_year?: number | null
@@ -1362,7 +1366,9 @@ export type Database = {
           current_odometer_km?: number | null
           fuel_type?: Database["public"]["Enums"]["fuel_type"] | null
           id?: string
+          insurance_expiry_date?: string | null
           is_default?: boolean
+          licensing_expiry_date?: string | null
           load_capacity_kg?: number | null
           model?: string | null
           model_year?: number | null
@@ -1470,6 +1476,8 @@ export type Database = {
         | "registrar_despesa"
         | "gerenciar_veiculo"
         | "definir_estilo_resposta"
+        | "consultar_conhecimento_operacional"
+        | "gerenciar_rota_salva"
       fuel_type:
         | "diesel_s10"
         | "diesel_s500"
@@ -1702,6 +1710,8 @@ export const Constants = {
         "registrar_despesa",
         "gerenciar_veiculo",
         "definir_estilo_resposta",
+        "consultar_conhecimento_operacional",
+        "gerenciar_rota_salva",
       ],
       fuel_type: [
         "diesel_s10",

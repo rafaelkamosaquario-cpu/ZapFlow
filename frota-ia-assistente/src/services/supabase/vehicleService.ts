@@ -58,6 +58,8 @@ export async function createVehicle(
       load_capacity_kg: parsed.loadCapacityKg,
       current_odometer_km: parsed.currentOdometerKm,
       axle_count: parsed.axleCount,
+      insurance_expiry_date: parsed.insuranceExpiryDate,
+      licensing_expiry_date: parsed.licensingExpiryDate,
       notes: parsed.notes,
       created_by: userId,
       updated_by: userId,
@@ -99,6 +101,8 @@ export async function updateVehicle(
       load_capacity_kg: parsed.loadCapacityKg,
       current_odometer_km: parsed.currentOdometerKm,
       axle_count: parsed.axleCount,
+      insurance_expiry_date: parsed.insuranceExpiryDate,
+      licensing_expiry_date: parsed.licensingExpiryDate,
       notes: parsed.notes,
       updated_by: userId,
     })

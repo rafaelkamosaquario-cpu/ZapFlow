@@ -104,6 +104,8 @@ export const vehicleCreateSchema = z.object({
   loadCapacityKg: z.number().finite().nonnegative().optional(),
   currentOdometerKm: z.number().finite().nonnegative().optional(),
   axleCount: z.number().int().min(1).max(12).optional(),
+  insuranceExpiryDate: z.string().date().optional(),
+  licensingExpiryDate: z.string().date().optional(),
   notes: maxText(2000, "Observações").optional(),
 });
 
