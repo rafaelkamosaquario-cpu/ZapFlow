@@ -30,5 +30,9 @@ export type SuggestionIconName =
   | "gauge"
   | "calculator"
   | "circleDot"
-  | "trendingDown"
-  | "wallet";
+  | "wallet"
+  | "scale"
+  | "bell"
+  | "clock"
+  | "history"
+  | "mapPin";

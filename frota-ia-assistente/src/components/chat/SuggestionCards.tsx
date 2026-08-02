@@ -1,4 +1,4 @@
-import { Calculator, CircleDot, Gauge, Truck, TrendingDown, Wallet, type LucideIcon } from "lucide-react";
+import { Calculator, CircleDot, Gauge, Truck, Wallet, Scale, Bell, Clock, History, MapPin, type LucideIcon } from "lucide-react";
 import { CardButton } from "@/components/ui/Card";
 import { SUGGESTION_PROMPTS } from "@/lib/constants";
 import type { SuggestionIconName } from "@/types";
@@ -8,8 +8,12 @@ const ICONS: Record<SuggestionIconName, LucideIcon> = {
   gauge: Gauge,
   calculator: Calculator,
   circleDot: CircleDot,
-  trendingDown: TrendingDown,
   wallet: Wallet,
+  scale: Scale,
+  bell: Bell,
+  clock: Clock,
+  history: History,
+  mapPin: MapPin,
 };
 
 interface SuggestionCardsProps {
