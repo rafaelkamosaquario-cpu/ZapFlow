@@ -1,5 +1,6 @@
 import type { OnboardingState } from "@/lib/supabase/tables";
 import type { CompanyRow } from "@/lib/supabase/tables";
+import { construirListaAjudaWhatsapp } from "@/lib/helpMenu";
 
 /**
  * Onboarding conversacional pelo WhatsApp (Camada 6, seções 3-6 do prompt
@@ -112,14 +113,16 @@ function askPrimaryVehicle(): OnboardingReply {
 }
 
 function completionMessage(): OnboardingReply {
-  return textReply(
-    "Pronto! Você já pode analisar fretes, calcular custos, consultar jornada, comparar pneus, verificar rotas e muito mais.\n\n" +
-      "Alguns exemplos:\n" +
-      '• "Esse frete de R$ 4.200 pra Santos compensa?"\n' +
-      '• "Marca a revisão do caminhão pra semana que vem"\n' +
-      '• "Me lembra do vencimento do documento"\n\n' +
-      "O que deseja fazer agora?"
+  const menu = construirListaAjudaWhatsapp(
+    "Pronto! Seu cadastro está completo. Aqui estão algumas coisas que você pode fazer — toque numa categoria pra ver exemplos, ou já manda sua pergunta direto."
   );
+  return {
+    kind: "list",
+    text: menu.texto,
+    title: menu.titulo,
+    buttonLabel: menu.botao,
+    options: menu.opcoes,
+  };
 }
 
 /** Aceita o id da lista (toque no menu) ou, como fallback, texto livre. */

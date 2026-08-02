@@ -8,6 +8,7 @@ import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
 import { isWhisperConfigured } from "@/lib/openai/whisperConfig";
 import { transcreverAudio } from "@/lib/openai/whisperClient";
 import { planilhaParaTexto, MIME_TYPES_PLANILHA_SUPORTADOS, SpreadsheetParseError } from "@/lib/spreadsheet/spreadsheetParser";
+import { ehPedidoDeAjuda, construirListaAjudaWhatsapp, construirDetalheCategoria } from "@/lib/helpMenu";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
@@ -199,6 +200,46 @@ export async function POST(request: Request) {
   const vehicleContext = await loadVehicleContext(admin, companyId);
   const conversation = await getOrCreateOpenConversation(admin, companyId, userId, channelId);
   const inboundBase: Partial<MessageInsert> = body.messageId ? { external_message_id: body.messageId } : {};
+
+  // Menu de ajuda: interceptado ANTES da IA, mesmo princípio do onboarding
+  // (resposta determinística — nunca gasta uma chamada de modelo pra um
+  // menu que é sempre o mesmo conteúdo). Cobre 2 casos: tocar numa
+  // categoria do menu (chega como listResponseMessage, teria sido
+  // descartado silenciosamente antes — nada no fluxo pós-onboarding lia
+  // isso) e pedir o menu por texto ("ajuda", "menu" etc.).
+  const categoriaSelecionada = body.listResponseMessage?.selectedRowId
+    ? construirDetalheCategoria(body.listResponseMessage.selectedRowId)
+    : null;
+  if (categoriaSelecionada) {
+    await appendMessage(admin, {
+      conversation_id: conversation.id,
+      company_id: companyId,
+      user_id: userId,
+      role: "user",
+      direction: "inbound",
+      content: body.listResponseMessage?.title ?? "[categoria do menu de ajuda]",
+      content_type: "text",
+      ...inboundBase,
+    });
+    await sendWhatsappText(phoneE164, categoriaSelecionada).catch(() => {});
+    return NextResponse.json({ ok: true });
+  }
+
+  if (ehPedidoDeAjuda(textoDireto)) {
+    await appendMessage(admin, {
+      conversation_id: conversation.id,
+      company_id: companyId,
+      user_id: userId,
+      role: "user",
+      direction: "inbound",
+      content: textoDireto ?? "",
+      content_type: "text",
+      ...inboundBase,
+    });
+    const menu = construirListaAjudaWhatsapp("Aqui estão as principais coisas que eu posso fazer por você:");
+    await sendWhatsappOptionList(phoneE164, menu.texto, menu.titulo, menu.botao, menu.opcoes).catch(() => {});
+    return NextResponse.json({ ok: true });
+  }
 
   // Resolve o conteúdo desta mensagem: texto direto, ou mídia (Fase F).
   let mensagemUsuario: string | null = null;

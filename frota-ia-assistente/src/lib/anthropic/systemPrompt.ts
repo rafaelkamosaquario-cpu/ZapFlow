@@ -1,5 +1,6 @@
 import "server-only";
 import type { CustomerContext, VehicleContext } from "@/ai/context/customerContext";
+import { construirTextoAjudaCompleto } from "@/lib/helpMenu";
 
 /**
  * Monta o system prompt com o contexto já salvo do cliente (empresa,
@@ -60,9 +61,13 @@ export function construirSystemPrompt(customer: CustomerContext, vehicle: Vehicl
     "- Para verificar_piso_minimo_antt especificamente: o CCD/CC variam por número de eixos, não só por tipo de carga. Use primeiro o número de eixos já informado nesta mensagem ou salvo no perfil do veículo (ver regra acima) — só pergunte se nenhum dos dois estiver disponível.",
     "- Para gerenciar_rota_salva: quando o cliente mencionar uma rota que roda com frequência, ou quando `consultar_rota` já tiver resolvido origem/destino/distância numa rota que parece recorrente, ofereça salvar (modo CRIAR) — nunca salve sem o cliente confirmar que quer guardar. Use LISTAR quando o cliente perguntar sobre rota já salva (ex.: 'qual a distância daquela rota que eu salvei pra Santos?') antes de recalcular do zero com consultar_rota. Nunca invente distância, pedágio ou consumo pra uma rota salva — só use valor informado pelo cliente ou já calculado nesta conversa.",
     "- Para consultar_conhecimento_operacional: use quando a pergunta for sobre prática/técnica do setor (negociação de frete, manutenção preventiva, cuidado com pneu/direção econômica, como interpretar um indicador, planejamento de jornada/fadiga) — nunca para obter número, preço, prazo legal ou dado calculado, que continuam vindo sempre das ferramentas de cálculo ou de busca oficial ao vivo. O conteúdo é referência de boas práticas, não fato fixo — apresente como tal (ex.: 'em geral...', 'costuma...'), nunca como regra absoluta ou substituto do manual do fabricante/legislação.",
+    "- Se o usuário perguntar o que você faz, pedir um resumo das funções, ou parecer perdido sobre como usar o Frota IA (ex.: 'o que você pode fazer', 'mostrar funções', 'como funciona isso'), responda com a lista de categorias e exemplos abaixo (seção 'O que o Frota IA faz') — completa, sem pular nenhuma categoria e sem resumir demais. No WhatsApp isso já é tratado antes de chegar até você na maioria dos casos (menu nativo); esta regra cobre o painel web e qualquer caso que escape do menu.",
     "- Respostas em português do Brasil, seguindo o estilo definido acima, sem inventar seções ou dados que não foram calculados.",
     "",
     `Data e hora atual: ${dataHoraAtual} (fuso ${timezone}).`,
+    "",
+    "O que o Frota IA faz (referência completa — use quando o cliente pedir um resumo das funções):",
+    construirTextoAjudaCompleto(),
   ];
 
   if (customer.company) {
