@@ -8,8 +8,8 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onSelectSuggestion }: WelcomeScreenProps) {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-8 px-4 py-10 text-center">
-      <div className="flex flex-col items-center gap-4">
+    <div className="mx-auto flex w-full max-w-[900px] flex-1 flex-col items-center justify-center py-10 text-center">
+      <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 px-4">
         <LogoMark className="size-14" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">

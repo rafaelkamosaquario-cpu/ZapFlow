@@ -1,16 +1,17 @@
 /**
- * Conteúdo único do "menu de ajuda" — cobre as 22 ferramentas do Frota IA,
- * organizadas por categoria com exemplos reais de mensagem. Usado em 3
- * lugares que precisam ficar sempre em sincronia:
- * 1. Mensagem de conclusão do onboarding (WhatsApp, lista nativa);
- * 2. Comando de ajuda permanente no WhatsApp ("ajuda"/"menu"/"o que você
- *    pode fazer"), interceptado no webhook antes de chegar na IA — resposta
- *    determinística, sem gastar chamada de modelo, mesmo princípio já usado
- *    no onboarding;
- * 3. Referência embutida no system prompt, pro painel web (e qualquer
- *    pergunta do tipo "o que você faz" que escape do intercept do
- *    WhatsApp) responder de forma completa e consistente, sem depender de
- *    a IA improvisar/esquecer alguma categoria.
+ * Conteúdo de referência sobre as 22 ferramentas do Frota IA, organizado
+ * por categoria com exemplos reais de mensagem.
+ *
+ * Desde a reformulação das sugestões iniciais (10 itens em
+ * src/lib/frotaSuggestions.ts), este arquivo NÃO é mais usado pra montar
+ * a lista nativa do WhatsApp — isso agora é `frotaSuggestions.ts`. O que
+ * sobra aqui, ainda em uso:
+ * 1. `ehPedidoDeAjuda` — detecta a frase-gatilho ("ajuda"/"menu"/
+ *    "opções"/"sugestões" etc.) que reabre a lista de 10 sugestões
+ *    (webhook chama `frotaSuggestions.ts` diretamente, não este arquivo);
+ * 2. `construirTextoAjudaCompleto` — referência completa embutida no
+ *    system prompt, pra painel web e qualquer pergunta tipo "o que você
+ *    faz" que peça mais detalhe que as 10 sugestões cobrem.
  *
  * Não importa nada de "server-only" — precisa ser seguro de importar tanto
  * no webhook (servidor) quanto em componentes client do painel web.
@@ -88,6 +89,10 @@ export const CATEGORIAS_AJUDA: CategoriaAjuda[] = [
 const PALAVRAS_GATILHO_AJUDA = [
   "ajuda",
   "menu",
+  "opções",
+  "opcoes",
+  "sugestões",
+  "sugestoes",
   "funções",
   "funcoes",
   "o que você pode fazer",
@@ -107,35 +112,6 @@ export function ehPedidoDeAjuda(texto: string | undefined | null): boolean {
   const normalizado = texto.trim().toLowerCase();
   if (normalizado.length > 60) return false; // frase de ajuda é curta — evita falso positivo em mensagem longa que só cita a palavra "ajuda" de passagem
   return PALAVRAS_GATILHO_AJUDA.some((gatilho) => normalizado === gatilho || normalizado.includes(gatilho));
-}
-
-export interface ListaAjudaWhatsapp {
-  texto: string;
-  titulo: string;
-  botao: string;
-  opcoes: Array<{ id: string; title: string; description: string }>;
-}
-
-/** Monta o payload pronto pra `sendWhatsappOptionList` — uma linha por categoria, com exemplo na descrição. */
-export function construirListaAjudaWhatsapp(introducao: string): ListaAjudaWhatsapp {
-  return {
-    texto: introducao,
-    titulo: "Como posso ajudar",
-    botao: "Ver funções",
-    opcoes: CATEGORIAS_AJUDA.map((categoria) => ({
-      id: categoria.id,
-      title: `${categoria.emoji} ${categoria.titulo}`,
-      description: categoria.exemplos[0],
-    })),
-  };
-}
-
-/** Detalhe de uma categoria específica (usado quando o cliente toca numa linha do menu). */
-export function construirDetalheCategoria(categoriaId: string): string | null {
-  const categoria = CATEGORIAS_AJUDA.find((c) => c.id === categoriaId);
-  if (!categoria) return null;
-  const exemplos = categoria.exemplos.map((ex) => `• "${ex}"`).join("\n");
-  return `${categoria.emoji} *${categoria.titulo}*\n\n${exemplos}\n\nÉ só mandar uma mensagem parecida com essas.`;
 }
 
 /** Versão em texto corrido (painel web / referência no system prompt) — sem sintaxe de lista nativa do WhatsApp. */

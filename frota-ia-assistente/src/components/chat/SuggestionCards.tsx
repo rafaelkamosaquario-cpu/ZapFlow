@@ -1,19 +1,29 @@
-import { Calculator, CircleDot, Gauge, Truck, Wallet, Scale, Bell, Clock, History, MapPin, type LucideIcon } from "lucide-react";
-import { CardButton } from "@/components/ui/Card";
-import { SUGGESTION_PROMPTS } from "@/lib/constants";
-import type { SuggestionIconName } from "@/types";
+import type { CSSProperties } from "react";
+import { Calculator, CircleGauge, Gauge, Truck, Scale, WalletCards, Bell, Clock3, History, MapPin, CircleDollarSign, type LucideIcon } from "lucide-react";
+import { FROTA_SUGGESTIONS } from "@/lib/frotaSuggestions";
+import styles from "./SuggestionCards.module.css";
 
-const ICONS: Record<SuggestionIconName, LucideIcon> = {
-  truck: Truck,
-  gauge: Gauge,
-  calculator: Calculator,
-  circleDot: CircleDot,
-  wallet: Wallet,
-  scale: Scale,
-  bell: Bell,
-  clock: Clock,
-  history: History,
-  mapPin: MapPin,
+const ICONS: Record<string, LucideIcon> = {
+  Truck,
+  Gauge,
+  Calculator,
+  CircleGauge,
+  Scale,
+  WalletCards,
+  Bell,
+  Clock3,
+  History,
+  MapPin,
+};
+
+/**
+ * Só "Analisar um frete" pede ícone combinado no spec ("Truck acompanhado
+ * de CircleDollarSign") — os outros 9 usam um ícone só. Mantido aqui (não
+ * no tipo FrotaSuggestion) porque é detalhe de apresentação, não dado de
+ * negócio compartilhado com o WhatsApp.
+ */
+const ICONE_SECUNDARIO: Record<string, LucideIcon> = {
+  analisar_frete: CircleDollarSign,
 };
 
 interface SuggestionCardsProps {
@@ -22,19 +32,33 @@ interface SuggestionCardsProps {
 
 export function SuggestionCards({ onSelect }: SuggestionCardsProps) {
   return (
-    <div className="grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
-      {SUGGESTION_PROMPTS.map((suggestion) => {
-        const Icon = ICONS[suggestion.icon];
+    <div className={styles.suggestionsGrid}>
+      {FROTA_SUGGESTIONS.map((suggestion, index) => {
+        const Icon = ICONS[suggestion.icon] ?? Truck;
+        const IconeSecundario = ICONE_SECUNDARIO[suggestion.id];
+
         return (
-          <CardButton key={suggestion.id} onClick={() => onSelect(suggestion.prompt)}>
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Icon className="size-4.5" aria-hidden />
+          <button
+            key={suggestion.id}
+            type="button"
+            className={styles.suggestionCard}
+            style={{ "--suggestion-index": index } as CSSProperties}
+            onClick={() => onSelect(suggestion.description)}
+            aria-label={`${suggestion.title}: ${suggestion.description}`}
+          >
+            <span className={styles.suggestionCardIcon}>
+              <Icon size={23} strokeWidth={1.75} aria-hidden />
+              {IconeSecundario ? (
+                <span className={styles.suggestionCardIconBadge}>
+                  <IconeSecundario size={11} strokeWidth={2} aria-hidden />
+                </span>
+              ) : null}
             </span>
-            <span className="flex flex-col">
-              <span className="text-sm font-medium text-foreground">{suggestion.label}</span>
-              <span className="text-xs text-muted-foreground">{suggestion.prompt}</span>
+            <span className={styles.suggestionCardBody}>
+              <span className={styles.suggestionCardTitle}>{suggestion.title}</span>
+              <span className={styles.suggestionCardDescription}>{suggestion.description}</span>
             </span>
-          </CardButton>
+          </button>
         );
       })}
     </div>

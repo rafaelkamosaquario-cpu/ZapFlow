@@ -8,7 +8,8 @@ import { baixarMidia, paraBase64 } from "@/lib/whatsapp/mediaDownloader";
 import { isWhisperConfigured } from "@/lib/openai/whisperConfig";
 import { transcreverAudio } from "@/lib/openai/whisperClient";
 import { planilhaParaTexto, MIME_TYPES_PLANILHA_SUPORTADOS, SpreadsheetParseError } from "@/lib/spreadsheet/spreadsheetParser";
-import { ehPedidoDeAjuda, construirListaAjudaWhatsapp, construirDetalheCategoria } from "@/lib/helpMenu";
+import { ehPedidoDeAjuda } from "@/lib/helpMenu";
+import { FROTA_SUGGESTIONS, resolverSelecaoNumerada } from "@/lib/frotaSuggestions";
 import { toPhoneE164 } from "@/lib/identity/phoneNormalizer";
 import { resolveOrCreateUserByPhone } from "@/services/supabase/userIdentityService";
 import { getOnboardingSession, createOnboardingSession, updateOnboardingSession } from "@/services/supabase/onboardingSessionService";
@@ -87,6 +88,57 @@ async function enviarRespostaOnboarding(phoneE164: string, reply: OnboardingRepl
     return;
   }
   await sendWhatsappText(phoneE164, reply.text);
+}
+
+const MENSAGEM_POS_CADASTRO =
+  "Cadastro concluído!\n\nAgora você já pode conversar normalmente com o Frota IA.\n\nEscolha uma das opções abaixo para começar ou envie sua própria pergunta por texto, áudio, foto ou documento.";
+
+const TEXTO_LISTA_SUGESTOES = "Como posso ajudar com sua frota hoje?";
+
+function construirFallbackNumerado(): string {
+  const linhas = FROTA_SUGGESTIONS.map((s, i) => `${i + 1}. ${s.title}`).join("\n");
+  return `${TEXTO_LISTA_SUGESTOES}\n\n${linhas}\n\nResponda com o número ou escreva sua pergunta normalmente.`;
+}
+
+/**
+ * Envia as 10 sugestões iniciais — lista nativa (única capacidade real do
+ * adaptador atual pra isso, `sendWhatsappOptionList`, endpoint
+ * `send-option-list` da Z-API) com fallback pra menu numerado em texto se o
+ * envio da lista falhar. Nunca inventa um endpoint alternativo — o
+ * fallback usa `sendWhatsappText`, que já existe.
+ *
+ * Se cair no fallback, marca a sessão como "aguardando escolha numerada"
+ * pra próxima mensagem poder ser interpretada como seleção (ver
+ * `resolverSelecaoNumerada` em frotaSuggestions.ts) — nunca interpreta um
+ * número solto fora desse contexto, pra não confundir com valor de cálculo.
+ *
+ * `collectedDataAtual` é sempre repassado por quem chama (nunca lido de
+ * novo aqui) porque `updateOnboardingSession` substitui o campo inteiro —
+ * sem isso, perderíamos os dados já coletados no onboarding.
+ */
+async function enviarSugestoesIniciais(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  phoneE164: string,
+  collectedDataAtual: Record<string, unknown>
+): Promise<void> {
+  try {
+    await sendWhatsappOptionList(
+      phoneE164,
+      TEXTO_LISTA_SUGESTOES,
+      "Escolha uma opção",
+      "Ver sugestões",
+      FROTA_SUGGESTIONS.map((s) => ({ id: s.id, title: s.title, description: s.description }))
+    );
+    await updateOnboardingSession(admin, userId, {
+      collectedData: { ...collectedDataAtual, suggestionsMenuSentAt: new Date().toISOString(), awaitingNumberedMenuSelection: false },
+    });
+  } catch {
+    await sendWhatsappText(phoneE164, construirFallbackNumerado()).catch(() => {});
+    await updateOnboardingSession(admin, userId, {
+      collectedData: { ...collectedDataAtual, suggestionsMenuSentAt: new Date().toISOString(), awaitingNumberedMenuSelection: true },
+    }).catch(() => {});
+  }
 }
 
 function extrairTelefoneDoVcard(vcard?: string): string | null {
@@ -179,6 +231,18 @@ export async function POST(request: Request) {
         await updateOnboardingSession(admin, userId, { state: "awaiting_primary_vehicle" });
         return NextResponse.json({ ok: true });
       }
+
+      // Cadastro salvo com sucesso: mensagem fixa + as 10 sugestões, só
+      // desta vez (idempotência via suggestions_menu_sent_at em
+      // collected_data — nunca reenviado automaticamente depois disso;
+      // reabertura manual é só via "ajuda"/"menu"/"opções"/"sugestões" mais
+      // abaixo no fluxo pós-onboarding).
+      const collectedDataAtual = resultado.collectedData as Record<string, unknown>;
+      if (!collectedDataAtual.suggestionsMenuSentAt) {
+        await sendWhatsappText(phoneE164, MENSAGEM_POS_CADASTRO).catch(() => {});
+        await enviarSugestoesIniciais(admin, userId, phoneE164, collectedDataAtual);
+      }
+      return NextResponse.json({ ok: true });
     }
 
     await enviarRespostaOnboarding(phoneE164, resultado.reply).catch(() => {});
@@ -201,30 +265,12 @@ export async function POST(request: Request) {
   const conversation = await getOrCreateOpenConversation(admin, companyId, userId, channelId);
   const inboundBase: Partial<MessageInsert> = body.messageId ? { external_message_id: body.messageId } : {};
 
-  // Menu de ajuda: interceptado ANTES da IA, mesmo princípio do onboarding
-  // (resposta determinística — nunca gasta uma chamada de modelo pra um
-  // menu que é sempre o mesmo conteúdo). Cobre 2 casos: tocar numa
-  // categoria do menu (chega como listResponseMessage, teria sido
-  // descartado silenciosamente antes — nada no fluxo pós-onboarding lia
-  // isso) e pedir o menu por texto ("ajuda", "menu" etc.).
-  const categoriaSelecionada = body.listResponseMessage?.selectedRowId
-    ? construirDetalheCategoria(body.listResponseMessage.selectedRowId)
-    : null;
-  if (categoriaSelecionada) {
-    await appendMessage(admin, {
-      conversation_id: conversation.id,
-      company_id: companyId,
-      user_id: userId,
-      role: "user",
-      direction: "inbound",
-      content: body.listResponseMessage?.title ?? "[categoria do menu de ajuda]",
-      content_type: "text",
-      ...inboundBase,
-    });
-    await sendWhatsappText(phoneE164, categoriaSelecionada).catch(() => {});
-    return NextResponse.json({ ok: true });
-  }
-
+  // Reabertura do menu por palavra-chave ("ajuda"/"menu"/"opções"/
+  // "sugestões" etc.) — interceptado ANTES da IA, resposta determinística,
+  // sem gastar chamada de modelo. Mostra de novo a mesma lista de 10,
+  // independentemente de já ter sido enviada no fim do onboarding (nunca
+  // checa suggestions_menu_sent_at aqui — reabertura manual é sempre
+  // permitida).
   if (ehPedidoDeAjuda(textoDireto)) {
     await appendMessage(admin, {
       conversation_id: conversation.id,
@@ -236,9 +282,29 @@ export async function POST(request: Request) {
       content_type: "text",
       ...inboundBase,
     });
-    const menu = construirListaAjudaWhatsapp("Aqui estão as principais coisas que eu posso fazer por você:");
-    await sendWhatsappOptionList(phoneE164, menu.texto, menu.titulo, menu.botao, menu.opcoes).catch(() => {});
+    await enviarSugestoesIniciais(admin, userId, phoneE164, (session.collected_data ?? {}) as Record<string, unknown>);
     return NextResponse.json({ ok: true });
+  }
+
+  // Toque numa das 10 sugestões: equivale a "preencher e enviar" da web —
+  // no WhatsApp não existe "só preencher", o toque já é o envio. Segue pro
+  // fluxo normal da IA como se o cliente tivesse digitado o exemplo.
+  const sugestaoSelecionada = body.listResponseMessage?.selectedRowId
+    ? FROTA_SUGGESTIONS.find((s) => s.id === body.listResponseMessage?.selectedRowId)
+    : undefined;
+
+  // Fallback numerado: só interpreta "3" (ou o título exato) como escolha
+  // quando a sessão está de fato aguardando essa resposta (marcado só
+  // quando o envio da lista nativa falhou) — nunca em mensagem solta, pra
+  // não confundir com um número de cálculo (ex.: "3" toneladas, "3" dias).
+  const aguardandoSelecaoNumerada = Boolean((session.collected_data as Record<string, unknown> | null)?.awaitingNumberedMenuSelection);
+  const selecaoNumerada = aguardandoSelecaoNumerada ? resolverSelecaoNumerada(textoDireto) : undefined;
+  if (aguardandoSelecaoNumerada) {
+    // Passou o momento de interpretar como escolha, tenha batido ou não —
+    // nunca deixa a sessão esperando indefinidamente uma resposta numérica.
+    await updateOnboardingSession(admin, userId, {
+      collectedData: { ...(session.collected_data as Record<string, unknown>), awaitingNumberedMenuSelection: false },
+    }).catch(() => {});
   }
 
   // Resolve o conteúdo desta mensagem: texto direto, ou mídia (Fase F).
@@ -246,7 +312,11 @@ export async function POST(request: Request) {
   let conteudoMultimodal: Anthropic.ContentBlockParam[] | undefined;
   let inboundExtra: Partial<MessageInsert> = inboundBase;
 
-  if (textoDireto) {
+  if (sugestaoSelecionada) {
+    mensagemUsuario = sugestaoSelecionada.whatsappDescription;
+  } else if (selecaoNumerada) {
+    mensagemUsuario = selecaoNumerada.whatsappDescription;
+  } else if (textoDireto) {
     mensagemUsuario = textoDireto;
   } else if (body.image?.imageUrl) {
     const mimeType = body.image.mimeType ?? "image/jpeg";

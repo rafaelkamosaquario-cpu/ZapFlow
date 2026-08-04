@@ -1,6 +1,5 @@
 import type { OnboardingState } from "@/lib/supabase/tables";
 import type { CompanyRow } from "@/lib/supabase/tables";
-import { construirListaAjudaWhatsapp } from "@/lib/helpMenu";
 
 /**
  * Onboarding conversacional pelo WhatsApp (Camada 6, seções 3-6 do prompt
@@ -112,17 +111,18 @@ function askPrimaryVehicle(): OnboardingReply {
   return textReply('Qual é o veículo que você utiliza com mais frequência? Pode informar marca, modelo e ano. Caso não queira cadastrar agora, responda "depois".');
 }
 
+/**
+ * O conteúdo real enviado ao cliente na conclusão do cadastro (mensagem
+ * fixa + lista das 10 sugestões iniciais) é montado no webhook
+ * (`enviarSugestoesIniciais`, src/app/api/whatsapp/webhook/route.ts) — lá
+ * é onde dá pra checar idempotência (suggestions_menu_sent_at) e cair no
+ * fallback numerado se a lista nativa falhar; nenhuma das duas coisas cabe
+ * numa função pura sem I/O. Esta função só preenche o campo `reply`
+ * exigido pelo contrato de `OnboardingStepResult` — o webhook ignora esse
+ * texto no caminho de finalize=true.
+ */
 function completionMessage(): OnboardingReply {
-  const menu = construirListaAjudaWhatsapp(
-    "Pronto! Seu cadastro está completo. Aqui estão algumas coisas que você pode fazer — toque numa categoria pra ver exemplos, ou já manda sua pergunta direto."
-  );
-  return {
-    kind: "list",
-    text: menu.texto,
-    title: menu.titulo,
-    buttonLabel: menu.botao,
-    options: menu.opcoes,
-  };
+  return textReply("Cadastro concluído!");
 }
 
 /** Aceita o id da lista (toque no menu) ou, como fallback, texto livre. */

@@ -1,0 +1,185 @@
+/*
+ * Design exato pedido pra reformulação das sugestões iniciais (dez cards,
+ * grid 2x5 no desktop, 1 coluna no celular). CSS Module dedicado — não
+ * mexe em src/components/ui/Card.tsx (CardButton continua intocado, só
+ * deixou de ser usado por este componente específico).
+ */
+
+.suggestionsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 112px;
+  gap: 12px;
+  width: min(100%, 860px);
+  margin: 32px auto 0;
+  padding: 0 20px 140px;
+}
+
+@media (max-width: 900px) and (min-width: 721px) {
+  .suggestionsGrid {
+    padding: 0 14px 140px;
+  }
+}
+
+@media (max-width: 720px) {
+  .suggestionsGrid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    gap: 12px;
+    width: 100%;
+    padding: 0 14px 130px;
+  }
+
+  .suggestionCard {
+    min-height: 92px;
+  }
+}
+
+.suggestionCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  padding: 18px 20px;
+  border-radius: 16px;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+
+  background: linear-gradient(145deg, rgba(12, 25, 51, 0.96), rgba(4, 11, 27, 0.98));
+  border: 1px solid rgba(66, 146, 255, 0.24);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    inset 0 0 16px rgba(0, 119, 255, 0.04);
+  backdrop-filter: blur(10px);
+
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+
+  animation: suggestionReveal 550ms ease both;
+  animation-delay: calc(var(--suggestion-index, 0) * 60ms);
+}
+
+.suggestionCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 10% 50%, rgba(29, 125, 255, 0.1), transparent 42%);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.suggestionCard:hover,
+.suggestionCard:focus-visible {
+  transform: translateY(-4px);
+  border-color: rgba(53, 154, 255, 0.58);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.32),
+    0 0 22px rgba(0, 123, 255, 0.14),
+    inset 0 0 18px rgba(0, 119, 255, 0.07);
+}
+
+.suggestionCard:hover::before,
+.suggestionCard:focus-visible::before {
+  opacity: 1;
+}
+
+.suggestionCard:focus-visible {
+  outline: 2px solid #55b7ff;
+  outline-offset: 3px;
+}
+
+.suggestionCard:hover .suggestionCardIcon,
+.suggestionCard:focus-visible .suggestionCardIcon {
+  color: #55b7ff;
+  border-color: rgba(65, 177, 255, 0.4);
+  box-shadow:
+    0 0 18px rgba(0, 137, 255, 0.2),
+    inset 0 0 14px rgba(0, 133, 255, 0.12);
+}
+
+.suggestionCardIcon {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  color: #2f8cff;
+
+  background: linear-gradient(145deg, rgba(30, 67, 130, 0.38), rgba(12, 31, 69, 0.56));
+  border: 1px solid rgba(54, 151, 255, 0.14);
+  box-shadow: inset 0 0 12px rgba(0, 133, 255, 0.08);
+  transition:
+    color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+/* Badge do segundo ícone (ex.: CircleDollarSign sobre o Truck) — só usado
+   quando a sugestão define `secondaryIcon`. */
+.suggestionCardIconBadge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #071229;
+  border: 1px solid rgba(65, 177, 255, 0.4);
+  color: #55b7ff;
+}
+
+.suggestionCardBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.suggestionCardTitle {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.suggestionCardDescription {
+  margin-top: 4px;
+  color: #9fb4da;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+@keyframes suggestionReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestionCard {
+    animation: none !important;
+    transition: none;
+  }
+
+  .suggestionCard:hover,
+  .suggestionCard:focus-visible {
+    transform: none;
+  }
+}
