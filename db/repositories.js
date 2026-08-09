@@ -2,6 +2,13 @@
 // Camada ÚNICA de acesso ao banco (Supabase). Nenhum outro arquivo deve falar
 // com o Supabase diretamente — tudo passa por aqui.
 //
+// Multi-tenant: toda função que lê/grava dado operacional recebe `empresaId`
+// como primeiro parâmetro e filtra/grava por ele. Isso é o que garante
+// isolamento entre empresas (não existem RLS policies — ver migration
+// 003_multi_tenant.sql — então esta camada é a única barreira real).
+// `requireEmpresaId` falha alto (fail-closed) se algum chamador esquecer de
+// passar o id: é preferível quebrar na hora a devolver dado errado.
+//
 // Cada método recebe/devolve objetos no MESMO formato que o ZapFlow já usa em
 // memória, para não quebrar os endpoints nem o frontend. O Supabase é a fonte
 // da verdade: os dados são carregados na inicialização e gravados a cada
@@ -22,27 +29,100 @@ const supabase = new Proxy({}, {
 const ms = (iso) => (iso ? new Date(iso).getTime() : Date.now());
 const iso = (msVal) => new Date(msVal || Date.now()).toISOString();
 
+function requireEmpresaId(id, ctx) {
+  if (!id) throw new Error(`[repositories] empresaId obrigatório em ${ctx}`);
+  return id;
+}
+
+// ----------------------------------------------------------------------------
+// empresas (cliente pagante)
+// ----------------------------------------------------------------------------
+export const empresasRepo = {
+  async create({ name, zapiInstanceId, zapiInstanceToken, zapiClientToken, webhookSecret, maxVendedores }) {
+    const { data, error } = await supabase.from("empresas").insert({
+      name, zapi_instance_id: zapiInstanceId || null, zapi_instance_token: zapiInstanceToken || null,
+      zapi_client_token: zapiClientToken || null, webhook_secret: webhookSecret,
+      max_vendedores: maxVendedores ?? 5,
+    }).select("*").single();
+    assertOk(error, "empresas.create");
+    return empresaFromRow(data);
+  },
+  async getById(id) {
+    if (!id) return null;
+    const { data, error } = await supabase.from("empresas").select("*").eq("id", id).maybeSingle();
+    assertOk(error, "empresas.getById");
+    return data ? empresaFromRow(data) : null;
+  },
+};
+function empresaFromRow(r) {
+  return {
+    id: r.id, name: r.name, active: !!r.active, maxVendedores: r.max_vendedores,
+    webhookSecret: r.webhook_secret,
+    zapiInstanceId: r.zapi_instance_id || "", zapiInstanceToken: r.zapi_instance_token || "",
+    zapiClientToken: r.zapi_client_token || "",
+  };
+}
+
+// ----------------------------------------------------------------------------
+// usuarios (login por empresa — papéis owner/vendedor)
+// ----------------------------------------------------------------------------
+export const usuariosRepo = {
+  async findByUsername(username) {
+    const u = String(username || "").trim().toLowerCase();
+    if (!u) return null;
+    const { data, error } = await supabase.from("usuarios").select("*").ilike("username", u).maybeSingle();
+    assertOk(error, "usuarios.findByUsername");
+    return data ? usuarioFromRow(data) : null;
+  },
+  async create({ empresaId, username, passwordHash, role, name, phone }) {
+    requireEmpresaId(empresaId, "usuarios.create");
+    const { data, error } = await supabase.from("usuarios").insert({
+      empresa_id: empresaId, username: String(username).trim().toLowerCase(),
+      password_hash: passwordHash, role, name: name || "", phone: phone || null,
+    }).select("*").single();
+    assertOk(error, "usuarios.create");
+    return usuarioFromRow(data);
+  },
+  async countVendedores(empresaId) {
+    requireEmpresaId(empresaId, "usuarios.countVendedores");
+    const { count, error } = await supabase.from("usuarios").select("id", { count: "exact", head: true })
+      .eq("empresa_id", empresaId).eq("role", "vendedor").eq("active", true);
+    assertOk(error, "usuarios.countVendedores");
+    return count || 0;
+  },
+};
+function usuarioFromRow(r) {
+  return {
+    id: r.id, empresaId: r.empresa_id, username: r.username, passwordHash: r.password_hash,
+    role: r.role, name: r.name || "", phone: r.phone || "", active: !!r.active,
+  };
+}
+
 // ----------------------------------------------------------------------------
 // contatos (agenda)
 // ----------------------------------------------------------------------------
 export const contatosRepo = {
-  async loadAll() {
-    const { data, error } = await supabase.from("contatos").select("*").order("name");
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "contatos.loadAll");
+    const { data, error } = await supabase.from("contatos").select("*")
+      .eq("empresa_id", empresaId).order("name");
     assertOk(error, "contatos.loadAll");
     return (data || []).map((r) => ({
       id: r.id, name: r.name || "", phone: r.phone, key: r.phone_key,
       origem: r.origem || "manual", createdAt: ms(r.created_at),
     }));
   },
-  async upsertOne(c) {
+  async upsertOne(empresaId, c) {
+    requireEmpresaId(empresaId, "contatos.upsertOne");
     const { error } = await supabase.from("contatos").upsert({
-      id: c.id, phone_key: c.key, phone: c.phone, name: c.name || "",
+      id: c.id, empresa_id: empresaId, phone_key: c.key, phone: c.phone, name: c.name || "",
       origem: c.origem || "manual", created_at: iso(c.createdAt),
-    }, { onConflict: "phone_key" });
+    }, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "contatos.upsertOne");
   },
-  async deleteById(id) {
-    const { error } = await supabase.from("contatos").delete().eq("id", id);
+  async deleteById(empresaId, id) {
+    requireEmpresaId(empresaId, "contatos.deleteById");
+    const { error } = await supabase.from("contatos").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "contatos.deleteById");
   },
 };
@@ -61,34 +141,39 @@ function clienteFromRow(r) {
   };
 }
 export const clientesRepo = {
-  async loadAll() {
-    const { data, error } = await supabase.from("clientes").select("*").order("updated_at", { ascending: false });
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "clientes.loadAll");
+    const { data, error } = await supabase.from("clientes").select("*")
+      .eq("empresa_id", empresaId).order("updated_at", { ascending: false });
     assertOk(error, "clientes.loadAll");
     return (data || []).map(clienteFromRow);
   },
-  async upsertOne(c) {
+  async upsertOne(empresaId, c) {
+    requireEmpresaId(empresaId, "clientes.upsertOne");
     const { error } = await supabase.from("clientes").upsert({
-      id: c.id, phone_key: c.key, phone: c.phone, name: c.name || "", wa_name: c.waName || null,
+      id: c.id, empresa_id: empresaId, phone_key: c.key, phone: c.phone, name: c.name || "", wa_name: c.waName || null,
       stage: c.stage || "Novo", stage_manual: !!c.stageManual,
       tags: c.tags || [], notes: c.notes || "",
       last_sent_at: c.lastSentAt || null, last_reply_at: c.lastReplyAt || null,
       last_campaign_name: c.lastCampaignName || null, created_at: iso(c.createdAt),
-    }, { onConflict: "phone_key" });
+    }, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertOne");
   },
-  async upsertMany(list) {
+  async upsertMany(empresaId, list) {
+    requireEmpresaId(empresaId, "clientes.upsertMany");
     if (!list.length) return;
     const rows = list.map((c) => ({
-      id: c.id, phone_key: c.key, phone: c.phone, name: c.name || "", wa_name: c.waName || null,
+      id: c.id, empresa_id: empresaId, phone_key: c.key, phone: c.phone, name: c.name || "", wa_name: c.waName || null,
       stage: c.stage || "Novo", stage_manual: !!c.stageManual, tags: c.tags || [], notes: c.notes || "",
       last_sent_at: c.lastSentAt || null, last_reply_at: c.lastReplyAt || null,
       last_campaign_name: c.lastCampaignName || null, created_at: iso(c.createdAt),
     }));
-    const { error } = await supabase.from("clientes").upsert(rows, { onConflict: "phone_key" });
+    const { error } = await supabase.from("clientes").upsert(rows, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertMany");
   },
-  async deleteById(id) {
-    const { error } = await supabase.from("clientes").delete().eq("id", id);
+  async deleteById(empresaId, id) {
+    requireEmpresaId(empresaId, "clientes.deleteById");
+    const { error } = await supabase.from("clientes").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "clientes.deleteById");
   },
 };
@@ -97,27 +182,30 @@ export const clientesRepo = {
 // conversas (thread) + mensagens
 // ----------------------------------------------------------------------------
 export const conversasRepo = {
-  async upsertThread(t) {
+  async upsertThread(empresaId, t) {
+    requireEmpresaId(empresaId, "conversas.upsertThread");
     const { data, error } = await supabase.from("conversas").upsert({
-      phone_key: t.key, phone: t.phone, last_text: t.text, last_dir: t.dir,
+      empresa_id: empresaId, phone_key: t.key, phone: t.phone, last_text: t.text, last_dir: t.dir,
       last_ts: t.ts, origem: t.origem || null,
-    }, { onConflict: "phone_key" }).select("id").single();
+    }, { onConflict: "empresa_id,phone_key" }).select("id").single();
     assertOk(error, "conversas.upsertThread");
     return data?.id || null;
   },
 };
 
 export const mensagensRepo = {
-  async loadAll() {
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "mensagens.loadAll");
     // Carrega as últimas mensagens (limite alto para caber a caixa de entrada)
     const { data, error } = await supabase.from("mensagens").select("phone_key,phone,text,dir,ts")
-      .order("ts", { ascending: true }).limit(5000);
+      .eq("empresa_id", empresaId).order("ts", { ascending: true }).limit(5000);
     assertOk(error, "mensagens.loadAll");
     return (data || []).map((r) => ({ key: r.phone_key, phone: r.phone, text: r.text, ts: r.ts, dir: r.dir }));
   },
-  async insertOne(m, externalId, conversaId) {
+  async insertOne(empresaId, m, externalId, conversaId) {
+    requireEmpresaId(empresaId, "mensagens.insertOne");
     const { error } = await supabase.from("mensagens").insert({
-      conversa_id: conversaId || null, phone_key: m.key, phone: m.phone,
+      empresa_id: empresaId, conversa_id: conversaId || null, phone_key: m.key, phone: m.phone,
       text: m.text, dir: m.dir, external_id: externalId || null, ts: m.ts,
     });
     // Conflito de external_id (mensagem duplicada) não é erro fatal: apenas ignora
@@ -139,15 +227,18 @@ function sanitizeJob(job) {
   return copy;
 }
 export const campanhasRepo = {
-  async loadAll() {
-    const { data, error } = await supabase.from("campanhas").select("data").order("created_at", { ascending: true });
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "campanhas.loadAll");
+    const { data, error } = await supabase.from("campanhas").select("data")
+      .eq("empresa_id", empresaId).order("created_at", { ascending: true });
     assertOk(error, "campanhas.loadAll");
     return (data || []).map((r) => r.data).filter(Boolean);
   },
-  async upsertOne(job) {
+  async upsertOne(empresaId, job) {
+    requireEmpresaId(empresaId, "campanhas.upsertOne");
     const clean = sanitizeJob(job);
     const { error } = await supabase.from("campanhas").upsert({
-      id: job.id, status: job.status || "pendente", immediate: !!job.immediate,
+      id: job.id, empresa_id: empresaId, status: job.status || "pendente", immediate: !!job.immediate,
       message: job.message || null, had_image: !!(job.hadImage || job.imageCount),
       image_count: job.imageCount || 0, delay_ms: job.delayMs ?? null,
       contacts_count: job.contacts?.length || clean.contacts?.length || 0,
@@ -158,26 +249,36 @@ export const campanhasRepo = {
     }, { onConflict: "id" });
     assertOk(error, "campanhas.upsertOne");
   },
-  async upsertMany(jobs) {
+  async upsertMany(empresaId, jobs) {
     if (!jobs.length) return;
-    for (const job of jobs) await this.upsertOne(job);
+    for (const job of jobs) await this.upsertOne(empresaId, job);
   },
-  async deleteById(id) {
-    const { error } = await supabase.from("campanhas").delete().eq("id", id);
+  async deleteById(empresaId, id) {
+    requireEmpresaId(empresaId, "campanhas.deleteById");
+    const { error } = await supabase.from("campanhas").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "campanhas.deleteById");
   },
-  async deleteAll() {
-    const { error } = await supabase.from("campanhas").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    assertOk(error, "campanhas.deleteAll");
+  async deleteAllForEmpresa(empresaId) {
+    requireEmpresaId(empresaId, "campanhas.deleteAllForEmpresa");
+    const { error } = await supabase.from("campanhas").delete().eq("empresa_id", empresaId);
+    assertOk(error, "campanhas.deleteAllForEmpresa");
+  },
+  /** Usado só pelo agendador: pendentes vencidas de TODAS as empresas, sem carregar estado nenhum. */
+  async loadDueAcrossEmpresas() {
+    const { data, error } = await supabase.from("campanhas").select("id,empresa_id,scheduled_at")
+      .eq("status", "pendente").lte("scheduled_at", Date.now());
+    assertOk(error, "campanhas.loadDueAcrossEmpresas");
+    return data || [];
   },
 };
 
 export const destinatariosRepo = {
-  async replaceForCampaign(campanhaId, logs) {
+  async replaceForCampaign(empresaId, campanhaId, logs) {
+    requireEmpresaId(empresaId, "destinatarios.replaceForCampaign");
     if (!Array.isArray(logs) || !logs.length) return;
-    await supabase.from("destinatarios_campanha").delete().eq("campanha_id", campanhaId);
+    await supabase.from("destinatarios_campanha").delete().eq("campanha_id", campanhaId).eq("empresa_id", empresaId);
     const rows = logs.map((l) => ({
-      campanha_id: campanhaId, phone: l.phone || null, name: l.name || null,
+      campanha_id: campanhaId, empresa_id: empresaId, phone: l.phone || null, name: l.name || null,
       ok: !!l.ok, error: l.error || null,
     }));
     const { error } = await supabase.from("destinatarios_campanha").insert(rows);
@@ -191,32 +292,37 @@ export const destinatariosRepo = {
 // modelos_mensagem (templates)
 // ----------------------------------------------------------------------------
 export const modelosRepo = {
-  async loadAll() {
-    const { data, error } = await supabase.from("modelos_mensagem").select("*").order("created_at");
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "modelos.loadAll");
+    const { data, error } = await supabase.from("modelos_mensagem").select("*")
+      .eq("empresa_id", empresaId).order("created_at");
     assertOk(error, "modelos.loadAll");
     return (data || []).map((r) => ({
       id: r.id, name: r.name, message: r.message || "",
       imageUrls: Array.isArray(r.image_urls) ? r.image_urls : [],
     }));
   },
-  async upsertOne(t) {
+  async upsertOne(empresaId, t) {
+    requireEmpresaId(empresaId, "modelos.upsertOne");
     const { error } = await supabase.from("modelos_mensagem").upsert({
-      id: t.id, name: t.name, message: t.message || "", image_urls: t.imageUrls || [],
+      id: t.id, empresa_id: empresaId, name: t.name, message: t.message || "", image_urls: t.imageUrls || [],
     }, { onConflict: "id" });
     assertOk(error, "modelos.upsertOne");
   },
-  async deleteById(id) {
-    const { error } = await supabase.from("modelos_mensagem").delete().eq("id", id);
+  async deleteById(empresaId, id) {
+    requireEmpresaId(empresaId, "modelos.deleteById");
+    const { error } = await supabase.from("modelos_mensagem").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "modelos.deleteById");
   },
 };
 
 // ----------------------------------------------------------------------------
-// automacoes (chatbot — linha única)
+// automacoes (chatbot — linha única POR EMPRESA; empresa_id é a própria PK)
 // ----------------------------------------------------------------------------
 export const automacoesRepo = {
-  async load() {
-    const { data, error } = await supabase.from("automacoes").select("*").eq("id", "chatbot").maybeSingle();
+  async load(empresaId) {
+    requireEmpresaId(empresaId, "automacoes.load");
+    const { data, error } = await supabase.from("automacoes").select("*").eq("empresa_id", empresaId).maybeSingle();
     assertOk(error, "automacoes.load");
     if (!data) return { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
     return {
@@ -225,11 +331,12 @@ export const automacoesRepo = {
       fallback: data.fallback || { enabled: false, reply: "" },
     };
   },
-  async save(chatbot) {
+  async save(empresaId, chatbot) {
+    requireEmpresaId(empresaId, "automacoes.save");
     const { error } = await supabase.from("automacoes").upsert({
-      id: "chatbot", enabled: !!chatbot.enabled, rules: chatbot.rules || [],
+      empresa_id: empresaId, enabled: !!chatbot.enabled, rules: chatbot.rules || [],
       fallback: chatbot.fallback || { enabled: false, reply: "" },
-    }, { onConflict: "id" });
+    }, { onConflict: "empresa_id" });
     assertOk(error, "automacoes.save");
   },
 };
@@ -238,15 +345,18 @@ export const automacoesRepo = {
 // respostas (metrics.responses)
 // ----------------------------------------------------------------------------
 export const respostasRepo = {
-  async loadAll() {
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "respostas.loadAll");
     const { data, error } = await supabase.from("respostas").select("phone_key,phone,content,ts")
-      .order("ts", { ascending: true }).limit(10000);
+      .eq("empresa_id", empresaId).order("ts", { ascending: true }).limit(10000);
     assertOk(error, "respostas.loadAll");
     return (data || []).map((r) => ({ phone: r.phone, key: r.phone_key, ts: r.ts, content: r.content || "" }));
   },
-  async insertOne(r, externalId) {
+  async insertOne(empresaId, r, externalId) {
+    requireEmpresaId(empresaId, "respostas.insertOne");
     const { error } = await supabase.from("respostas").insert({
-      phone_key: r.key, phone: r.phone, content: r.content || "", ts: r.ts, external_id: externalId || null,
+      empresa_id: empresaId, phone_key: r.key, phone: r.phone, content: r.content || "", ts: r.ts,
+      external_id: externalId || null,
     });
     if (error && error.code === "23505") return false;
     assertOk(error, "respostas.insertOne");
@@ -258,53 +368,59 @@ export const respostasRepo = {
 // metricas_envios (metrics.sends)
 // ----------------------------------------------------------------------------
 export const metricasRepo = {
-  async loadAll() {
+  async loadAll(empresaId) {
+    requireEmpresaId(empresaId, "metricas.loadAll");
     const { data, error } = await supabase.from("metricas_envios").select("ts,sent,failed,name")
-      .order("ts", { ascending: true }).limit(10000);
+      .eq("empresa_id", empresaId).order("ts", { ascending: true }).limit(10000);
     assertOk(error, "metricas.loadAll");
     return (data || []).map((r) => ({ ts: r.ts, sent: r.sent, failed: r.failed, name: r.name || "Campanha" }));
   },
-  async insertOne(s) {
+  async insertOne(empresaId, s) {
+    requireEmpresaId(empresaId, "metricas.insertOne");
     const { error } = await supabase.from("metricas_envios").insert({
-      ts: s.ts, sent: s.sent || 0, failed: s.failed || 0, name: s.name || "Campanha",
+      empresa_id: empresaId, ts: s.ts, sent: s.sent || 0, failed: s.failed || 0, name: s.name || "Campanha",
     });
     assertOk(error, "metricas.insertOne");
   },
 };
 
 // ----------------------------------------------------------------------------
-// eventos_webhook (dedup de eventos da Z-API pelo id externo)
+// eventos_webhook (dedup de eventos da Z-API pelo id externo, por empresa)
 // ----------------------------------------------------------------------------
 export const eventosRepo = {
-  /** Registra o evento. Devolve { isNew } — false se o external_id já existir. */
-  async record(externalId, phoneKey, fromMe, payload) {
+  /** Registra o evento. Devolve { isNew } — false se o external_id já existir NESSA empresa. */
+  async record(empresaId, externalId, phoneKey, fromMe, payload) {
+    requireEmpresaId(empresaId, "eventos.record");
     const { error } = await supabase.from("eventos_webhook").insert({
-      external_id: externalId || null, phone_key: phoneKey || null,
+      empresa_id: empresaId, external_id: externalId || null, phone_key: phoneKey || null,
       from_me: !!fromMe, payload, processed: false,
     });
     if (error && error.code === "23505") return { isNew: false }; // já processado
     assertOk(error, "eventos.record");
     return { isNew: true };
   },
-  async markProcessed(externalId) {
+  async markProcessed(empresaId, externalId) {
     if (!externalId) return;
-    await supabase.from("eventos_webhook").update({ processed: true }).eq("external_id", externalId);
+    await supabase.from("eventos_webhook").update({ processed: true })
+      .eq("empresa_id", empresaId).eq("external_id", externalId);
   },
 };
 
 // ----------------------------------------------------------------------------
-// Carga inicial (boot): devolve todas as coleções no formato em memória do app.
+// Carga inicial (por empresa): devolve todas as coleções no formato em
+// memória do app, escopadas para uma única empresa.
 // ----------------------------------------------------------------------------
-export async function loadEverything() {
+export async function loadEverything(empresaId) {
+  requireEmpresaId(empresaId, "loadEverything");
   const [agenda, clients, conversasMsgs, jobs, templates, chatbot, responses, sends] = await Promise.all([
-    contatosRepo.loadAll(),
-    clientesRepo.loadAll(),
-    mensagensRepo.loadAll(),
-    campanhasRepo.loadAll(),
-    modelosRepo.loadAll(),
-    automacoesRepo.load(),
-    respostasRepo.loadAll(),
-    metricasRepo.loadAll(),
+    contatosRepo.loadAll(empresaId),
+    clientesRepo.loadAll(empresaId),
+    mensagensRepo.loadAll(empresaId),
+    campanhasRepo.loadAll(empresaId),
+    modelosRepo.loadAll(empresaId),
+    automacoesRepo.load(empresaId),
+    respostasRepo.loadAll(empresaId),
+    metricasRepo.loadAll(empresaId),
   ]);
   return { agenda, clients, conversas: conversasMsgs, jobs, templates, chatbot, responses, sends };
 }

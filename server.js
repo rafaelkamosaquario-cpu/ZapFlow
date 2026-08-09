@@ -3,6 +3,7 @@ import multer from "multer";
 import xlsx from "xlsx";
 import axios from "axios";
 import dotenv from "dotenv";
+import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -14,10 +15,11 @@ import { checkDatabase } from "./db/health.js";
 dotenv.config();
 
 // Modo de persistência: Supabase (quando as variáveis estão configuradas) ou
-// arquivos locais (comportamento anterior, enquanto o Supabase não é ativado).
+// arquivos locais (comportamento anterior, modo legado de desenvolvimento
+// single-tenant, sem conceito de empresa/usuário).
 const USE_SUPABASE = supabaseEnabled;
 // Estado da base: em modo arquivos já está pronto; em modo Supabase só fica
-// pronto após carregar os dados. Usado pelo health check e pelo agendador.
+// pronto após confirmar conectividade. Usado pelo health check e pelo agendador.
 let dbReady = !USE_SUPABASE;
 let dbLastError = null;
 
@@ -36,34 +38,90 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DEFAULT_DELAY_MS = Number(process.env.DEFAULT_DELAY_MS || 3000);
+// Piso de segurança: intervalos menores que isso aumentam muito o risco de
+// bloqueio do número pelo WhatsApp. Vale tanto para o padrão quanto para
+// qualquer valor de delayMs enviado pelo cliente (/api/send, /api/schedule).
+const MIN_DELAY_MS = 8000;
+function resolveDelayMs(raw) {
+  const n = Number(raw ?? DEFAULT_DELAY_MS);
+  return Number.isFinite(n) && n >= MIN_DELAY_MS ? n : MIN_DELAY_MS;
+}
 
-// Diretório de dados (para persistir agendamentos, métricas e modelos). Em
-// produção (ex.: Railway) recomenda-se apontar para um volume.
+// Diretório de dados (modo arquivos/legado — para persistir agendamentos,
+// métricas e modelos de UMA única empresa local). Em produção (Railway) com
+// Supabase configurado, este modo nunca é usado.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const JOBS_FILE = path.join(DATA_DIR, "jobs.json");
 const METRICS_FILE = path.join(DATA_DIR, "metrics.json");
 const TEMPLATES_FILE = path.join(DATA_DIR, "templates.json");
+const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
+const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
+const CONVERSAS_FILE = path.join(DATA_DIR, "conversas.json");
+const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
+const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
+const MAX_TEMPLATES = 10;
+const CONV_MAX = 5000;
+const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
 
-// --- Autenticação simples (opcional, ativada via .env) ---
+const SESSION_HOURS = 8;
+
+// --- Autenticação legada (modo arquivos, dev local, opcional via .env) ---
 const APP_USER = process.env.APP_USER || "";
 const APP_PASSWORD = process.env.APP_PASSWORD || "";
 const AUTH_ENABLED = Boolean(APP_USER && APP_PASSWORD);
-const SESSION_HOURS = 8;
-const AUTH_SECRET = crypto.createHash("sha256").update("zapflow:" + APP_PASSWORD).digest();
+const LEGACY_AUTH_SECRET = crypto.createHash("sha256").update("zapflow:" + APP_PASSWORD).digest();
 
-function makeToken() {
+function makeLegacyToken() {
   const exp = Date.now() + SESSION_HOURS * 3600 * 1000;
-  const sig = crypto.createHmac("sha256", AUTH_SECRET).update(String(exp)).digest("hex");
+  const sig = crypto.createHmac("sha256", LEGACY_AUTH_SECRET).update(String(exp)).digest("hex");
   return Buffer.from(`${exp}.${sig}`).toString("base64url");
 }
-function validToken(token) {
+function isLegacyAuthed(req) {
+  if (!AUTH_ENABLED) return true;
+  const token = parseCookies(req).zapflow_session || "";
   try {
     const [exp, sig] = Buffer.from(token, "base64url").toString().split(".");
     if (!exp || !sig) return false;
-    const expect = crypto.createHmac("sha256", AUTH_SECRET).update(exp).digest("hex");
+    const expect = crypto.createHmac("sha256", LEGACY_AUTH_SECRET).update(exp).digest("hex");
     return sig === expect && Number(exp) > Date.now();
   } catch {
     return false;
+  }
+}
+
+// --- Autenticação real (modo Supabase — login por empresa, papéis owner/vendedor) ---
+if (USE_SUPABASE && !process.env.SESSION_SECRET) {
+  console.error(
+    "[boot] SESSION_SECRET é obrigatório quando o Supabase está configurado.\n" +
+    "       Gere um valor aleatório (32+ bytes) e defina essa variável de ambiente antes de subir o servidor."
+  );
+  process.exit(1);
+}
+const SESSION_SECRET_BUF = crypto.createHash("sha256")
+  .update(process.env.SESSION_SECRET || "dev-only-insecure-secret")
+  .digest();
+
+function makeSessionToken({ uid, empresaId, role }) {
+  const exp = Date.now() + SESSION_HOURS * 3600 * 1000;
+  const payload = JSON.stringify({ uid, empresaId, role, exp });
+  const sig = crypto.createHmac("sha256", SESSION_SECRET_BUF).update(payload).digest("hex");
+  return Buffer.from(payload + "|" + sig).toString("base64url");
+}
+function validSessionToken(token) {
+  if (!token) return null;
+  try {
+    const decoded = Buffer.from(token, "base64url").toString();
+    const sep = decoded.lastIndexOf("|");
+    if (sep < 0) return null;
+    const payloadStr = decoded.slice(0, sep);
+    const sig = decoded.slice(sep + 1);
+    const expect = crypto.createHmac("sha256", SESSION_SECRET_BUF).update(payloadStr).digest("hex");
+    if (sig !== expect) return null;
+    const payload = JSON.parse(payloadStr);
+    if (!payload.exp || Number(payload.exp) <= Date.now()) return null;
+    return { uid: payload.uid, empresaId: payload.empresaId, role: payload.role };
+  } catch {
+    return null;
   }
 }
 function parseCookies(req) {
@@ -74,47 +132,143 @@ function parseCookies(req) {
   });
   return out;
 }
-function isAuthed(req) {
-  if (!AUTH_ENABLED) return true;
-  return validToken(parseCookies(req).zapflow_session || "");
+function resolveSession(req) {
+  return validSessionToken(parseCookies(req).zapflow_session || "");
+}
+
+// ---------------------------------------------------------------------------
+// TenantState: cada empresa tem sua própria cópia em memória de tudo (mesmo
+// padrão de antes, só que por empresa em vez de global). Em modo arquivos
+// (legado, sem Supabase) existe UM único tenant fixo, carregado no boot.
+// ---------------------------------------------------------------------------
+function createEmptyTenantState() {
+  return {
+    clients: [], jobs: [], agenda: [], conversas: [], templates: [],
+    chatbot: { enabled: false, rules: [], fallback: { enabled: false, reply: "" } },
+    metrics: { sends: [], responses: [], campaigns: 0 },
+    autoReplyCooldown: new Map(),
+    empresa: null, // { id, name, active, maxVendedores, webhookSecret, zapiInstanceId, zapiInstanceToken, zapiClientToken } (só em modo Supabase)
+  };
+}
+let fileTenantState = null; // modo arquivos (legado)
+const tenants = new Map(); // modo Supabase: empresaId -> TenantState
+
+/** Carrega (ou reaproveita do cache) o estado completo de uma empresa. */
+async function getTenant(empresaId) {
+  if (tenants.has(empresaId)) return tenants.get(empresaId);
+  const empresa = await repo.empresasRepo.getById(empresaId);
+  if (!empresa || !empresa.active) {
+    const err = new Error("Empresa inválida ou inativa.");
+    err.code = "EMPRESA_INVALIDA";
+    throw err;
+  }
+  const all = await repo.loadEverything(empresaId);
+  const t = createEmptyTenantState();
+  t.jobs = all.jobs;
+  t.agenda = all.agenda;
+  t.clients = all.clients;
+  t.conversas = all.conversas;
+  t.templates = all.templates;
+  t.chatbot = all.chatbot;
+  t.metrics = { sends: all.sends, responses: all.responses, campaigns: all.sends.length };
+  t.empresa = empresa;
+  await migrateClients(t);
+  for (const j of marcarJobsInterrompidos(t)) await saveJobs(t, j);
+  tenants.set(empresaId, t);
+  return t;
 }
 
 app.use(express.json({ limit: "50mb" }));
 
-// Middleware de autenticação (libera login, webhook e os assets da tela de login)
+// Middleware de autenticação. Libera: login, assets da tela de login, o
+// placeholder do vendedor, healthcheck e o webhook (a Z-API não autentica
+// por cookie — cada empresa tem sua própria URL com segredo próprio).
 const PUBLIC_PATHS = new Set([
   "/login", "/login.html", "/login.js",
   "/style.css", "/zappy.svg", "/icon.svg",
   "/manifest.json", "/sw.js", "/favicon.ico",
 ]);
-app.use((req, res, next) => {
-  if (!AUTH_ENABLED) return next();
+const VENDEDOR_ALLOWED_PATHS = new Set(["/vendedor.html"]);
+const VENDEDOR_ALLOWED_PREFIXES = ["/api/visitas", "/api/logout", "/api/config"];
+
+app.use(async (req, res, next) => {
   const p = req.path;
-  if (PUBLIC_PATHS.has(p) || p === "/api/login" || p === "/api/logout" || p === "/api/webhook" || p === "/api/health/database") {
+  if (p.startsWith("/api/webhook/")) return next();
+  if (PUBLIC_PATHS.has(p) || p === "/api/login" || p === "/api/logout" || p === "/api/health/database") {
     return next();
   }
-  if (isAuthed(req)) return next();
-  if (p.startsWith("/api/")) return res.status(401).json({ error: "Não autenticado." });
-  return res.redirect("/login");
+
+  if (!USE_SUPABASE) {
+    // Modo legado (dev local, sem banco): 1 empresa fixa, auth opcional.
+    if (AUTH_ENABLED && !isLegacyAuthed(req)) {
+      if (p.startsWith("/api/")) return res.status(401).json({ error: "Não autenticado." });
+      return res.redirect("/login");
+    }
+    req.tenant = fileTenantState;
+    req.session = { role: "owner" };
+    return next();
+  }
+
+  // Modo Supabase: login sempre obrigatório (existem senhas de clientes reais).
+  const session = resolveSession(req);
+  if (!session) {
+    if (p.startsWith("/api/")) return res.status(401).json({ error: "Não autenticado." });
+    return res.redirect("/login");
+  }
+  if (session.role === "vendedor") {
+    const allowed = VENDEDOR_ALLOWED_PATHS.has(p) || VENDEDOR_ALLOWED_PREFIXES.some((pre) => p.startsWith(pre));
+    if (!allowed) {
+      if (p.startsWith("/api/")) return res.status(403).json({ error: "Acesso restrito." });
+      return res.redirect("/vendedor.html");
+    }
+  }
+  try {
+    req.tenant = await getTenant(session.empresaId);
+    req.session = session;
+  } catch (err) {
+    console.error("[tenant]", err.message);
+    return res.status(503).json({ error: "Não foi possível carregar os dados da empresa." });
+  }
+  return next();
 });
 
 app.get("/login", (req, res) => {
-  if (isAuthed(req)) return res.redirect("/");
+  if (!USE_SUPABASE) {
+    if (AUTH_ENABLED && isLegacyAuthed(req)) return res.redirect("/");
+  } else {
+    const s = resolveSession(req);
+    if (s) return res.redirect(s.role === "vendedor" ? "/vendedor.html" : "/");
+  }
   res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-app.post("/api/login", (req, res) => {
-  if (!AUTH_ENABLED) return res.json({ ok: true });
+app.post("/api/login", async (req, res) => {
   const { user, password } = req.body || {};
-  if (user === APP_USER && password === APP_PASSWORD) {
-    res.cookie("zapflow_session", makeToken(), {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: SESSION_HOURS * 3600 * 1000,
-    });
-    return res.json({ ok: true });
+  if (!USE_SUPABASE) {
+    if (!AUTH_ENABLED) return res.json({ ok: true, role: "owner" });
+    if (user === APP_USER && password === APP_PASSWORD) {
+      res.cookie("zapflow_session", makeLegacyToken(), {
+        httpOnly: true, sameSite: "lax", maxAge: SESSION_HOURS * 3600 * 1000,
+      });
+      return res.json({ ok: true, role: "owner" });
+    }
+    return res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
   }
-  res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
+  try {
+    const found = await repo.usuariosRepo.findByUsername(user || "");
+    if (!found || !found.active) return res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
+    const match = await bcrypt.compare(String(password || ""), found.passwordHash);
+    if (!match) return res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
+    const empresa = await repo.empresasRepo.getById(found.empresaId);
+    if (!empresa || !empresa.active) return res.status(401).json({ ok: false, error: "Empresa inativa. Fale com o suporte." });
+    res.cookie("zapflow_session", makeSessionToken({ uid: found.id, empresaId: empresa.id, role: found.role }), {
+      httpOnly: true, sameSite: "lax", maxAge: SESSION_HOURS * 3600 * 1000,
+    });
+    return res.json({ ok: true, role: found.role });
+  } catch (err) {
+    console.error("[login]", err.message);
+    return res.status(500).json({ ok: false, error: "Erro ao entrar. Tente novamente." });
+  }
 });
 
 app.post("/api/logout", (req, res) => {
@@ -179,13 +333,15 @@ function phoneKey(raw) {
 
 /**
  * Resolve as credenciais da Z-API priorizando o que foi enviado no corpo da
- * requisição e caindo para as variáveis de ambiente.
+ * requisição, depois as da própria empresa (modo Supabase), depois as
+ * variáveis de ambiente (modo arquivos/legado).
  */
-function resolveCredentials(body = {}) {
+function resolveCredentials(tenant, body = {}) {
+  const empresa = tenant?.empresa;
   return {
-    instanceId: (body.instanceId || process.env.ZAPI_INSTANCE_ID || "").trim(),
-    instanceToken: (body.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || "").trim(),
-    clientToken: (body.clientToken || process.env.ZAPI_CLIENT_TOKEN || "").trim(),
+    instanceId: (body.instanceId || empresa?.zapiInstanceId || process.env.ZAPI_INSTANCE_ID || "").trim(),
+    instanceToken: (body.instanceToken || empresa?.zapiInstanceToken || process.env.ZAPI_INSTANCE_TOKEN || "").trim(),
+    clientToken: (body.clientToken || empresa?.zapiClientToken || process.env.ZAPI_CLIENT_TOKEN || "").trim(),
   };
 }
 
@@ -228,11 +384,11 @@ function parseContactsFromBuffer(buffer) {
 
   const contacts = [];
   for (const row of rows) {
-    const phoneKey = findKey(row, phoneKeys);
-    const nameKey = findKey(row, nameKeys);
-    const rawPhone = phoneKey ? row[phoneKey] : Object.values(row)[0];
+    const phoneKeyCol = findKey(row, phoneKeys);
+    const nameKeyCol = findKey(row, nameKeys);
+    const rawPhone = phoneKeyCol ? row[phoneKeyCol] : Object.values(row)[0];
     const phone = normalizePhone(rawPhone);
-    const name = nameKey ? String(row[nameKey]).trim() : "";
+    const name = nameKeyCol ? String(row[nameKeyCol]).trim() : "";
     if (phone) {
       contacts.push({ phone, name, rawPhone: String(rawPhone).trim() });
     } else if (rawPhone && String(rawPhone).trim()) {
@@ -262,40 +418,36 @@ function normalizeImages(images, imageUrl, imageBase64) {
 // ---------------------------------------------------------------------------
 // Agendamento de disparos
 // ---------------------------------------------------------------------------
-let jobs = [];
-
-async function loadJobs() {
-  if (USE_SUPABASE) { jobs = await repo.campanhasRepo.loadAll(); return; }
+async function loadJobs(tenant) {
+  if (USE_SUPABASE) { tenant.jobs = await repo.campanhasRepo.loadAll(tenant.empresa.id); return; }
   try {
-    if (fs.existsSync(JOBS_FILE)) {
-      jobs = JSON.parse(fs.readFileSync(JOBS_FILE, "utf8"));
-    }
+    if (fs.existsSync(JOBS_FILE)) tenant.jobs = JSON.parse(fs.readFileSync(JOBS_FILE, "utf8"));
   } catch (err) {
     console.error("Não foi possível carregar os agendamentos:", err.message);
-    jobs = [];
+    tenant.jobs = [];
   }
 }
 
 // `one` (opcional): grava só aquele job (mais leve durante o disparo).
-async function saveJobs(one) {
+async function saveJobs(tenant, one) {
   if (USE_SUPABASE) {
-    if (one) await repo.campanhasRepo.upsertOne(one);
-    else await repo.campanhasRepo.upsertMany(jobs);
+    if (one) await repo.campanhasRepo.upsertOne(tenant.empresa.id, one);
+    else await repo.campanhasRepo.upsertMany(tenant.empresa.id, tenant.jobs);
     return;
   }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2));
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(tenant.jobs, null, 2));
   } catch (err) {
     console.error("Não foi possível salvar os agendamentos:", err.message);
   }
 }
 
 /** Conta quantos contatos da campanha responderam (após o disparo). */
-function countReplies(job) {
+function countReplies(tenant, job) {
   if (!job.logs?.length) return 0;
   const since = job.startedAt || job.createdAt || 0;
-  const replied = new Set(metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone)));
+  const replied = new Set(tenant.metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone)));
   let n = 0;
   for (const l of job.logs) {
     if (l.ok && replied.has(phoneKey(l.phone))) n++;
@@ -304,7 +456,7 @@ function countReplies(job) {
 }
 
 /** Versão segura para o cliente: sem credenciais nem conteúdo pesado. */
-function publicJob(job) {
+function publicJob(tenant, job) {
   return {
     id: job.id,
     status: job.status,
@@ -319,7 +471,7 @@ function publicJob(job) {
     delayMs: job.delayMs,
     contactsCount: job.contacts?.length || 0,
     result: job.result || null,
-    repliedCount: countReplies(job),
+    repliedCount: countReplies(tenant, job),
     error: job.error || null,
   };
 }
@@ -334,569 +486,6 @@ function trimFinishedJob(job) {
   }
   job.credentials = null;
 }
-
-/** Executa um agendamento (envia para todos os contatos do job). */
-async function runJob(job) {
-  job.status = "enviando";
-  job.startedAt = Date.now();
-  job.logs = [];
-  let success = 0;
-  let failed = 0;
-  // Credenciais: as do job (envio imediato) ou, se ausentes (ex.: agendamento
-  // retomado após novo deploy), as do ambiente. Tokens não ficam no banco.
-  const creds = job.credentials || resolveCredentials({});
-  await saveJobs(job);
-
-  for (let i = 0; i < job.contacts.length; i++) {
-    const contact = job.contacts[i];
-    if (!contact.phone) {
-      failed++;
-      job.logs.push({ phone: contact.rawPhone, name: contact.name, ok: false, error: "Número inválido" });
-    } else {
-      try {
-        await sendOne(creds, contact, job);
-        success++;
-        job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
-      } catch (err) {
-        failed++;
-        const error = err.response?.data?.error || err.response?.data?.message || err.message;
-        job.logs.push({ phone: contact.phone, name: contact.name, ok: false, error });
-      }
-    }
-    job.result = { success, failed, total: job.contacts.length };
-    await saveJobs(job);
-    if (i < job.contacts.length - 1 && job.delayMs > 0) {
-      await sleep(job.delayMs);
-    }
-  }
-
-  job.status = "concluido";
-  job.finishedAt = Date.now();
-  const label = campaignLabel(job.message, job.hadImage || job.images?.length);
-  job.label = label;
-  await recordClientsSent(job.contacts, label);
-  trimFinishedJob(job);
-  await saveJobs(job);
-  if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(job.id, job.logs);
-  await recordCampaign(success, failed, label);
-  console.log(`Agendamento ${job.id} concluído: ${success} ok / ${failed} falhas.`);
-}
-
-// Verifica periodicamente se há agendamentos vencidos para disparar.
-let schedulerRunning = false;
-async function schedulerTick() {
-  if (schedulerRunning || !dbReady) return;
-  const now = Date.now();
-  const due = jobs.filter((j) => j.status === "pendente" && j.scheduledAt <= now);
-  if (due.length === 0) return;
-
-  schedulerRunning = true;
-  for (const job of due) {
-    try {
-      await runJob(job);
-    } catch (err) {
-      job.status = "erro";
-      job.error = err.message;
-      await saveJobs(job);
-    }
-  }
-  schedulerRunning = false;
-}
-
-// ---------------------------------------------------------------------------
-// Métricas (data/metrics.json)
-// ---------------------------------------------------------------------------
-let metrics = { sends: [], responses: [], campaigns: 0 };
-
-async function loadMetrics() {
-  if (USE_SUPABASE) {
-    const [sends, responses] = await Promise.all([repo.metricasRepo.loadAll(), repo.respostasRepo.loadAll()]);
-    metrics = { sends, responses, campaigns: sends.length };
-    return;
-  }
-  try {
-    if (fs.existsSync(METRICS_FILE)) metrics = JSON.parse(fs.readFileSync(METRICS_FILE, "utf8"));
-  } catch {
-    metrics = { sends: [], responses: [], campaigns: 0 };
-  }
-}
-// Modo arquivo: grava o metrics.json. Modo Supabase: no-op (os inserts pontuais
-// em recordCampaign/recordResponse já persistiram cada registro).
-function saveMetricsFile() {
-  if (USE_SUPABASE) return;
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics));
-  } catch (err) {
-    console.error("Não foi possível salvar as métricas:", err.message);
-  }
-}
-/** Rótulo automático de uma campanha (1ª linha da mensagem ou "com imagem"). */
-function campaignLabel(message, hasImage) {
-  const t = String(message || "").trim().split("\n")[0].trim();
-  if (t) return t.slice(0, 40);
-  return hasImage ? "Campanha com imagem" : "Campanha";
-}
-async function recordCampaign(sent, failed, name = "Campanha", ts = Date.now()) {
-  const row = { ts, sent, failed, name };
-  metrics.sends.push(row);
-  metrics.campaigns = (metrics.campaigns || 0) + 1;
-  if (USE_SUPABASE) await repo.metricasRepo.insertOne(row);
-  else saveMetricsFile();
-}
-async function recordResponse(phone, ts = Date.now(), content = "", externalId = null) {
-  const row = {
-    phone: String(phone || "").replace(/\D/g, ""),
-    key: phoneKey(phone),
-    ts,
-    content: String(content || "").slice(0, 200),
-  };
-  metrics.responses.push(row);
-  if (USE_SUPABASE) await repo.respostasRepo.insertOne(row, externalId);
-  else saveMetricsFile();
-}
-function summarizeMetrics(from) {
-  const sends = metrics.sends.filter((s) => s.ts >= from);
-  const responses = metrics.responses.filter((r) => r.ts >= from);
-  const totalSent = sends.reduce((a, s) => a + (s.sent || 0), 0);
-  const repliedNumbers = new Set(responses.map((r) => phoneKey(r.phone)));
-  const replied = repliedNumbers.size;
-  const semRetorno = Math.max(totalSent - replied, 0);
-  const taxa = totalSent ? Math.round((replied / totalSent) * 1000) / 10 : 0;
-
-  const hours = {};
-  responses.forEach((r) => { const h = new Date(r.ts).getHours(); hours[h] = (hours[h] || 0) + 1; });
-  let melhorHora = null, max = 0;
-  for (const h in hours) { if (hours[h] > max) { max = hours[h]; melhorHora = Number(h); } }
-
-  const week = [0, 0, 0, 0, 0, 0, 0]; // dom..sáb (mensagens enviadas)
-  sends.forEach((s) => { week[new Date(s.ts).getDay()] += (s.sent || 0); });
-
-  // Nomes das campanhas do período (mais recentes primeiro, sem repetir)
-  const campanhaNomes = [];
-  [...sends].sort((a, b) => b.ts - a.ts).forEach((s) => {
-    const n = s.name || "Campanha";
-    if (!campanhaNomes.includes(n)) campanhaNomes.push(n);
-  });
-
-  return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week, campanhaNomes };
-}
-
-// ---------------------------------------------------------------------------
-// Modelos de mensagem (data/templates.json)
-// ---------------------------------------------------------------------------
-let templates = [];
-const MAX_TEMPLATES = 10;
-
-async function loadTemplates() {
-  if (USE_SUPABASE) { templates = await repo.modelosRepo.loadAll(); return; }
-  try {
-    if (fs.existsSync(TEMPLATES_FILE)) templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8"));
-  } catch {
-    templates = [];
-  }
-}
-async function saveTemplates(one, removedId) {
-  if (USE_SUPABASE) {
-    if (removedId) await repo.modelosRepo.deleteById(removedId);
-    else if (one) await repo.modelosRepo.upsertOne(one);
-    return;
-  }
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
-  } catch (err) {
-    console.error("Não foi possível salvar os modelos:", err.message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// CRM-lite: base de clientes (data/clients.json)
-// ---------------------------------------------------------------------------
-const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
-const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
-let clients = [];
-
-async function loadClients() {
-  if (USE_SUPABASE) { clients = await repo.clientesRepo.loadAll(); return; }
-  try {
-    if (fs.existsSync(CLIENTS_FILE)) clients = JSON.parse(fs.readFileSync(CLIENTS_FILE, "utf8"));
-  } catch {
-    clients = [];
-  }
-}
-function saveClientsFile() {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
-  } catch (err) {
-    console.error("Não foi possível salvar os clientes:", err.message);
-  }
-}
-// `one`: grava só um cliente. `removedId`: remove um cliente. Sem args: grava todos.
-async function saveClients(one, removedId) {
-  if (USE_SUPABASE) {
-    if (removedId) await repo.clientesRepo.deleteById(removedId);
-    else if (one) await repo.clientesRepo.upsertOne(one);
-    else await repo.clientesRepo.upsertMany(clients);
-    return;
-  }
-  saveClientsFile();
-}
-function onlyDigits(p) { return String(p || "").replace(/\D/g, ""); }
-/** Telefone "discável" para exibir/enviar (com DDI 55, preserva o nono dígito). */
-function canonPhone(p) { return normalizePhone(p) || onlyDigits(p); }
-/** Chave canônica de um cliente (compatível com registros antigos sem `key`). */
-function clientKey(c) { return c.key || phoneKey(c.phone); }
-function findClient(phone) {
-  const k = phoneKey(phone);
-  return k ? clients.find((c) => clientKey(c) === k) : null;
-}
-function upsertClient(phone, name) {
-  const k = phoneKey(phone);
-  if (!k) return null;
-  const display = canonPhone(phone);
-  const now = Date.now();
-  let c = findClient(phone);
-  if (!c) {
-    c = { id: crypto.randomUUID(), phone: display, key: k, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
-    clients.push(c);
-  } else {
-    if (name && !c.name) c.name = name;
-    if (!c.key) c.key = k;
-    // Prefere guardar a forma com o nono dígito (mais confiável para envio)
-    if (String(display).length > String(c.phone).length) c.phone = display;
-  }
-  return c;
-}
-
-/** Mescla clientes duplicados pela chave canônica (migração do nono dígito). */
-async function migrateClients() {
-  const byKey = new Map();
-  const merged = [];
-  const stageRank = (s) => Math.max(0, CRM_STAGES.indexOf(s));
-  let changed = false;
-  for (const c of clients) {
-    const k = clientKey(c);
-    if (!c.key) { c.key = k; changed = true; }
-    if (!byKey.has(k)) {
-      byKey.set(k, c);
-      merged.push(c);
-    } else {
-      changed = true;
-      const keep = byKey.get(k);
-      if (!keep.name && c.name) keep.name = c.name;
-      keep.tags = Array.from(new Set([...(keep.tags || []), ...(c.tags || [])]));
-      if (c.notes) keep.notes = [keep.notes, c.notes].filter(Boolean).join(" | ").slice(0, 1000);
-      keep.createdAt = Math.min(keep.createdAt || Date.now(), c.createdAt || Date.now());
-      if (c.lastSentAt) keep.lastSentAt = Math.max(keep.lastSentAt || 0, c.lastSentAt);
-      if (c.lastReplyAt) keep.lastReplyAt = Math.max(keep.lastReplyAt || 0, c.lastReplyAt);
-      if (stageRank(c.stage) > stageRank(keep.stage)) keep.stage = c.stage;
-      if (String(c.phone).length > String(keep.phone).length) keep.phone = c.phone;
-      keep.updatedAt = Date.now();
-    }
-  }
-  if (changed || merged.length !== clients.length) {
-    clients = merged;
-    await saveClients();
-    console.log(`CRM: base normalizada (${clients.length} clientes únicos).`);
-  }
-}
-/** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
-async function recordClientsSent(list, campaignName) {
-  if (!Array.isArray(list)) return;
-  const now = Date.now();
-  const touched = [];
-  list.forEach((ct) => {
-    const c = upsertClient(ct.phone, ct.name);
-    if (c) {
-      c.lastSentAt = now;
-      c.updatedAt = now;
-      if (campaignName) c.lastCampaignName = campaignName;
-      if (!c.stage || c.stage === "Novo") c.stage = "Contatado";
-      touched.push(c);
-    }
-  });
-  if (USE_SUPABASE) await repo.clientesRepo.upsertMany(touched);
-  else saveClientsFile();
-}
-/** Registra que um cliente respondeu (avança a etapa). */
-async function recordClientReply(phone) {
-  const c = upsertClient(phone);
-  if (!c) return;
-  c.lastReplyAt = Date.now();
-  c.updatedAt = Date.now();
-  if (c.stage === "Novo" || c.stage === "Contatado") c.stage = "Respondeu";
-  await saveClients(c);
-}
-
-// ---------------------------------------------------------------------------
-// Agenda de contatos salvos (data/agenda.json)
-// ---------------------------------------------------------------------------
-const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
-let agenda = [];
-
-async function loadAgenda() {
-  if (USE_SUPABASE) { agenda = await repo.contatosRepo.loadAll(); return; }
-  try {
-    if (fs.existsSync(AGENDA_FILE)) agenda = JSON.parse(fs.readFileSync(AGENDA_FILE, "utf8"));
-  } catch {
-    agenda = [];
-  }
-}
-// `one`: grava só um contato. `removedId`: remove. Sem args: grava todos.
-async function saveAgenda(one, removedId) {
-  if (USE_SUPABASE) {
-    if (removedId) await repo.contatosRepo.deleteById(removedId);
-    else if (one) await repo.contatosRepo.upsertOne(one);
-    else for (const c of agenda) await repo.contatosRepo.upsertOne(c);
-    return;
-  }
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(AGENDA_FILE, JSON.stringify(agenda, null, 2));
-  } catch (err) {
-    console.error("Não foi possível salvar a agenda:", err.message);
-  }
-}
-function findAgenda(phone) {
-  const k = phoneKey(phone);
-  return k ? agenda.find((a) => (a.key || phoneKey(a.phone)) === k) : null;
-}
-function upsertAgenda(phone, name, origem) {
-  const k = phoneKey(phone);
-  if (!k) return null;
-  let a = findAgenda(phone);
-  if (!a) {
-    a = { id: crypto.randomUUID(), name: (name || "").trim(), phone: canonPhone(phone), key: k, origem: origem || "manual", createdAt: Date.now() };
-    agenda.push(a);
-  } else {
-    // Manual sobrescreve; planilha/chip só preenchem se estiver vazio
-    if (name && (origem === "manual" || !a.name)) a.name = name.trim();
-    if (String(canonPhone(phone)).length > String(a.phone).length) a.phone = canonPhone(phone);
-  }
-  return a;
-}
-/** Resolve o nome de um número: 1º agenda → 2º nome informado → "" (sem nome). */
-function resolveName(phone, fallback) {
-  const a = findAgenda(phone);
-  return (a && a.name) || (fallback || "").trim() || "";
-}
-function inAgenda(phone) { return Boolean(findAgenda(phone)); }
-/** Extrai o nome do contato vindo do WhatsApp/Z-API a partir do payload do webhook. */
-function waNameFrom(b) {
-  return String(
-    b.senderName || b.chatName || b.notify || b.pushName || b.contactName || b.senderNotify || ""
-  ).trim().slice(0, 80);
-}
-/** Guarda o nome recebido do WhatsApp no cliente (sem tocar em etapa ou nome de campanha). */
-async function setWaName(phone, waName) {
-  if (!waName) return;
-  const c = findClient(phone);
-  if (c && c.waName !== waName) {
-    c.waName = waName;
-    c.updatedAt = Date.now();
-    await saveClients(c);
-  }
-}
-/**
- * Resolve a identidade de um número seguindo a ordem de prioridade:
- * 1º nome salvo na agenda → 2º nome recebido do WhatsApp → 3º nome usado na campanha → "".
- * Devolve { name, source } onde source indica a origem real do nome.
- */
-function bestName(phone, campaignFallback) {
-  const a = findAgenda(phone);
-  if (a && a.name) return { name: a.name, source: a.origem || "agenda" };
-  const c = findClient(phone);
-  if (c && c.waName) return { name: c.waName, source: "whatsapp" };
-  const camp = String(campaignFallback || (c && c.name) || "").trim();
-  if (camp) return { name: camp, source: "campanha" };
-  return { name: "", source: "" };
-}
-
-// ---------------------------------------------------------------------------
-// Conversas (caixa de entrada do dia a dia — data/conversas.json)
-// ---------------------------------------------------------------------------
-const CONVERSAS_FILE = path.join(DATA_DIR, "conversas.json");
-const CONV_MAX = 5000;
-const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
-let conversas = [];
-
-async function loadConversas() {
-  if (USE_SUPABASE) { conversas = await repo.mensagensRepo.loadAll(); return; }
-  try {
-    if (fs.existsSync(CONVERSAS_FILE)) conversas = JSON.parse(fs.readFileSync(CONVERSAS_FILE, "utf8"));
-  } catch {
-    conversas = [];
-  }
-}
-function saveConversasFile() {
-  if (USE_SUPABASE) return;
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CONVERSAS_FILE, JSON.stringify(conversas, null, 2));
-  } catch (err) {
-    console.error("Não foi possível salvar as conversas:", err.message);
-  }
-}
-/** Registra uma mensagem na conversa (dir: "in" recebida | "out" enviada). */
-async function recordMessage(phone, text, dir, externalId = null) {
-  const key = phoneKey(phone);
-  if (!key) return;
-  const t = String(text || "").slice(0, 1000);
-  const now = Date.now();
-  if (dir === "out") {
-    // Evita duplicar (nosso envio + eco do webhook "enviadas por mim")
-    const dup = conversas.some((m) => m.dir === "out" && m.key === key && m.text === t && now - m.ts < 60000);
-    if (dup) return;
-  }
-  const msg = { key, phone: canonPhone(phone), text: t, ts: now, dir };
-  conversas.push(msg);
-  if (conversas.length > CONV_MAX) conversas = conversas.slice(-CONV_MAX);
-  if (USE_SUPABASE) {
-    let conversaId = null;
-    try {
-      conversaId = await repo.conversasRepo.upsertThread({
-        key, phone: msg.phone, text: t, dir, ts: now,
-        origem: isCampaignOrigin(key) ? "campaign" : "daily",
-      });
-    } catch (e) { console.error("[Supabase] thread:", e.message); }
-    const inserted = await repo.mensagensRepo.insertOne(msg, externalId, conversaId);
-    if (inserted === false) {
-      // Mensagem já existente (external_id duplicado): desfaz na memória
-      const idx = conversas.lastIndexOf(msg);
-      if (idx >= 0) conversas.splice(idx, 1);
-    }
-  } else {
-    saveConversasFile();
-  }
-}
-/** A conversa é de campanha? (o contato recebeu disparo nos últimos 30 dias) */
-function isCampaignOrigin(key) {
-  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
-  return Boolean(c && c.lastSentAt && Date.now() - c.lastSentAt <= CAMPAIGN_WINDOW);
-}
-function campaignNameOf(key) {
-  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
-  return (c && c.lastCampaignName) || "";
-}
-/** Contador de conversas de hoje (total, de campanha e do dia a dia). */
-function conversasSummary(from) {
-  const seen = new Set();
-  let campanha = 0, diaadia = 0;
-  conversas.filter((m) => m.ts >= from).forEach((m) => {
-    if (seen.has(m.key)) return;
-    seen.add(m.key);
-    if (isCampaignOrigin(m.key)) campanha++; else diaadia++;
-  });
-  return { total: seen.size, campanha, diaadia };
-}
-function conversasSummaryToday() {
-  const start = new Date(); start.setHours(0, 0, 0, 0);
-  return conversasSummary(start.getTime());
-}
-
-// ---------------------------------------------------------------------------
-// Chatbot por regras (data/chatbot.json)
-// ---------------------------------------------------------------------------
-const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
-let chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
-const autoReplyCooldown = new Map(); // anti-spam por número
-
-async function loadChatbot() {
-  if (USE_SUPABASE) { chatbot = await repo.automacoesRepo.load(); return; }
-  try {
-    if (fs.existsSync(CHATBOT_FILE)) chatbot = JSON.parse(fs.readFileSync(CHATBOT_FILE, "utf8"));
-  } catch {
-    chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
-  }
-}
-async function saveChatbot() {
-  if (USE_SUPABASE) { await repo.automacoesRepo.save(chatbot); return; }
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CHATBOT_FILE, JSON.stringify(chatbot, null, 2));
-  } catch (err) {
-    console.error("Não foi possível salvar o chatbot:", err.message);
-  }
-}
-
-/** Encontra a resposta automática para um texto recebido (ou null). */
-function findChatbotReply(text) {
-  if (!chatbot.enabled) return null;
-  const msg = String(text || "").trim().toLowerCase();
-  if (!msg) return null;
-  for (const r of chatbot.rules || []) {
-    if (r.active === false) continue;
-    const kws = (r.keywords || []).map((k) => String(k).toLowerCase().trim()).filter(Boolean);
-    const hit = kws.some((k) => {
-      if (r.matchType === "exact") return msg === k;
-      if (r.matchType === "starts") return msg.startsWith(k);
-      return msg.includes(k);
-    });
-    if (hit) return r.reply;
-  }
-  if (chatbot.fallback?.enabled && chatbot.fallback.reply) return chatbot.fallback.reply;
-  return null;
-}
-
-/** Envia a resposta automática (usa credenciais do .env, com anti-spam). */
-async function sendAutoReply(phone, text) {
-  const creds = resolveCredentials({});
-  if (!creds.instanceId || !creds.instanceToken || !text) return;
-  const p = onlyDigits(phone);
-  const now = Date.now();
-  if (autoReplyCooldown.get(p) && now - autoReplyCooldown.get(p) < 8000) return;
-  autoReplyCooldown.set(p, now);
-  try {
-    await axios.post(
-      `${zapiBaseUrl(creds)}/send-text`,
-      { phone: p, message: text },
-      { headers: zapiHeaders(creds), timeout: 20000 }
-    );
-    await recordMessage(p, text, "out"); // registra na caixa de conversas
-  } catch (err) {
-    console.error("Falha na resposta automática:", err.response?.data?.error || err.message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Rotas
-// ---------------------------------------------------------------------------
-
-// Lê a planilha e devolve a lista de contatos para pré-visualização
-app.post("/api/contacts", upload.single("file"), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "Nenhum arquivo Excel enviado." });
-    }
-    const contacts = parseContactsFromBuffer(req.file.buffer);
-    const valid = contacts.filter((c) => c.phone);
-    const invalid = contacts.filter((c) => !c.phone);
-    res.json({ total: contacts.length, valid, invalid });
-  } catch (err) {
-    res.status(500).json({ error: "Falha ao ler a planilha: " + err.message });
-  }
-});
-
-// Testa a conexão com a Z-API
-app.post("/api/test-connection", async (req, res) => {
-  const creds = resolveCredentials(req.body);
-  if (!creds.instanceId || !creds.instanceToken) {
-    return res.status(400).json({ ok: false, error: "Informe o ID e o Token da instância." });
-  }
-  try {
-    const url = `${zapiBaseUrl(creds)}/status`;
-    const { data } = await axios.get(url, { headers: zapiHeaders(creds), timeout: 15000 });
-    res.json({ ok: true, status: data });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err.response?.data?.error || err.response?.data?.message || err.message,
-      details: err.response?.data,
-    });
-  }
-});
 
 /** Envia uma única mensagem (texto ou imagem) para um número. */
 async function sendOne(creds, contact, { message, imageUrl, imageBase64, images }) {
@@ -929,12 +518,569 @@ async function sendOne(creds, contact, { message, imageUrl, imageBase64, images 
   return results;
 }
 
+/** Executa um agendamento (envia para todos os contatos do job). */
+async function runJob(tenant, job) {
+  job.status = "enviando";
+  job.startedAt = Date.now();
+  job.logs = [];
+  let success = 0;
+  let failed = 0;
+  // Credenciais: as do job (envio imediato) ou, se ausentes (ex.: agendamento
+  // retomado após novo deploy), as da empresa/ambiente. Tokens não ficam no banco.
+  const creds = job.credentials || resolveCredentials(tenant, {});
+  await saveJobs(tenant, job);
+
+  for (let i = 0; i < job.contacts.length; i++) {
+    const contact = job.contacts[i];
+    if (!contact.phone) {
+      failed++;
+      job.logs.push({ phone: contact.rawPhone, name: contact.name, ok: false, error: "Número inválido" });
+    } else {
+      try {
+        await sendOne(creds, contact, job);
+        success++;
+        job.logs.push({ phone: contact.phone, name: contact.name, ok: true });
+      } catch (err) {
+        failed++;
+        const error = err.response?.data?.error || err.response?.data?.message || err.message;
+        job.logs.push({ phone: contact.phone, name: contact.name, ok: false, error });
+      }
+    }
+    job.result = { success, failed, total: job.contacts.length };
+    await saveJobs(tenant, job);
+    if (i < job.contacts.length - 1 && job.delayMs > 0) {
+      await sleep(job.delayMs);
+    }
+  }
+
+  job.status = "concluido";
+  job.finishedAt = Date.now();
+  const label = campaignLabel(job.message, job.hadImage || job.images?.length);
+  job.label = label;
+  await recordClientsSent(tenant, job.contacts, label);
+  trimFinishedJob(job);
+  await saveJobs(tenant, job);
+  if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(tenant.empresa.id, job.id, job.logs);
+  await recordCampaign(tenant, success, failed, label);
+  console.log(`Agendamento ${job.id} concluído (empresa ${tenant.empresa?.id || "local"}): ${success} ok / ${failed} falhas.`);
+}
+
+// Verifica periodicamente se há agendamentos vencidos para disparar, em
+// TODAS as empresas (modo Supabase) sem precisar carregar todas na memória.
+let schedulerRunning = false;
+async function schedulerTick() {
+  if (schedulerRunning || !dbReady) return;
+  schedulerRunning = true;
+  try {
+    if (!USE_SUPABASE) {
+      const tenant = fileTenantState;
+      if (!tenant) return;
+      const now = Date.now();
+      const due = tenant.jobs.filter((j) => j.status === "pendente" && j.scheduledAt <= now);
+      for (const job of due) {
+        try { await runJob(tenant, job); }
+        catch (err) { job.status = "erro"; job.error = err.message; await saveJobs(tenant, job); }
+      }
+      return;
+    }
+    const due = await repo.campanhasRepo.loadDueAcrossEmpresas();
+    if (!due.length) return;
+    for (const row of due) {
+      try {
+        const tenant = await getTenant(row.empresa_id);
+        const job = tenant.jobs.find((j) => j.id === row.id);
+        if (job && job.status === "pendente") await runJob(tenant, job);
+      } catch (err) {
+        console.error("[scheduler]", row.id, err.message);
+      }
+    }
+  } finally {
+    schedulerRunning = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Métricas
+// ---------------------------------------------------------------------------
+async function loadMetrics(tenant) {
+  if (USE_SUPABASE) {
+    const [sends, responses] = await Promise.all([
+      repo.metricasRepo.loadAll(tenant.empresa.id),
+      repo.respostasRepo.loadAll(tenant.empresa.id),
+    ]);
+    tenant.metrics = { sends, responses, campaigns: sends.length };
+    return;
+  }
+  try {
+    if (fs.existsSync(METRICS_FILE)) tenant.metrics = JSON.parse(fs.readFileSync(METRICS_FILE, "utf8"));
+  } catch {
+    tenant.metrics = { sends: [], responses: [], campaigns: 0 };
+  }
+}
+// Modo arquivo: grava o metrics.json. Modo Supabase: no-op (os inserts pontuais
+// em recordCampaign/recordResponse já persistiram cada registro).
+function saveMetricsFile(tenant) {
+  if (USE_SUPABASE) return;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(METRICS_FILE, JSON.stringify(tenant.metrics));
+  } catch (err) {
+    console.error("Não foi possível salvar as métricas:", err.message);
+  }
+}
+/** Rótulo automático de uma campanha (1ª linha da mensagem ou "com imagem"). */
+function campaignLabel(message, hasImage) {
+  const t = String(message || "").trim().split("\n")[0].trim();
+  if (t) return t.slice(0, 40);
+  return hasImage ? "Campanha com imagem" : "Campanha";
+}
+async function recordCampaign(tenant, sent, failed, name = "Campanha", ts = Date.now()) {
+  const row = { ts, sent, failed, name };
+  tenant.metrics.sends.push(row);
+  tenant.metrics.campaigns = (tenant.metrics.campaigns || 0) + 1;
+  if (USE_SUPABASE) await repo.metricasRepo.insertOne(tenant.empresa.id, row);
+  else saveMetricsFile(tenant);
+}
+async function recordResponse(tenant, phone, ts = Date.now(), content = "", externalId = null) {
+  const row = {
+    phone: String(phone || "").replace(/\D/g, ""),
+    key: phoneKey(phone),
+    ts,
+    content: String(content || "").slice(0, 200),
+  };
+  tenant.metrics.responses.push(row);
+  if (USE_SUPABASE) await repo.respostasRepo.insertOne(tenant.empresa.id, row, externalId);
+  else saveMetricsFile(tenant);
+}
+function summarizeMetrics(tenant, from) {
+  const sends = tenant.metrics.sends.filter((s) => s.ts >= from);
+  const responses = tenant.metrics.responses.filter((r) => r.ts >= from);
+  const totalSent = sends.reduce((a, s) => a + (s.sent || 0), 0);
+  const repliedNumbers = new Set(responses.map((r) => phoneKey(r.phone)));
+  const replied = repliedNumbers.size;
+  const semRetorno = Math.max(totalSent - replied, 0);
+  const taxa = totalSent ? Math.round((replied / totalSent) * 1000) / 10 : 0;
+
+  const hours = {};
+  responses.forEach((r) => { const h = new Date(r.ts).getHours(); hours[h] = (hours[h] || 0) + 1; });
+  let melhorHora = null, max = 0;
+  for (const h in hours) { if (hours[h] > max) { max = hours[h]; melhorHora = Number(h); } }
+
+  const week = [0, 0, 0, 0, 0, 0, 0]; // dom..sáb (mensagens enviadas)
+  sends.forEach((s) => { week[new Date(s.ts).getDay()] += (s.sent || 0); });
+
+  // Nomes das campanhas do período (mais recentes primeiro, sem repetir)
+  const campanhaNomes = [];
+  [...sends].sort((a, b) => b.ts - a.ts).forEach((s) => {
+    const n = s.name || "Campanha";
+    if (!campanhaNomes.includes(n)) campanhaNomes.push(n);
+  });
+
+  return { totalSent, replied, semRetorno, taxa, campanhas: sends.length, melhorHora, week, campanhaNomes };
+}
+
+// ---------------------------------------------------------------------------
+// Modelos de mensagem
+// ---------------------------------------------------------------------------
+async function loadTemplates(tenant) {
+  if (USE_SUPABASE) { tenant.templates = await repo.modelosRepo.loadAll(tenant.empresa.id); return; }
+  try {
+    if (fs.existsSync(TEMPLATES_FILE)) tenant.templates = JSON.parse(fs.readFileSync(TEMPLATES_FILE, "utf8"));
+  } catch {
+    tenant.templates = [];
+  }
+}
+async function saveTemplates(tenant, one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.modelosRepo.deleteById(tenant.empresa.id, removedId);
+    else if (one) await repo.modelosRepo.upsertOne(tenant.empresa.id, one);
+    return;
+  }
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(tenant.templates, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar os modelos:", err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CRM-lite: base de clientes
+// ---------------------------------------------------------------------------
+async function loadClients(tenant) {
+  if (USE_SUPABASE) { tenant.clients = await repo.clientesRepo.loadAll(tenant.empresa.id); return; }
+  try {
+    if (fs.existsSync(CLIENTS_FILE)) tenant.clients = JSON.parse(fs.readFileSync(CLIENTS_FILE, "utf8"));
+  } catch {
+    tenant.clients = [];
+  }
+}
+function saveClientsFile(tenant) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CLIENTS_FILE, JSON.stringify(tenant.clients, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar os clientes:", err.message);
+  }
+}
+// `one`: grava só um cliente. `removedId`: remove um cliente. Sem args: grava todos.
+async function saveClients(tenant, one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.clientesRepo.deleteById(tenant.empresa.id, removedId);
+    else if (one) await repo.clientesRepo.upsertOne(tenant.empresa.id, one);
+    else await repo.clientesRepo.upsertMany(tenant.empresa.id, tenant.clients);
+    return;
+  }
+  saveClientsFile(tenant);
+}
+function onlyDigits(p) { return String(p || "").replace(/\D/g, ""); }
+/** Telefone "discável" para exibir/enviar (com DDI 55, preserva o nono dígito). */
+function canonPhone(p) { return normalizePhone(p) || onlyDigits(p); }
+/** Chave canônica de um cliente (compatível com registros antigos sem `key`). */
+function clientKey(c) { return c.key || phoneKey(c.phone); }
+function findClient(tenant, phone) {
+  const k = phoneKey(phone);
+  return k ? tenant.clients.find((c) => clientKey(c) === k) : null;
+}
+function upsertClient(tenant, phone, name) {
+  const k = phoneKey(phone);
+  if (!k) return null;
+  const display = canonPhone(phone);
+  const now = Date.now();
+  let c = findClient(tenant, phone);
+  if (!c) {
+    c = { id: crypto.randomUUID(), phone: display, key: k, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
+    tenant.clients.push(c);
+  } else {
+    if (name && !c.name) c.name = name;
+    if (!c.key) c.key = k;
+    // Prefere guardar a forma com o nono dígito (mais confiável para envio)
+    if (String(display).length > String(c.phone).length) c.phone = display;
+  }
+  return c;
+}
+
+/** Mescla clientes duplicados pela chave canônica (migração do nono dígito). */
+async function migrateClients(tenant) {
+  const byKey = new Map();
+  const merged = [];
+  const stageRank = (s) => Math.max(0, CRM_STAGES.indexOf(s));
+  let changed = false;
+  for (const c of tenant.clients) {
+    const k = clientKey(c);
+    if (!c.key) { c.key = k; changed = true; }
+    if (!byKey.has(k)) {
+      byKey.set(k, c);
+      merged.push(c);
+    } else {
+      changed = true;
+      const keep = byKey.get(k);
+      if (!keep.name && c.name) keep.name = c.name;
+      keep.tags = Array.from(new Set([...(keep.tags || []), ...(c.tags || [])]));
+      if (c.notes) keep.notes = [keep.notes, c.notes].filter(Boolean).join(" | ").slice(0, 1000);
+      keep.createdAt = Math.min(keep.createdAt || Date.now(), c.createdAt || Date.now());
+      if (c.lastSentAt) keep.lastSentAt = Math.max(keep.lastSentAt || 0, c.lastSentAt);
+      if (c.lastReplyAt) keep.lastReplyAt = Math.max(keep.lastReplyAt || 0, c.lastReplyAt);
+      if (stageRank(c.stage) > stageRank(keep.stage)) keep.stage = c.stage;
+      if (String(c.phone).length > String(keep.phone).length) keep.phone = c.phone;
+      keep.updatedAt = Date.now();
+    }
+  }
+  if (changed || merged.length !== tenant.clients.length) {
+    tenant.clients = merged;
+    await saveClients(tenant);
+    console.log(`CRM: base normalizada (${tenant.clients.length} clientes únicos).`);
+  }
+}
+/** Registra que os contatos receberam um disparo (preenche a base automaticamente). */
+async function recordClientsSent(tenant, list, campaignName) {
+  if (!Array.isArray(list)) return;
+  const now = Date.now();
+  const touched = [];
+  list.forEach((ct) => {
+    const c = upsertClient(tenant, ct.phone, ct.name);
+    if (c) {
+      c.lastSentAt = now;
+      c.updatedAt = now;
+      if (campaignName) c.lastCampaignName = campaignName;
+      if (!c.stage || c.stage === "Novo") c.stage = "Contatado";
+      touched.push(c);
+    }
+  });
+  if (USE_SUPABASE) await repo.clientesRepo.upsertMany(tenant.empresa.id, touched);
+  else saveClientsFile(tenant);
+}
+/** Registra que um cliente respondeu (avança a etapa). */
+async function recordClientReply(tenant, phone) {
+  const c = upsertClient(tenant, phone);
+  if (!c) return;
+  c.lastReplyAt = Date.now();
+  c.updatedAt = Date.now();
+  if (c.stage === "Novo" || c.stage === "Contatado") c.stage = "Respondeu";
+  await saveClients(tenant, c);
+}
+
+// ---------------------------------------------------------------------------
+// Agenda de contatos salvos
+// ---------------------------------------------------------------------------
+async function loadAgenda(tenant) {
+  if (USE_SUPABASE) { tenant.agenda = await repo.contatosRepo.loadAll(tenant.empresa.id); return; }
+  try {
+    if (fs.existsSync(AGENDA_FILE)) tenant.agenda = JSON.parse(fs.readFileSync(AGENDA_FILE, "utf8"));
+  } catch {
+    tenant.agenda = [];
+  }
+}
+// `one`: grava só um contato. `removedId`: remove. Sem args: grava todos.
+async function saveAgenda(tenant, one, removedId) {
+  if (USE_SUPABASE) {
+    if (removedId) await repo.contatosRepo.deleteById(tenant.empresa.id, removedId);
+    else if (one) await repo.contatosRepo.upsertOne(tenant.empresa.id, one);
+    else for (const c of tenant.agenda) await repo.contatosRepo.upsertOne(tenant.empresa.id, c);
+    return;
+  }
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(AGENDA_FILE, JSON.stringify(tenant.agenda, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar a agenda:", err.message);
+  }
+}
+function findAgenda(tenant, phone) {
+  const k = phoneKey(phone);
+  return k ? tenant.agenda.find((a) => (a.key || phoneKey(a.phone)) === k) : null;
+}
+function upsertAgenda(tenant, phone, name, origem) {
+  const k = phoneKey(phone);
+  if (!k) return null;
+  let a = findAgenda(tenant, phone);
+  if (!a) {
+    a = { id: crypto.randomUUID(), name: (name || "").trim(), phone: canonPhone(phone), key: k, origem: origem || "manual", createdAt: Date.now() };
+    tenant.agenda.push(a);
+  } else {
+    // Manual sobrescreve; planilha/chip só preenchem se estiver vazio
+    if (name && (origem === "manual" || !a.name)) a.name = name.trim();
+    if (String(canonPhone(phone)).length > String(a.phone).length) a.phone = canonPhone(phone);
+  }
+  return a;
+}
+/** Resolve o nome de um número: 1º agenda → 2º nome informado → "" (sem nome). */
+function resolveName(tenant, phone, fallback) {
+  const a = findAgenda(tenant, phone);
+  return (a && a.name) || (fallback || "").trim() || "";
+}
+function inAgenda(tenant, phone) { return Boolean(findAgenda(tenant, phone)); }
+/** Extrai o nome do contato vindo do WhatsApp/Z-API a partir do payload do webhook. */
+function waNameFrom(b) {
+  return String(
+    b.senderName || b.chatName || b.notify || b.pushName || b.contactName || b.senderNotify || ""
+  ).trim().slice(0, 80);
+}
+/** Guarda o nome recebido do WhatsApp no cliente (sem tocar em etapa ou nome de campanha). */
+async function setWaName(tenant, phone, waName) {
+  if (!waName) return;
+  const c = findClient(tenant, phone);
+  if (c && c.waName !== waName) {
+    c.waName = waName;
+    c.updatedAt = Date.now();
+    await saveClients(tenant, c);
+  }
+}
+/**
+ * Resolve a identidade de um número seguindo a ordem de prioridade:
+ * 1º nome salvo na agenda → 2º nome recebido do WhatsApp → 3º nome usado na campanha → "".
+ * Devolve { name, source } onde source indica a origem real do nome.
+ */
+function bestName(tenant, phone, campaignFallback) {
+  const a = findAgenda(tenant, phone);
+  if (a && a.name) return { name: a.name, source: a.origem || "agenda" };
+  const c = findClient(tenant, phone);
+  if (c && c.waName) return { name: c.waName, source: "whatsapp" };
+  const camp = String(campaignFallback || (c && c.name) || "").trim();
+  if (camp) return { name: camp, source: "campanha" };
+  return { name: "", source: "" };
+}
+
+// ---------------------------------------------------------------------------
+// Conversas (caixa de entrada do dia a dia)
+// ---------------------------------------------------------------------------
+async function loadConversas(tenant) {
+  if (USE_SUPABASE) { tenant.conversas = await repo.mensagensRepo.loadAll(tenant.empresa.id); return; }
+  try {
+    if (fs.existsSync(CONVERSAS_FILE)) tenant.conversas = JSON.parse(fs.readFileSync(CONVERSAS_FILE, "utf8"));
+  } catch {
+    tenant.conversas = [];
+  }
+}
+function saveConversasFile(tenant) {
+  if (USE_SUPABASE) return;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CONVERSAS_FILE, JSON.stringify(tenant.conversas, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar as conversas:", err.message);
+  }
+}
+/** Registra uma mensagem na conversa (dir: "in" recebida | "out" enviada). */
+async function recordMessage(tenant, phone, text, dir, externalId = null) {
+  const key = phoneKey(phone);
+  if (!key) return;
+  const t = String(text || "").slice(0, 1000);
+  const now = Date.now();
+  if (dir === "out") {
+    // Evita duplicar (nosso envio + eco do webhook "enviadas por mim")
+    const dup = tenant.conversas.some((m) => m.dir === "out" && m.key === key && m.text === t && now - m.ts < 60000);
+    if (dup) return;
+  }
+  const msg = { key, phone: canonPhone(phone), text: t, ts: now, dir };
+  tenant.conversas.push(msg);
+  if (tenant.conversas.length > CONV_MAX) tenant.conversas = tenant.conversas.slice(-CONV_MAX);
+  if (USE_SUPABASE) {
+    let conversaId = null;
+    try {
+      conversaId = await repo.conversasRepo.upsertThread(tenant.empresa.id, {
+        key, phone: msg.phone, text: t, dir, ts: now,
+        origem: isCampaignOrigin(tenant, key) ? "campaign" : "daily",
+      });
+    } catch (e) { console.error("[Supabase] thread:", e.message); }
+    const inserted = await repo.mensagensRepo.insertOne(tenant.empresa.id, msg, externalId, conversaId);
+    if (inserted === false) {
+      // Mensagem já existente (external_id duplicado): desfaz na memória
+      const idx = tenant.conversas.lastIndexOf(msg);
+      if (idx >= 0) tenant.conversas.splice(idx, 1);
+    }
+  } else {
+    saveConversasFile(tenant);
+  }
+}
+/** A conversa é de campanha? (o contato recebeu disparo nos últimos 30 dias) */
+function isCampaignOrigin(tenant, key) {
+  const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  return Boolean(c && c.lastSentAt && Date.now() - c.lastSentAt <= CAMPAIGN_WINDOW);
+}
+function campaignNameOf(tenant, key) {
+  const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  return (c && c.lastCampaignName) || "";
+}
+/** Contador de conversas de hoje (total, de campanha e do dia a dia). */
+function conversasSummary(tenant, from) {
+  const seen = new Set();
+  let campanha = 0, diaadia = 0;
+  tenant.conversas.filter((m) => m.ts >= from).forEach((m) => {
+    if (seen.has(m.key)) return;
+    seen.add(m.key);
+    if (isCampaignOrigin(tenant, m.key)) campanha++; else diaadia++;
+  });
+  return { total: seen.size, campanha, diaadia };
+}
+function conversasSummaryToday(tenant) {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  return conversasSummary(tenant, start.getTime());
+}
+
+// ---------------------------------------------------------------------------
+// Chatbot por regras
+// ---------------------------------------------------------------------------
+async function loadChatbot(tenant) {
+  if (USE_SUPABASE) { tenant.chatbot = await repo.automacoesRepo.load(tenant.empresa.id); return; }
+  try {
+    if (fs.existsSync(CHATBOT_FILE)) tenant.chatbot = JSON.parse(fs.readFileSync(CHATBOT_FILE, "utf8"));
+  } catch {
+    tenant.chatbot = { enabled: false, rules: [], fallback: { enabled: false, reply: "" } };
+  }
+}
+async function saveChatbot(tenant) {
+  if (USE_SUPABASE) { await repo.automacoesRepo.save(tenant.empresa.id, tenant.chatbot); return; }
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CHATBOT_FILE, JSON.stringify(tenant.chatbot, null, 2));
+  } catch (err) {
+    console.error("Não foi possível salvar o chatbot:", err.message);
+  }
+}
+
+/** Encontra a resposta automática para um texto recebido (ou null). */
+function findChatbotReply(tenant, text) {
+  if (!tenant.chatbot.enabled) return null;
+  const msg = String(text || "").trim().toLowerCase();
+  if (!msg) return null;
+  for (const r of tenant.chatbot.rules || []) {
+    if (r.active === false) continue;
+    const kws = (r.keywords || []).map((k) => String(k).toLowerCase().trim()).filter(Boolean);
+    const hit = kws.some((k) => {
+      if (r.matchType === "exact") return msg === k;
+      if (r.matchType === "starts") return msg.startsWith(k);
+      return msg.includes(k);
+    });
+    if (hit) return r.reply;
+  }
+  if (tenant.chatbot.fallback?.enabled && tenant.chatbot.fallback.reply) return tenant.chatbot.fallback.reply;
+  return null;
+}
+
+/** Envia a resposta automática (usa credenciais da empresa/.env, com anti-spam). */
+async function sendAutoReply(tenant, phone, text) {
+  const creds = resolveCredentials(tenant, {});
+  if (!creds.instanceId || !creds.instanceToken || !text) return;
+  const p = onlyDigits(phone);
+  const now = Date.now();
+  if (tenant.autoReplyCooldown.get(p) && now - tenant.autoReplyCooldown.get(p) < 8000) return;
+  tenant.autoReplyCooldown.set(p, now);
+  try {
+    await axios.post(
+      `${zapiBaseUrl(creds)}/send-text`,
+      { phone: p, message: text },
+      { headers: zapiHeaders(creds), timeout: 20000 }
+    );
+    await recordMessage(tenant, p, text, "out"); // registra na caixa de conversas
+  } catch (err) {
+    console.error("Falha na resposta automática:", err.response?.data?.error || err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rotas
+// ---------------------------------------------------------------------------
+app.post("/api/contacts", upload.single("file"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Nenhum arquivo Excel enviado." });
+    }
+    const contacts = parseContactsFromBuffer(req.file.buffer);
+    const valid = contacts.filter((c) => c.phone);
+    const invalid = contacts.filter((c) => !c.phone);
+    res.json({ total: contacts.length, valid, invalid });
+  } catch (err) {
+    res.status(500).json({ error: "Falha ao ler a planilha: " + err.message });
+  }
+});
+
+// Testa a conexão com a Z-API
+app.post("/api/test-connection", async (req, res) => {
+  const creds = resolveCredentials(req.tenant, req.body);
+  if (!creds.instanceId || !creds.instanceToken) {
+    return res.status(400).json({ ok: false, error: "Informe o ID e o Token da instância." });
+  }
+  try {
+    const url = `${zapiBaseUrl(creds)}/status`;
+    const { data } = await axios.get(url, { headers: zapiHeaders(creds), timeout: 15000 });
+    res.json({ ok: true, status: data });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err.response?.data?.error || err.response?.data?.message || err.message,
+      details: err.response?.data,
+    });
+  }
+});
+
 // Dispara as mensagens com streaming de progresso (Server-Sent Events estilo NDJSON)
 app.post("/api/send", async (req, res) => {
-  const creds = resolveCredentials(req.body);
+  const tenant = req.tenant;
+  const creds = resolveCredentials(tenant, req.body);
   const { contacts, message, imageUrl, imageBase64 } = req.body;
   const images = normalizeImages(req.body.images, imageUrl, imageBase64);
-  const delay = Number(req.body.delayMs ?? DEFAULT_DELAY_MS);
+  const delay = resolveDelayMs(req.body.delayMs);
 
   if (!creds.instanceId || !creds.instanceToken) {
     return res.status(400).json({ error: "Credenciais da Z-API incompletas." });
@@ -966,8 +1112,8 @@ app.post("/api/send", async (req, res) => {
     contacts,
     logs: [],
   };
-  jobs.push(job);
-  await saveJobs(job);
+  tenant.jobs.push(job);
+  await saveJobs(tenant, job);
 
   let success = 0;
   let failed = 0;
@@ -1006,10 +1152,10 @@ app.post("/api/send", async (req, res) => {
   job.label = label;
   trimFinishedJob(job);
   try {
-    await saveJobs(job);
-    if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(job.id, job.logs);
-    await recordCampaign(success, failed, label);
-    await recordClientsSent(contacts, label);
+    await saveJobs(tenant, job);
+    if (USE_SUPABASE) await repo.destinatariosRepo.replaceForCampaign(tenant.empresa.id, job.id, job.logs);
+    await recordCampaign(tenant, success, failed, label);
+    await recordClientsSent(tenant, contacts, label);
   } catch (err) {
     console.error("[persistência] Falha ao salvar o envio:", err.message);
   }
@@ -1020,10 +1166,11 @@ app.post("/api/send", async (req, res) => {
 
 // Cria um agendamento de disparo
 app.post("/api/schedule", async (req, res) => {
-  const creds = resolveCredentials(req.body);
+  const tenant = req.tenant;
+  const creds = resolveCredentials(tenant, req.body);
   const { contacts, message, imageUrl, imageBase64, scheduledAt } = req.body;
   const images = normalizeImages(req.body.images, imageUrl, imageBase64);
-  const delayMs = Number(req.body.delayMs ?? DEFAULT_DELAY_MS);
+  const delayMs = resolveDelayMs(req.body.delayMs);
 
   if (!creds.instanceId || !creds.instanceToken) {
     return res.status(400).json({ error: "Credenciais da Z-API incompletas." });
@@ -1054,89 +1201,96 @@ app.post("/api/schedule", async (req, res) => {
     imageCount: images.length,
     delayMs,
   };
-  jobs.push(job);
-  await saveJobs(job);
-  res.json({ ok: true, job: publicJob(job) });
+  tenant.jobs.push(job);
+  await saveJobs(tenant, job);
+  res.json({ ok: true, job: publicJob(tenant, job) });
 });
 
 // Lista os agendamentos (mais recentes primeiro)
 app.get("/api/schedules", (req, res) => {
-  const list = [...jobs].sort((a, b) => b.createdAt - a.createdAt).map(publicJob);
+  const tenant = req.tenant;
+  const list = [...tenant.jobs].sort((a, b) => b.createdAt - a.createdAt).map((j) => publicJob(tenant, j));
   res.json({ jobs: list });
 });
 
 // Detalhe de um agendamento (inclui o log de envios + quem respondeu)
 app.get("/api/schedules/:id", (req, res) => {
-  const job = jobs.find((j) => j.id === req.params.id);
+  const tenant = req.tenant;
+  const job = tenant.jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
   const since = job.startedAt || job.createdAt || 0;
   const repliedSet = new Set(
-    metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone))
+    tenant.metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone))
   );
   const logs = (job.logs || []).map((l) => ({
     ...l,
-    name: resolveName(l.phone, l.name),
+    name: resolveName(tenant, l.phone, l.name),
     replied: repliedSet.has(phoneKey(l.phone)),
   }));
-  res.json({ job: { ...publicJob(job), logs } });
+  res.json({ job: { ...publicJob(tenant, job), logs } });
 });
 
 // Limpa o histórico (remove os já finalizados; mantém pendentes/em andamento)
 app.delete("/api/schedules", async (req, res) => {
-  const before = jobs.length;
-  const removidos = jobs.filter((j) => j.status !== "pendente" && j.status !== "enviando");
-  jobs = jobs.filter((j) => j.status === "pendente" || j.status === "enviando");
-  if (USE_SUPABASE) { for (const j of removidos) await repo.campanhasRepo.deleteById(j.id); }
-  else await saveJobs();
-  res.json({ ok: true, removed: before - jobs.length });
+  const tenant = req.tenant;
+  const before = tenant.jobs.length;
+  const removidos = tenant.jobs.filter((j) => j.status !== "pendente" && j.status !== "enviando");
+  tenant.jobs = tenant.jobs.filter((j) => j.status === "pendente" || j.status === "enviando");
+  if (USE_SUPABASE) { for (const j of removidos) await repo.campanhasRepo.deleteById(tenant.empresa.id, j.id); }
+  else await saveJobs(tenant);
+  res.json({ ok: true, removed: before - tenant.jobs.length });
 });
 
 // Cancela um agendamento pendente
 app.delete("/api/schedules/:id", async (req, res) => {
-  const job = jobs.find((j) => j.id === req.params.id);
+  const tenant = req.tenant;
+  const job = tenant.jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
   if (job.status !== "pendente") {
     return res.status(400).json({ error: "Só é possível cancelar agendamentos pendentes." });
   }
   job.status = "cancelado";
-  await saveJobs(job);
+  await saveJobs(tenant, job);
   res.json({ ok: true });
 });
 
 // --- Métricas ---
 app.get("/api/metrics", (req, res) => {
+  const tenant = req.tenant;
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   res.json({
-    hoje: summarizeMetrics(startToday),
-    mes: summarizeMetrics(startMonth),
-    conversasHoje: conversasSummaryToday(),
+    hoje: summarizeMetrics(tenant, startToday),
+    mes: summarizeMetrics(tenant, startMonth),
+    conversasHoje: conversasSummaryToday(tenant),
   });
 });
 
 // Lista as respostas recebidas (caixa de entrada do dashboard)
 app.get("/api/responses", (req, res) => {
-  const list = [...metrics.responses]
+  const tenant = req.tenant;
+  const list = [...tenant.metrics.responses]
     .sort((a, b) => b.ts - a.ts)
     .slice(0, 300)
     .map((r) => {
-      const id = bestName(r.phone, "");
-      const c = findClient(r.phone);
+      const id = bestName(tenant, r.phone, "");
+      const c = findClient(tenant, r.phone);
       return {
         ...r,
         name: id.name,
         nameSource: id.source,
-        inAgenda: inAgenda(r.phone),
+        inAgenda: inAgenda(tenant, r.phone),
         tags: c?.tags || [],
         stage: c?.stage || "",
       };
     });
-  res.json({ responses: list, total: metrics.responses.length });
+  res.json({ responses: list, total: tenant.metrics.responses.length });
 });
 
 // Dados agregados do dashboard de Visão Geral (por período)
 app.get("/api/dashboard", (req, res) => {
+  const tenant = req.tenant;
   const period = String(req.query.period || "hoje");
   const now = new Date();
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -1146,8 +1300,8 @@ app.get("/api/dashboard", (req, res) => {
   else if (period === "mes") from = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   else from = dayStart;
 
-  const sends = metrics.sends.filter((s) => s.ts >= from);
-  const responses = metrics.responses.filter((r) => r.ts >= from);
+  const sends = tenant.metrics.sends.filter((s) => s.ts >= from);
+  const responses = tenant.metrics.responses.filter((r) => r.ts >= from);
   const enviadas = sends.reduce((a, s) => a + (s.sent || 0), 0);
   const replied = new Set(responses.map((r) => phoneKey(r.phone))).size;
   const taxa = enviadas ? Math.round((replied / enviadas) * 1000) / 10 : 0;
@@ -1163,7 +1317,7 @@ app.get("/api/dashboard", (req, res) => {
   // Funil do CRM (contagem por etapa)
   const funilStages = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente"];
   const stageCount = {};
-  clients.forEach((c) => { stageCount[c.stage] = (stageCount[c.stage] || 0) + 1; });
+  tenant.clients.forEach((c) => { stageCount[c.stage] = (stageCount[c.stage] || 0) + 1; });
   const funil = funilStages.map((s) => ({ stage: s, count: stageCount[s] || 0 }));
 
   // Série dos últimos 30 dias (enviadas x respostas por dia)
@@ -1171,17 +1325,17 @@ app.get("/api/dashboard", (req, res) => {
   for (let i = 29; i >= 0; i--) {
     const d0 = dayStart - i * 864e5, d1 = d0 + 864e5;
     labels.push(new Date(d0).getDate());
-    serieEnv.push(metrics.sends.filter((s) => s.ts >= d0 && s.ts < d1).reduce((a, s) => a + (s.sent || 0), 0));
-    serieResp.push(metrics.responses.filter((r) => r.ts >= d0 && r.ts < d1).length);
+    serieEnv.push(tenant.metrics.sends.filter((s) => s.ts >= d0 && s.ts < d1).reduce((a, s) => a + (s.sent || 0), 0));
+    serieResp.push(tenant.metrics.responses.filter((r) => r.ts >= d0 && r.ts < d1).length);
   }
 
   // Ranking das últimas 5 campanhas concluídas
-  const ranking = jobs.filter((j) => j.status === "concluido")
+  const ranking = tenant.jobs.filter((j) => j.status === "concluido")
     .sort((a, b) => (b.finishedAt || b.scheduledAt || 0) - (a.finishedAt || a.scheduledAt || 0))
     .slice(0, 5)
     .map((j) => {
       const env = j.result?.success || 0;
-      const resp = countReplies(j);
+      const resp = countReplies(tenant, j);
       return { id: j.id, name: campaignLabel(j.message, j.hadImage || j.imageCount), enviadas: env, respostas: resp, taxa: env ? Math.round((resp / env) * 1000) / 10 : 0, ts: j.finishedAt || j.scheduledAt };
     });
 
@@ -1189,10 +1343,10 @@ app.get("/api/dashboard", (req, res) => {
     period,
     kpis: {
       enviadas,
-      conversas: conversasSummary(from),
+      conversas: conversasSummary(tenant, from),
       taxa,
-      clientes: clients.length,
-      clientesNovos: clients.filter((c) => (c.createdAt || 0) >= from).length,
+      clientes: tenant.clients.length,
+      clientesNovos: tenant.clients.filter((c) => (c.createdAt || 0) >= from).length,
     },
     donut: { responderam: replied, semResposta: Math.max(enviadas - replied, 0) },
     weekday: week,
@@ -1204,16 +1358,17 @@ app.get("/api/dashboard", (req, res) => {
 });
 
 // --- Modelos de mensagem ---
-app.get("/api/templates", (req, res) => res.json({ templates }));
+app.get("/api/templates", (req, res) => res.json({ templates: req.tenant.templates }));
 
 app.post("/api/templates", async (req, res) => {
+  const tenant = req.tenant;
   const { name, message, imageUrl } = req.body || {};
   // Até 3 URLs de imagem (compatível com o campo antigo imageUrl)
   let imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : (imageUrl ? [imageUrl] : []);
   imageUrls = imageUrls.filter((u) => typeof u === "string" && u.trim()).slice(0, 3).map((u) => u.slice(0, 1000));
   if (!name || !name.trim()) return res.status(400).json({ error: "Dê um nome ao modelo." });
   if (!message && imageUrls.length === 0) return res.status(400).json({ error: "O modelo precisa de texto ou imagem." });
-  if (templates.length >= MAX_TEMPLATES) {
+  if (tenant.templates.length >= MAX_TEMPLATES) {
     return res.status(400).json({ error: `Limite de ${MAX_TEMPLATES} modelos atingido. Exclua algum para salvar outro.` });
   }
   const template = {
@@ -1222,25 +1377,27 @@ app.post("/api/templates", async (req, res) => {
     message: (message || "").slice(0, 5000),
     imageUrls,
   };
-  templates.push(template);
-  await saveTemplates(template);
+  tenant.templates.push(template);
+  await saveTemplates(tenant, template);
   res.json({ ok: true, template });
 });
 
 app.delete("/api/templates/:id", async (req, res) => {
-  const before = templates.length;
-  templates = templates.filter((t) => t.id !== req.params.id);
-  await saveTemplates(null, req.params.id);
-  res.json({ ok: before !== templates.length });
+  const tenant = req.tenant;
+  const before = tenant.templates.length;
+  tenant.templates = tenant.templates.filter((t) => t.id !== req.params.id);
+  await saveTemplates(tenant, null, req.params.id);
+  res.json({ ok: before !== tenant.templates.length });
 });
 
 // --- CRM-lite: clientes ---
 app.get("/api/clients", (req, res) => {
+  const tenant = req.tenant;
   const search = String(req.query.search || "").trim().toLowerCase();
   const tag = String(req.query.tag || "");
   const stage = String(req.query.stage || "");
-  let list = clients.filter((c) => {
-    const nome = resolveName(c.phone, c.name);
+  let list = tenant.clients.filter((c) => {
+    const nome = resolveName(tenant, c.phone, c.name);
     if (stage && c.stage !== stage) return false;
     if (tag && !(c.tags || []).includes(tag)) return false;
     if (search && !`${nome} ${c.phone}`.toLowerCase().includes(search)) return false;
@@ -1249,24 +1406,26 @@ app.get("/api/clients", (req, res) => {
   list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 1000);
   // Enriquece com nome resolvido (agenda → WhatsApp → campanha), origem e flag de agenda
   const enriched = list.map((c) => {
-    const id = bestName(c.phone, c.name);
-    return { ...c, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(c.phone) };
+    const id = bestName(tenant, c.phone, c.name);
+    return { ...c, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(tenant, c.phone) };
   });
-  res.json({ clients: enriched, total: clients.length, shown: enriched.length });
+  res.json({ clients: enriched, total: tenant.clients.length, shown: enriched.length });
 });
 
 app.get("/api/clients/meta", (req, res) => {
+  const tenant = req.tenant;
   const tagSet = new Set();
   const stageCount = {};
-  clients.forEach((c) => {
+  tenant.clients.forEach((c) => {
     (c.tags || []).forEach((t) => tagSet.add(t));
     stageCount[c.stage] = (stageCount[c.stage] || 0) + 1;
   });
-  res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: clients.length });
+  res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: tenant.clients.length });
 });
 
 app.patch("/api/clients/:id", async (req, res) => {
-  const c = clients.find((x) => x.id === req.params.id);
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
   const { name, stage, tags, notes } = req.body || {};
   if (typeof name === "string") c.name = name.slice(0, 80);
@@ -1274,58 +1433,63 @@ app.patch("/api/clients/:id", async (req, res) => {
   if (Array.isArray(tags)) c.tags = tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (typeof notes === "string") c.notes = notes.slice(0, 1000);
   c.updatedAt = Date.now();
-  await saveClients(c);
+  await saveClients(tenant, c);
   res.json({ ok: true, client: c });
 });
 
 app.delete("/api/clients/:id", async (req, res) => {
-  const before = clients.length;
-  const removed = clients.find((c) => c.id === req.params.id);
-  clients = clients.filter((c) => c.id !== req.params.id);
-  if (removed) await saveClients(null, removed.id);
-  res.json({ ok: before !== clients.length });
+  const tenant = req.tenant;
+  const before = tenant.clients.length;
+  const removed = tenant.clients.find((c) => c.id === req.params.id);
+  tenant.clients = tenant.clients.filter((c) => c.id !== req.params.id);
+  if (removed) await saveClients(tenant, null, removed.id);
+  res.json({ ok: before !== tenant.clients.length });
 });
 
 // Move a etapa do funil pelo telefone (usado nas Conversas/Respostas, onde o
 // cliente pode ainda não ter card). Cria o cliente se necessário. Mudança manual.
 app.post("/api/clients/stage", async (req, res) => {
+  const tenant = req.tenant;
   const { phone, stage } = req.body || {};
   if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido." });
   if (!CRM_STAGES.includes(stage)) return res.status(400).json({ error: "Etapa inválida." });
-  const c = upsertClient(phone);
+  const c = upsertClient(tenant, phone);
   if (!c) return res.status(400).json({ error: "Não foi possível registrar o cliente." });
   c.stage = stage;
   c.stageManual = true;
   c.updatedAt = Date.now();
-  await saveClients(c);
-  res.json({ ok: true, client: { ...c, displayName: bestName(c.phone, c.name).name, inAgenda: inAgenda(c.phone) } });
+  await saveClients(tenant, c);
+  res.json({ ok: true, client: { ...c, displayName: bestName(tenant, c.phone, c.name).name, inAgenda: inAgenda(tenant, c.phone) } });
 });
 
 // --- Agenda de contatos salvos ---
 app.get("/api/agenda", (req, res) => {
+  const tenant = req.tenant;
   const s = String(req.query.search || "").trim().toLowerCase();
-  let list = agenda.filter((a) => !s || `${a.name} ${a.phone}`.toLowerCase().includes(s));
+  let list = tenant.agenda.filter((a) => !s || `${a.name} ${a.phone}`.toLowerCase().includes(s));
   list = list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", "pt")).slice(0, 2000);
-  res.json({ contacts: list, total: agenda.length, shown: list.length });
+  res.json({ contacts: list, total: tenant.agenda.length, shown: list.length });
 });
 
 app.post("/api/agenda", async (req, res) => {
+  const tenant = req.tenant;
   const { name, phone } = req.body || {};
   if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido. Inclua o DDD." });
-  const contact = upsertAgenda(phone, name || "", "manual");
-  await saveAgenda(contact);
+  const contact = upsertAgenda(tenant, phone, name || "", "manual");
+  await saveAgenda(tenant, contact);
   res.json({ ok: true, contact });
 });
 
 // Importa contatos de uma planilha (reaproveita o parser do Passo 2)
 app.post("/api/agenda/upload", upload.single("file"), async (req, res) => {
+  const tenant = req.tenant;
   if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
   try {
     const contacts = parseContactsFromBuffer(req.file.buffer);
     const touched = [];
-    contacts.forEach((c) => { if (c.phone) { touched.push(upsertAgenda(c.phone, c.name, "planilha")); } });
-    if (USE_SUPABASE) { for (const c of touched) if (c) await repo.contatosRepo.upsertOne(c); }
-    else await saveAgenda();
+    contacts.forEach((c) => { if (c.phone) { touched.push(upsertAgenda(tenant, c.phone, c.name, "planilha")); } });
+    if (USE_SUPABASE) { for (const c of touched) if (c) await repo.contatosRepo.upsertOne(tenant.empresa.id, c); }
+    else await saveAgenda(tenant);
     res.json({ ok: true, imported: touched.filter(Boolean).length });
   } catch (err) {
     res.status(500).json({ error: "Falha ao ler a planilha: " + err.message });
@@ -1334,7 +1498,8 @@ app.post("/api/agenda/upload", upload.single("file"), async (req, res) => {
 
 // Sincroniza os contatos salvos no chip (GET /contacts da Z-API, com paginação)
 app.post("/api/agenda/sync-chip", async (req, res) => {
-  const creds = resolveCredentials(req.body);
+  const tenant = req.tenant;
+  const creds = resolveCredentials(tenant, req.body);
   if (!creds.instanceId || !creds.instanceToken) {
     return res.status(400).json({ error: "Conexão não configurada." });
   }
@@ -1349,14 +1514,14 @@ app.post("/api/agenda/sync-chip", async (req, res) => {
         const phone = c.phone || c.id || "";
         const name = c.name || c.vname || c.notify || c.short || "";
         if (phoneKey(phone)) {
-          const a = upsertAgenda(phone, name, "chip");
-          if (USE_SUPABASE && a) await repo.contatosRepo.upsertOne(a);
+          const a = upsertAgenda(tenant, phone, name, "chip");
+          if (USE_SUPABASE && a) await repo.contatosRepo.upsertOne(tenant.empresa.id, a);
           imported++;
         }
       }
       if (list.length < 100) break;
     }
-    if (!USE_SUPABASE) await saveAgenda();
+    if (!USE_SUPABASE) await saveAgenda(tenant);
     res.json({ ok: true, imported });
   } catch (err) {
     res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
@@ -1364,35 +1529,37 @@ app.post("/api/agenda/sync-chip", async (req, res) => {
 });
 
 app.delete("/api/agenda/:id", async (req, res) => {
-  const before = agenda.length;
-  agenda = agenda.filter((a) => a.id !== req.params.id);
-  if (before !== agenda.length) await saveAgenda(null, req.params.id);
-  res.json({ ok: before !== agenda.length });
+  const tenant = req.tenant;
+  const before = tenant.agenda.length;
+  tenant.agenda = tenant.agenda.filter((a) => a.id !== req.params.id);
+  if (before !== tenant.agenda.length) await saveAgenda(tenant, null, req.params.id);
+  res.json({ ok: before !== tenant.agenda.length });
 });
 
 // --- Conversas (caixa de entrada) ---
 app.get("/api/conversas", (req, res) => {
+  const tenant = req.tenant;
   const filter = String(req.query.filter || "all");
   const s = String(req.query.search || "").trim().toLowerCase();
   // Agrupa por contato (última mensagem de cada)
   const byKey = new Map();
-  for (const m of conversas) {
+  for (const m of tenant.conversas) {
     const cur = byKey.get(m.key);
     if (!cur || m.ts > cur.lastTs) byKey.set(m.key, { key: m.key, phone: m.phone, lastText: m.text, lastTs: m.ts, dir: m.dir });
   }
   let threads = [...byKey.values()].map((t) => {
-    const camp = isCampaignOrigin(t.key);
-    const id = bestName(t.phone, camp ? campaignNameOf(t.key) : "");
-    const c = clients.find((x) => (x.key || phoneKey(x.phone)) === t.key);
+    const camp = isCampaignOrigin(tenant, t.key);
+    const id = bestName(tenant, t.phone, camp ? campaignNameOf(tenant, t.key) : "");
+    const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === t.key);
     return {
       ...t,
       name: id.name,
       nameSource: id.source,
-      inAgenda: inAgenda(t.phone),
+      inAgenda: inAgenda(tenant, t.phone),
       tags: c?.tags || [],
       stage: c?.stage || "",
       origem: camp ? "campaign" : "daily",
-      campaignName: camp ? campaignNameOf(t.key) : "",
+      campaignName: camp ? campaignNameOf(tenant, t.key) : "",
     };
   });
   if (filter === "campaign") threads = threads.filter((t) => t.origem === "campaign");
@@ -1403,35 +1570,37 @@ app.get("/api/conversas", (req, res) => {
 });
 
 app.get("/api/conversas/:key", (req, res) => {
+  const tenant = req.tenant;
   const key = req.params.key;
-  const messages = conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts);
+  const messages = tenant.conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts);
   const phone = messages[0]?.phone || key;
-  const camp = isCampaignOrigin(key);
-  const id = bestName(phone, camp ? campaignNameOf(key) : "");
-  const c = clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  const camp = isCampaignOrigin(tenant, key);
+  const id = bestName(tenant, phone, camp ? campaignNameOf(tenant, key) : "");
+  const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
   res.json({
     key, phone,
     name: id.name,
     nameSource: id.source,
-    inAgenda: inAgenda(phone),
+    inAgenda: inAgenda(tenant, phone),
     tags: c?.tags || [],
     stage: c?.stage || "",
     origem: camp ? "campaign" : "daily",
-    campaignName: campaignNameOf(key),
+    campaignName: campaignNameOf(tenant, key),
     messages,
   });
 });
 
 app.post("/api/conversas/:key/reply", async (req, res) => {
-  const creds = resolveCredentials(req.body);
+  const tenant = req.tenant;
+  const creds = resolveCredentials(tenant, req.body);
   if (!creds.instanceId || !creds.instanceToken) return res.status(400).json({ error: "Conexão não configurada." });
   const message = String(req.body?.message || "").trim();
   if (!message) return res.status(400).json({ error: "Mensagem vazia." });
-  const existing = conversas.find((m) => m.key === req.params.key);
+  const existing = tenant.conversas.find((m) => m.key === req.params.key);
   const phone = existing ? onlyDigits(existing.phone) : req.params.key;
   try {
     await axios.post(`${zapiBaseUrl(creds)}/send-text`, { phone, message }, { headers: zapiHeaders(creds), timeout: 20000 });
-    await recordMessage(phone, message, "out");
+    await recordMessage(tenant, phone, message, "out");
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.response?.data?.error || err.response?.data?.message || err.message });
@@ -1439,11 +1608,12 @@ app.post("/api/conversas/:key/reply", async (req, res) => {
 });
 
 // --- Chatbot por regras ---
-app.get("/api/chatbot", (req, res) => res.json(chatbot));
+app.get("/api/chatbot", (req, res) => res.json(req.tenant.chatbot));
 
 app.put("/api/chatbot", async (req, res) => {
+  const tenant = req.tenant;
   const b = req.body || {};
-  chatbot = {
+  tenant.chatbot = {
     enabled: !!b.enabled,
     rules: Array.isArray(b.rules) ? b.rules.slice(0, 30).map((r) => ({
       id: r.id || crypto.randomUUID(),
@@ -1459,16 +1629,19 @@ app.put("/api/chatbot", async (req, res) => {
       reply: String(b.fallback?.reply || "").slice(0, 2000),
     },
   };
-  await saveChatbot();
-  res.json({ ok: true, chatbot });
+  await saveChatbot(tenant);
+  res.json({ ok: true, chatbot: tenant.chatbot });
 });
 
-// --- Webhook da Z-API (respostas recebidas) ---
+// --- Webhook da Z-API (respostas recebidas), por empresa ---
+// Cada instância Z-API (criada manualmente por empresa) é configurada
+// apontando pra essa URL específica. O segredo vai na própria URL porque a
+// Z-API não permite configurar headers customizados facilmente no painel.
 // Responde rápido para a Z-API e processa em segundo plano (persistência + dedup).
-app.post("/api/webhook", (req, res) => {
-  const body = req.body || {};
+app.post("/api/webhook/:empresaId/:secret", (req, res) => {
   res.json({ ok: true });
-  processWebhook(body).catch((err) => console.error("Erro no webhook:", err.message));
+  handleWebhook(req.params.empresaId, req.params.secret, req.body || {})
+    .catch((err) => console.error("Erro no webhook:", err.message));
 });
 
 /** Identificador externo do evento (messageId da Z-API) para impedir duplicidade. */
@@ -1476,47 +1649,66 @@ function webhookExternalId(b) {
   return String(b.messageId || b.id || b.message?.id || b.messageid || "").trim() || null;
 }
 
-async function processWebhook(b) {
+async function handleWebhook(empresaId, secret, body) {
+  if (!USE_SUPABASE) return; // modo arquivos/legado não tem empresa nenhuma configurada
+  let tenant;
+  try {
+    tenant = await getTenant(empresaId);
+  } catch {
+    return;
+  }
+  if (secret !== tenant.empresa.webhookSecret) return;
+  await processWebhook(tenant, body);
+}
+
+async function processWebhook(tenant, b) {
   const phone = b.phone || b.participantPhone || b.connectedPhone;
   if (!phone) return;
   const fromMe = b.fromMe === true;
   const content = b.text?.message || b.message || b.body || b.caption || "";
   const externalId = webhookExternalId(b);
 
-  // Dedup por evento: se já registramos este id externo, não processa de novo.
-  if (USE_SUPABASE && externalId) {
-    const { isNew } = await repo.eventosRepo.record(externalId, phoneKey(phone), fromMe, b);
+  // Dedup por evento: se já registramos este id externo (nesta empresa), não processa de novo.
+  if (externalId) {
+    const { isNew } = await repo.eventosRepo.record(tenant.empresa.id, externalId, phoneKey(phone), fromMe, b);
     if (!isNew) return;
   }
 
   if (!fromMe) {
     // Mensagem RECEBIDA (resposta do contato)
-    await recordResponse(phone, Date.now(), content, externalId);
-    await recordClientReply(phone); // atualiza a etapa do cliente no CRM
-    await setWaName(phone, waNameFrom(b)); // guarda o nome recebido do WhatsApp
-    if (content) await recordMessage(phone, content, "in", externalId); // caixa de conversas
+    await recordResponse(tenant, phone, Date.now(), content, externalId);
+    await recordClientReply(tenant, phone); // atualiza a etapa do cliente no CRM
+    await setWaName(tenant, phone, waNameFrom(b)); // guarda o nome recebido do WhatsApp
+    if (content) await recordMessage(tenant, phone, content, "in", externalId); // caixa de conversas
     // Resposta automática (chatbot por regras), personalizada com {{nome}}
-    const reply = findChatbotReply(content);
+    const reply = findChatbotReply(tenant, content);
     if (reply) {
-      const cli = findClient(phone);
-      await sendAutoReply(phone, applyTemplate(reply, { name: cli?.name || "" }));
+      const cli = findClient(tenant, phone);
+      await sendAutoReply(tenant, phone, applyTemplate(reply, { name: cli?.name || "" }));
     }
   } else if (content) {
     // Mensagem ENVIADA por mim (ex.: respondida direto pelo celular)
-    await recordMessage(phone, content, "out", externalId);
+    await recordMessage(tenant, phone, content, "out", externalId);
   }
-  if (USE_SUPABASE && externalId) await repo.eventosRepo.markProcessed(externalId);
+  if (externalId) await repo.eventosRepo.markProcessed(tenant.empresa.id, externalId);
 }
 
 // Configurações públicas para o frontend
 app.get("/api/config", (req, res) => {
+  const tenant = req.tenant;
   res.json({
     appName: "ZapFlow",
-    hasEnvCredentials: Boolean(process.env.ZAPI_INSTANCE_ID && process.env.ZAPI_INSTANCE_TOKEN),
+    hasEnvCredentials: Boolean(
+      tenant?.empresa
+        ? (tenant.empresa.zapiInstanceId && tenant.empresa.zapiInstanceToken)
+        : (process.env.ZAPI_INSTANCE_ID && process.env.ZAPI_INSTANCE_TOKEN)
+    ),
     defaultDelaySeconds: Math.max(1, Math.round(DEFAULT_DELAY_MS / 1000)) || 3,
-    authEnabled: AUTH_ENABLED,
+    authEnabled: USE_SUPABASE ? true : AUTH_ENABLED,
     persistence: USE_SUPABASE ? "supabase" : "arquivos",
     dbReady,
+    role: req.session?.role || "owner",
+    empresaName: tenant?.empresa?.name || null,
   });
 });
 
@@ -1538,13 +1730,13 @@ app.get("/api/health/database", async (req, res) => {
 // Inicialização crash-safe:
 //   1) o servidor HTTP sobe IMEDIATAMENTE (health sempre disponível, sem loop
 //      de reinício);
-//   2) os dados são carregados do Supabase em segundo plano, com novas
-//      tentativas até conseguir (nunca volta para arquivos quando o Supabase
-//      está configurado).
+//   2) modo arquivos: os dados são carregados em segundo plano, com novas
+//      tentativas até conseguir. Modo Supabase: só confirma conectividade —
+//      cada empresa é carregada sob demanda no primeiro acesso (getTenant).
 // ---------------------------------------------------------------------------
-function marcarJobsInterrompidos() {
+function marcarJobsInterrompidos(tenant) {
   const alterados = [];
-  for (const j of jobs) {
+  for (const j of tenant.jobs) {
     if (j.status === "enviando") {
       j.status = "erro";
       j.error = "Interrompido por reinício do servidor.";
@@ -1554,47 +1746,45 @@ function marcarJobsInterrompidos() {
   return alterados;
 }
 
-async function loadFromFiles() {
-  await loadJobs();
-  await loadMetrics();
-  await loadClients();
-  await loadTemplates();
-  await loadAgenda();
-  await loadConversas();
-  await loadChatbot();
+async function loadFromFiles(tenant) {
+  await loadJobs(tenant);
+  await loadMetrics(tenant);
+  await loadClients(tenant);
+  await loadTemplates(tenant);
+  await loadAgenda(tenant);
+  await loadConversas(tenant);
+  await loadChatbot(tenant);
+}
+
+async function initFileTenant() {
+  fileTenantState = createEmptyTenantState();
+  await loadFromFiles(fileTenantState);
+  await migrateClients(fileTenantState);
+  if (marcarJobsInterrompidos(fileTenantState).length) await saveJobs(fileTenantState);
+  dbReady = true;
 }
 
 async function initPersistence() {
   if (!USE_SUPABASE) {
-    console.log("  Persistência: arquivos locais (Supabase não configurado).");
-    await loadFromFiles();
-    await migrateClients();
-    if (marcarJobsInterrompidos().length) await saveJobs();
-    dbReady = true;
+    console.log("  Persistência: arquivos locais (Supabase não configurado, modo legado single-tenant).");
+    await initFileTenant();
     return;
   }
 
-  // Modo Supabase: tenta carregar continuamente até conseguir (sem crashar).
+  // Modo Supabase: tenta confirmar conectividade continuamente até conseguir
+  // (sem crashar). Não pré-carrega nenhuma empresa.
   for (let i = 1; ; i++) {
     try {
-      const all = await repo.loadEverything();
-      jobs = all.jobs;
-      agenda = all.agenda;
-      clients = all.clients;
-      conversas = all.conversas;
-      templates = all.templates;
-      chatbot = all.chatbot;
-      metrics = { sends: all.sends, responses: all.responses, campaigns: all.sends.length };
-      await migrateClients();
-      for (const j of marcarJobsInterrompidos()) await saveJobs(j);
+      const result = await checkDatabase();
+      if (!result.connected) throw new Error(result.error || "Supabase não respondeu.");
       dbReady = true;
       dbLastError = null;
-      console.log("  Persistência: Supabase (banco central). Dados carregados.");
+      console.log("  Persistência: Supabase (banco central, multi-empresa). Conectividade confirmada.");
       return;
     } catch (err) {
       dbReady = false;
       dbLastError = err.message;
-      console.error(`[Supabase] Tentativa ${i} de carregar os dados falhou: ${err.message}`);
+      console.error(`[Supabase] Tentativa ${i} de conectar falhou: ${err.message}`);
       if (err.supabase?.code) console.error(`[Supabase] Código: ${err.supabase.code}`);
       if (i === 3) {
         console.error("[Supabase] As tabelas podem não estar visíveis na Data API (schema cache) ou faltam permissões ao service_role.");
@@ -1608,7 +1798,7 @@ async function initPersistence() {
 // Sobe o servidor primeiro; carrega os dados em seguida (em segundo plano).
 app.listen(PORT, () => {
   console.log(`\n  ZapFlow rodando em: http://localhost:${PORT}` +
-    (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)"));
+    (USE_SUPABASE ? "  (login obrigatório, multi-empresa)" : (AUTH_ENABLED ? "  (login ativado)" : "  (login desativado)")));
   console.log(`  Persistência: ${USE_SUPABASE ? "Supabase (banco central)" : "arquivos locais"}\n`);
   setInterval(schedulerTick, 15000);
   initPersistence().catch((err) => {

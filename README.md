@@ -23,7 +23,9 @@ ou inserida manualmente. Mascote: **Zappy** 🟢.
   e disparo para segmentos filtrados
 - 🤖 **Chatbot por regras**: respostas automáticas por palavra-chave (com `{{nome}}`)
   e resposta padrão, via webhook da Z-API
-- 🔒 **Login simples** opcional (usuário/senha via `.env`)
+- 🔒 **Login simples** opcional (usuário/senha via `.env`) no modo arquivos; em
+  modo Supabase, login real por empresa com papéis **owner**/**vendedor**
+  (ver seção "Multi-empresa" abaixo)
 - 📱 Interface responsiva — funciona no **celular** (veja o deploy no Railway)
 
 ## 🚀 Como rodar
@@ -59,11 +61,38 @@ APP_PASSWORD=sua_senha
 > Se preferir, você pode digitar as credenciais da Z-API direto na interface — elas
 > ficam salvas apenas no seu navegador.
 
-### 🔒 Login simples
+### 🔒 Login simples (modo arquivos)
 
 Se você definir `APP_USER` **e** `APP_PASSWORD` no `.env`, o app passa a exigir login
 (tela com o Zappy). A sessão dura **8 horas**. Sem essas variáveis, o app fica aberto.
 Não usa banco de dados — a autenticação é feita direto no servidor.
+
+**Esse mecanismo só existe no modo arquivos (dev local, single-tenant).** Assim que
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` estão configurados, `APP_USER`/`APP_PASSWORD`
+são ignorados e o login passa a ser sempre obrigatório, por empresa — ver "Multi-empresa"
+logo abaixo.
+
+## 🏢 Multi-empresa (modo Supabase)
+
+Em modo Supabase, o ZapFlow atende **várias empresas clientes isoladas** no mesmo
+deploy: cada empresa tem sua própria instância Z-API, seus próprios contatos/CRM/
+campanhas/automações, e seu próprio login.
+
+- **`SESSION_SECRET`** é obrigatório nesse modo (assina o cookie de sessão). Gere um
+  valor aleatório de 32+ bytes uma vez por ambiente — sem ele o servidor recusa subir.
+- **Cadastro de empresa nova**: não existe painel de admin ainda — use
+  `node scripts/create-company.mjs` (veja o cabeçalho do arquivo para as variáveis
+  de ambiente esperadas). O script cria a empresa, gera o segredo do webhook, cria o
+  usuário `owner` (com senha já em hash) e imprime a URL de webhook pronta para colar
+  no painel da Z-API daquela instância.
+- **Papéis de usuário**:
+  - `owner` — acesso completo (campanhas, CRM, conversas, automações). É quem o
+    cliente pagante recebe para acessar "o ZapFlow dele".
+  - `vendedor` — cadastrado pelo próprio `owner` (até `max_vendedores` por empresa,
+    hoje fixo em 5), acesso restrito só ao módulo de Visitas (ainda não implementado
+    nesta fase — por enquanto o login funciona e mostra uma tela "em breve").
+- **Webhook por empresa**: não existe mais uma URL de webhook global — cada empresa
+  tem a sua (`/api/webhook/{empresaId}/{secret}`), impressa pelo script de onboarding.
 
 ### 4. Iniciar
 
@@ -111,20 +140,22 @@ A primeira aba da planilha é lida. Exemplo:
 | `DELETE` | `/api/schedules` | Limpa o histórico concluído |
 | `GET`  | `/api/metrics` | Métricas (hoje / mês) |
 | `GET` `POST` `DELETE` | `/api/templates` | Modelos de mensagem |
-| `POST` | `/api/webhook` | Recebe as respostas da Z-API |
-| `POST` | `/api/login` `/api/logout` | Autenticação (se ativada) |
-| `GET`  | `/api/config` | Configurações públicas do app |
+| `POST` | `/api/webhook/:empresaId/:secret` | Recebe as respostas da Z-API (modo Supabase, uma URL por empresa) |
+| `POST` | `/api/login` `/api/logout` | Autenticação |
+| `GET`  | `/api/config` | Configurações públicas do app (inclui papel do usuário logado) |
 
 ## 📩 Webhook de respostas (métricas)
 
 Para o dashboard contar **quem respondeu**, configure o webhook na Z-API apontando
-para a URL pública do seu app:
+para a URL da empresa:
 
-1. No painel da Z-API, na sua instância, vá em **Webhooks** → **Ao receber**
-   (*on-message-received*).
-2. Cole a URL: `https://SEU-APP.up.railway.app/api/webhook`
-3. Salve. A partir daí, cada resposta recebida é registrada em `data/metrics.json` e
-   aparece no histórico (✅ **respondeu**) e no dashboard de métricas.
+1. No painel da Z-API, na instância daquela empresa, vá em **Webhooks** → **Ao
+   receber** (*on-message-received*).
+2. Cole a URL impressa por `scripts/create-company.mjs` ao criar a empresa:
+   `https://SEU-APP.up.railway.app/api/webhook/{empresaId}/{secret}` (modo arquivos/
+   dev local não tem webhook configurável — é só para uso com Supabase).
+3. Salve. A partir daí, cada resposta recebida é registrada no Supabase e aparece no
+   histórico (✅ **respondeu**) e no dashboard de métricas — só para essa empresa.
 
 ## ☁️ Publicar online (usar no celular)
 
@@ -132,9 +163,11 @@ Quer um link público para acessar do celular? Veja o guia
 **[DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md)** — passo a passo para hospedar no
 [Railway](https://railway.app) gratuitamente.
 
-## 🗂️ Dados persistidos (volume)
+## 🗂️ Dados persistidos (volume — só no modo arquivos)
 
-Tudo é salvo em arquivos JSON dentro de `DATA_DIR` (padrão `./data`):
+Em modo Supabase, tudo fica no banco (isolado por empresa) — esta seção só se aplica
+ao modo arquivos (dev local, single-tenant). Nesse modo, tudo é salvo em arquivos
+JSON dentro de `DATA_DIR` (padrão `./data`):
 - `jobs.json` — agendamentos e histórico de envios
 - `metrics.json` — métricas e respostas recebidas (webhook)
 - `templates.json` — modelos de mensagem

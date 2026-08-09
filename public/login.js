@@ -18,7 +18,7 @@ form.addEventListener("submit", async (e) => {
     });
     const data = await res.json();
     if (data.ok) {
-      window.location.href = "/";
+      window.location.href = data.role === "vendedor" ? "/vendedor.html" : "/";
     } else {
       errorEl.textContent = data.error || "Não foi possível entrar.";
     }
