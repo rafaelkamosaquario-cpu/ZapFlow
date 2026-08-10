@@ -46,7 +46,9 @@ const STATUS_LABEL = {
 /** Testa uma tabela com SELECT leve (limit 1). Devolve { name, status, label }. */
 async function checkTable(name) {
   try {
-    const { error } = await getClient().from(name).select("id", { head: true, count: "exact" }).limit(1);
+    // "*" (não uma coluna fixa como "id") porque `automacoes` não tem mais
+    // coluna `id` desde a migration 003 (a PK virou `empresa_id`).
+    const { error } = await getClient().from(name).select("*", { head: true, count: "exact" }).limit(1);
     const status = classify(error);
     return { name, status, label: STATUS_LABEL[status] || status };
   } catch (err) {
