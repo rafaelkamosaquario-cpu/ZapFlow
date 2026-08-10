@@ -185,10 +185,11 @@ app.use(express.json({ limit: "50mb" }));
 // por cookie — cada empresa tem sua própria URL com segredo próprio).
 const PUBLIC_PATHS = new Set([
   "/login", "/login.html", "/login.js",
-  "/style.css", "/zappy.svg", "/icon.svg",
+  "/style.css", "/zappy.svg", "/icon.svg", "/logo.svg",
+  "/theme.js", "/icons.js",
   "/manifest.json", "/sw.js", "/favicon.ico",
 ]);
-const VENDEDOR_ALLOWED_PATHS = new Set(["/vendedor.html"]);
+const VENDEDOR_ALLOWED_PATHS = new Set(["/vendedor.html", "/visitas.js"]);
 const VENDEDOR_ALLOWED_PREFIXES = ["/api/visitas", "/api/logout", "/api/config"];
 
 app.use(async (req, res, next) => {
