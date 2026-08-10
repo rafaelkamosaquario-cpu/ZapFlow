@@ -1687,22 +1687,49 @@ app.post("/api/visitas", async (req, res) => {
 // parâmetro do cliente, senão um vendedor poderia pedir os dados da equipe.
 app.get("/api/visitas", async (req, res) => {
   const tenant = req.tenant;
-  const hoje = req.query.tab === "hoje";
+  const tab = ["hoje", "followup"].includes(req.query.tab) ? req.query.tab : "historico";
   try {
     if (req.session.role === "owner") {
       const [visitas, vendedores] = await Promise.all([
-        repo.visitasRepo.listForEmpresa(tenant.empresa.id, { hoje }),
+        repo.visitasRepo.listForEmpresa(tenant.empresa.id, tab),
         repo.usuariosRepo.listVendedores(tenant.empresa.id),
       ]);
       const nomesPorId = new Map(vendedores.map((v) => [v.id, v.name || v.username]));
       const enriched = visitas.map((v) => ({ ...v, vendedorNome: nomesPorId.get(v.vendedorId) || "Você" }));
       return res.json({ visitas: enriched });
     }
-    const visitas = await repo.visitasRepo.listForVendedor(tenant.empresa.id, req.session.uid, { hoje });
+    const visitas = await repo.visitasRepo.listForVendedor(tenant.empresa.id, req.session.uid, tab);
     res.json({ visitas });
   } catch (err) {
     console.error("[visitas] list:", err.message);
     res.status(500).json({ error: "Não foi possível carregar as visitas." });
+  }
+});
+
+// Envia uma mensagem de WhatsApp avulsa pro contato de UMA visita específica
+// (não é campanha em massa — por isso fica liberado pro papel vendedor).
+app.post("/api/visitas/:id/followup", async (req, res) => {
+  const tenant = req.tenant;
+  const message = String(req.body?.message || "").trim();
+  if (!message) return res.status(400).json({ error: "Escreva uma mensagem." });
+  try {
+    const visita = await repo.visitasRepo.getById(tenant.empresa.id, req.params.id);
+    if (!visita) return res.status(404).json({ error: "Visita não encontrada." });
+    if (req.session.role === "vendedor" && visita.vendedorId !== req.session.uid) {
+      return res.status(403).json({ error: "Acesso restrito." });
+    }
+    const phone = onlyDigits(visita.contatoTelefone);
+    if (!phoneKey(phone)) return res.status(400).json({ error: "Essa visita não tem um telefone de contato válido." });
+    const creds = resolveCredentials(tenant, {});
+    if (!creds.instanceId || !creds.instanceToken) {
+      return res.status(400).json({ error: "WhatsApp não configurado para esta empresa." });
+    }
+    await axios.post(`${zapiBaseUrl(creds)}/send-text`, { phone, message }, { headers: zapiHeaders(creds), timeout: 20000 });
+    await recordMessage(tenant, phone, message, "out");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[visitas] followup:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível enviar a mensagem." });
   }
 });
 

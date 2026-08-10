@@ -433,16 +433,23 @@ function visitaFromRow(r) {
     dataHora: ms(r.data_hora), createdAt: ms(r.created_at),
   };
 }
-/** "Hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje. */
-function aplicarFiltroHoje(query, hoje) {
-  if (!hoje) return query;
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start.getTime() + 24 * 3600 * 1000);
-  const hojeDate = start.toISOString().slice(0, 10);
-  return query.or(
-    `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
-  );
+/**
+ * "hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje.
+ * "followup": visitas marcadas com resultado "Retornar".
+ * qualquer outro valor (ou nenhum): sem filtro (histórico completo).
+ */
+function aplicarFiltroTab(query, tab) {
+  if (tab === "hoje") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start.getTime() + 24 * 3600 * 1000);
+    const hojeDate = start.toISOString().slice(0, 10);
+    return query.or(
+      `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
+    );
+  }
+  if (tab === "followup") return query.eq("resultado", "Retornar");
+  return query;
 }
 export const visitasRepo = {
   async create(empresaId, vendedorId, v) {
@@ -458,18 +465,24 @@ export const visitasRepo = {
     assertOk(error, "visitas.create");
     return visitaFromRow(data);
   },
-  async listForVendedor(empresaId, vendedorId, { hoje } = {}) {
+  async getById(empresaId, id) {
+    requireEmpresaId(empresaId, "visitas.getById");
+    const { data, error } = await supabase.from("visitas").select("*").eq("id", id).eq("empresa_id", empresaId).maybeSingle();
+    assertOk(error, "visitas.getById");
+    return data ? visitaFromRow(data) : null;
+  },
+  async listForVendedor(empresaId, vendedorId, tab) {
     requireEmpresaId(empresaId, "visitas.listForVendedor");
     let q = supabase.from("visitas").select("*").eq("empresa_id", empresaId).eq("vendedor_id", vendedorId);
-    q = aplicarFiltroHoje(q, hoje);
+    q = aplicarFiltroTab(q, tab);
     const { data, error } = await q.order("data_hora", { ascending: false });
     assertOk(error, "visitas.listForVendedor");
     return (data || []).map(visitaFromRow);
   },
-  async listForEmpresa(empresaId, { hoje } = {}) {
+  async listForEmpresa(empresaId, tab) {
     requireEmpresaId(empresaId, "visitas.listForEmpresa");
     let q = supabase.from("visitas").select("*").eq("empresa_id", empresaId);
-    q = aplicarFiltroHoje(q, hoje);
+    q = aplicarFiltroTab(q, tab);
     const { data, error } = await q.order("data_hora", { ascending: false });
     assertOk(error, "visitas.listForEmpresa");
     return (data || []).map(visitaFromRow);

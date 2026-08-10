@@ -1256,7 +1256,11 @@ async function loadVisitasOwner() {
     const data = await res.json();
     if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
     const list = data.visitas || [];
-    if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhuma visita encontrada.</p>"; return; }
+    if (!list.length) {
+      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum retorno pendente." };
+      wrap.innerHTML = `<p class="hint">${vazio[visitasOwnerTab] || "Nenhuma visita encontrada."}</p>`;
+      return;
+    }
     wrap.innerHTML = "";
     list.forEach((v) => wrap.appendChild(renderVisitaCardOwner(v)));
   } catch {
@@ -1287,8 +1291,62 @@ function renderVisitaCardOwner(v) {
       ${v.proximaAcao ? `<div>Próxima ação: ${escapeHtml(v.proximaAcao)}</div>` : ""}
       ${proxima}
       ${mapsLink ? `<div>${mapsLink}</div>` : ""}
-    </div>`;
+    </div>
+    ${followupBlockOwner(v)}`;
+  attachFollowupHandlersOwner(div, v);
   return div;
+}
+
+/** Bloco de "enviar follow-up" — só aparece se a visita tiver telefone de contato. */
+function followupBlockOwner(v) {
+  if (!v.contatoTelefone) return "";
+  return `
+    <div class="followup-block" style="margin-top:10px;">
+      <button class="btn secondary sm btn-followup" type="button">Enviar follow-up</button>
+      <div class="manual-row followup-row hidden" style="margin-top:8px;">
+        <input type="text" class="followup-input" placeholder="Mensagem de follow-up..." />
+        <button class="btn primary sm btn-followup-send" type="button">Enviar</button>
+      </div>
+      <span class="status followup-status"></span>
+    </div>`;
+}
+function attachFollowupHandlersOwner(div, v) {
+  const toggleBtn = div.querySelector(".btn-followup");
+  if (!toggleBtn) return;
+  const row = div.querySelector(".followup-row");
+  const input = div.querySelector(".followup-input");
+  const sendBtn = div.querySelector(".btn-followup-send");
+  const status = div.querySelector(".followup-status");
+  toggleBtn.addEventListener("click", () => row.classList.toggle("hidden"));
+  sendBtn.addEventListener("click", async () => {
+    const message = input.value.trim();
+    if (!message) {
+      status.textContent = "Escreva uma mensagem.";
+      status.className = "status err followup-status";
+      return;
+    }
+    sendBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/visitas/${v.id}/followup`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.textContent = data.error || "Erro ao enviar.";
+        status.className = "status err followup-status";
+        sendBtn.disabled = false;
+        return;
+      }
+      status.textContent = "Follow-up enviado!";
+      status.className = "status ok followup-status";
+      input.value = "";
+      setTimeout(() => { row.classList.add("hidden"); status.textContent = ""; }, 1500);
+    } catch {
+      status.textContent = "Erro de conexão.";
+      status.className = "status err followup-status";
+    }
+    sendBtn.disabled = false;
+  });
 }
 
 // ---------------------------------------------------------------------------
