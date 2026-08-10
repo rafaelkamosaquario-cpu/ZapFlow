@@ -30,7 +30,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo", calendario: "Calendário" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
@@ -102,6 +102,7 @@ function loadView(view) {
   else if (view === "followup") loadFollowup();
   else if (view === "chatbot") loadChatbot();
   else if (view === "visitas") loadVisitasView();
+  else if (view === "calendario") loadCalendarioView();
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +580,23 @@ $("#btnCrmDispatch").addEventListener("click", () => {
   sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "lista do CRM", contacts }));
   alert(`${contacts.length} cliente(s) preparados.\nVocê será levado à Nova campanha para montar a mensagem.`);
   window.location.href = "/";
+});
+
+$("#btnExportClients").addEventListener("click", async () => {
+  const status = $("#exportClientsStatus");
+  const btn = $("#btnExportClients");
+  status.textContent = "Exportando...";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/clients/exportar-planilha", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || "Erro ao exportar."; btn.disabled = false; return; }
+    status.textContent = "Planilha criada!";
+    window.open(data.url, "_blank");
+  } catch {
+    status.textContent = "Erro de conexão.";
+  }
+  btn.disabled = false;
 });
 
 // Filtros (com pequeno debounce na busca)
@@ -1240,6 +1258,23 @@ $("#btnAddVendedor").addEventListener("click", async () => {
   }
 });
 
+$("#btnExportVisitas").addEventListener("click", async () => {
+  const status = $("#exportVisitasStatus");
+  const btn = $("#btnExportVisitas");
+  status.textContent = "Exportando...";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/visitas/exportar-planilha", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || "Erro ao exportar."; btn.disabled = false; return; }
+    status.textContent = "Planilha criada!";
+    window.open(data.url, "_blank");
+  } catch {
+    status.textContent = "Erro de conexão.";
+  }
+  btn.disabled = false;
+});
+
 $$(".tab", $("#visitasTabsOwner")).forEach((btn) => {
   btn.addEventListener("click", () => {
     visitasOwnerTab = btn.dataset.tab;
@@ -1348,6 +1383,94 @@ function attachFollowupHandlersOwner(div, v) {
     sendBtn.disabled = false;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Calendário (Google conectado — V3)
+// ---------------------------------------------------------------------------
+async function loadCalendarioView() {
+  try {
+    const res = await fetch("/api/google/status");
+    const data = await res.json();
+    if (data.connected) {
+      $("#googleDisconnected").classList.add("hidden");
+      $("#googleConnected").classList.remove("hidden");
+      $("#googleEmailLabel").textContent = data.email ? `Conectado como ${data.email}` : "Conectado";
+      loadEventos();
+    } else {
+      $("#googleDisconnected").classList.remove("hidden");
+      $("#googleConnected").classList.add("hidden");
+      $("#googleConfigHint").textContent = data.configured ? "" : "Integração ainda não configurada pelo suporte.";
+    }
+  } catch {
+    $("#googleConfigHint").textContent = "Erro ao verificar a conexão.";
+  }
+}
+
+async function loadEventos() {
+  const wrap = $("#eventosList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const res = await fetch("/api/calendario/eventos");
+    const data = await res.json();
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    const eventos = data.eventos || [];
+    if (!eventos.length) { wrap.innerHTML = "<p class='hint'>Nenhum compromisso agendado.</p>"; return; }
+    wrap.innerHTML = "";
+    eventos.forEach((e) => {
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      const inicio = new Date(e.inicio).toLocaleString("pt-BR");
+      div.innerHTML = `
+        <div class="dash-card-head"><b>${escapeHtml(e.titulo)}</b></div>
+        <div class="dash-card-body">
+          <div>${inicio}</div>
+          <div><a href="${e.link}" target="_blank" rel="noopener">Abrir na Google Agenda</a></div>
+        </div>`;
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+  }
+}
+
+$("#btnDisconnectGoogle").addEventListener("click", async () => {
+  if (!confirm("Desconectar sua conta Google?")) return;
+  await fetch("/api/google/disconnect", { method: "POST" });
+  loadCalendarioView();
+});
+
+$("#btnCriarEvento").addEventListener("click", async () => {
+  const status = $("#eventoStatus");
+  const titulo = $("#evTitulo").value.trim();
+  const inicio = $("#evInicio").value;
+  const fim = $("#evFim").value;
+  const descricao = $("#evDescricao").value.trim();
+  if (!titulo || !inicio || !fim) { status.textContent = "Preencha título, início e fim."; return; }
+  try {
+    const res = await fetch("/api/calendario/eventos", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titulo, inicio: new Date(inicio).toISOString(), fim: new Date(fim).toISOString(), descricao }),
+    });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || "Erro ao criar."; return; }
+    status.textContent = "Compromisso criado!";
+    $("#evTitulo").value = ""; $("#evInicio").value = ""; $("#evFim").value = ""; $("#evDescricao").value = "";
+    loadEventos();
+  } catch {
+    status.textContent = "Erro de conexão.";
+  }
+});
+
+// Limpa o ?google=ok|erro da URL depois do redirect do OAuth (o estado real
+// aparece quando a aba Calendário carrega, via /api/google/status).
+(function limparRedirectGoogle() {
+  const params = new URLSearchParams(location.search);
+  if (params.has("google")) {
+    const url = new URL(location.href);
+    url.searchParams.delete("google");
+    history.replaceState({}, "", url);
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Modal helpers

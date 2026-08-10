@@ -32,6 +32,7 @@
       <button class="side-tab" data-view="responses"><i data-icon="reply" data-size="20"></i> <span class="side-label">Respostas</span></button>
       <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automação</span></button>
       <button class="side-tab" data-view="visitas"><i data-icon="store" data-size="20"></i> <span class="side-label">Visitas em Campo</span></button>
+      <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
     </nav>
     <div class="side-foot">
       <a class="side-tab" href="/"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Nova campanha</span></a>
@@ -227,8 +228,10 @@
       <div class="crm-stagebar" id="crmStageBar"></div>
       <div class="row" style="margin:6px 0 0">
         <button class="btn primary" id="btnCrmDispatch" type="button">Criar campanha para este grupo</button>
+        <button class="btn secondary" id="btnExportClients" type="button">Exportar para planilha</button>
         <span class="hint" id="crmShown" style="margin:0"></span>
       </div>
+      <span class="manual-error" id="exportClientsStatus"></span>
       <div id="clientsList" class="dash-list"></div>
     </section>
 
@@ -362,13 +365,56 @@
         <span class="manual-error" id="vendedorStatus"></span>
       </div>
 
-      <h3 class="dash-subtitle">Visitas da equipe</h3>
+      <div class="dash-card-head" style="margin-top:24px;">
+        <h3 class="dash-subtitle" style="margin:0;">Visitas da equipe</h3>
+        <button class="btn secondary sm" id="btnExportVisitas" type="button">Exportar para planilha</button>
+      </div>
+      <span class="manual-error" id="exportVisitasStatus"></span>
       <div class="tabs" id="visitasTabsOwner">
         <button class="tab active" type="button" data-tab="hoje">Hoje</button>
         <button class="tab" type="button" data-tab="followup">Follow-up</button>
         <button class="tab" type="button" data-tab="historico">Histórico</button>
       </div>
       <div id="visitasOwnerList" class="dash-list"></div>
+    </section>
+
+    <!-- Calendário (Google conectado — V3) -->
+    <section class="dash-view hidden" data-view="calendario">
+      <h2 class="dash-title">Calendário</h2>
+      <p class="hint">Conecte a sua conta Google pra criar e ver compromissos direto pelo ZapFlow.</p>
+
+      <div id="googleDisconnected">
+        <a class="btn primary" href="/auth/google/connect" id="btnConnectGoogle">
+          <i data-icon="calendarclock" data-size="18"></i> Conectar minha conta Google
+        </a>
+        <p class="hint" id="googleConfigHint"></p>
+      </div>
+
+      <div id="googleConnected" class="hidden">
+        <div class="dash-card-head" style="margin-bottom:14px;">
+          <span id="googleEmailLabel" class="badge ok"></span>
+          <button class="btn ghost sm" id="btnDisconnectGoogle" type="button">Desconectar</button>
+        </div>
+
+        <div class="manual-add" style="margin-top:0;">
+          <p class="manual-title">Novo compromisso</p>
+          <label>Título
+            <input type="text" id="evTitulo" placeholder="Ex.: Reunião com cliente X" />
+          </label>
+          <div class="manual-row">
+            <label class="inline">Início <input type="datetime-local" id="evInicio" /></label>
+            <label class="inline">Fim <input type="datetime-local" id="evFim" /></label>
+          </div>
+          <label>Descrição (opcional)
+            <textarea id="evDescricao" rows="2"></textarea>
+          </label>
+          <button class="btn primary" id="btnCriarEvento" type="button">Criar compromisso</button>
+          <span class="manual-error" id="eventoStatus"></span>
+        </div>
+
+        <h3 class="dash-subtitle">Próximos compromissos</h3>
+        <div id="eventosList" class="dash-list"></div>
+      </div>
     </section>
   </main>
 
@@ -485,6 +531,7 @@
       <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>
       <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></button>
       <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas em Campo</span></button>
+      <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
     </div>
     <div class="msheet-theme">

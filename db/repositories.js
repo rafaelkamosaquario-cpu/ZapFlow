@@ -355,6 +355,47 @@ export const automacoesRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// google_conexoes (V3 — Google conectado; singleton por empresa, mesmo
+// padrão de automacoes: PK = empresa_id)
+// ----------------------------------------------------------------------------
+function conexaoGoogleFromRow(r) {
+  return {
+    empresaId: r.empresa_id, accessToken: r.access_token, refreshToken: r.refresh_token,
+    tokenExpiry: r.token_expiry, scope: r.scope || "", connectedEmail: r.connected_email || null,
+  };
+}
+export const googleRepo = {
+  async get(empresaId) {
+    requireEmpresaId(empresaId, "google.get");
+    const { data, error } = await supabase.from("google_conexoes").select("*").eq("empresa_id", empresaId).maybeSingle();
+    assertOk(error, "google.get");
+    return data ? conexaoGoogleFromRow(data) : null;
+  },
+  /** Grava a conexão inteira (conexão nova ou reconexão do zero). */
+  async save(empresaId, { accessToken, refreshToken, tokenExpiry, scope, connectedEmail }) {
+    requireEmpresaId(empresaId, "google.save");
+    const { error } = await supabase.from("google_conexoes").upsert({
+      empresa_id: empresaId, access_token: accessToken, refresh_token: refreshToken,
+      token_expiry: tokenExpiry, scope: scope || "", connected_email: connectedEmail || null,
+    }, { onConflict: "empresa_id" });
+    assertOk(error, "google.save");
+  },
+  /** Só o access token renovado — nunca mexe no refresh_token (Google normalmente não reenvia um novo). */
+  async updateAccessToken(empresaId, { accessToken, tokenExpiry }) {
+    requireEmpresaId(empresaId, "google.updateAccessToken");
+    const { error } = await supabase.from("google_conexoes")
+      .update({ access_token: accessToken, token_expiry: tokenExpiry })
+      .eq("empresa_id", empresaId);
+    assertOk(error, "google.updateAccessToken");
+  },
+  async clear(empresaId) {
+    requireEmpresaId(empresaId, "google.clear");
+    const { error } = await supabase.from("google_conexoes").delete().eq("empresa_id", empresaId);
+    assertOk(error, "google.clear");
+  },
+};
+
+// ----------------------------------------------------------------------------
 // respostas (metrics.responses)
 // ----------------------------------------------------------------------------
 export const respostasRepo = {

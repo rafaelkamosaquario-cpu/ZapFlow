@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { supabaseEnabled, projectRef } from "./db/supabase.js";
 import * as repo from "./db/repositories.js";
 import { checkDatabase } from "./db/health.js";
+import * as googleClient from "./lib/googleClient.js";
 
 dotenv.config();
 
@@ -1463,6 +1464,27 @@ app.post("/api/clients/stage", async (req, res) => {
   res.json({ ok: true, client: { ...c, displayName: bestName(tenant, c.phone, c.name).name, inAgenda: inAgenda(tenant, c.phone) } });
 });
 
+// Exporta o CRM pra uma planilha Google nova (V3 — precisa da conta Google conectada).
+app.post("/api/clients/exportar-planilha", async (req, res) => {
+  const tenant = req.tenant;
+  try {
+    const accessToken = await obterConexaoGoogle(tenant.empresa.id);
+    if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google na aba Calendário primeiro." });
+    const linhas = [["Nome", "Telefone", "Etapa", "Tags", "Notas", "Criado em"]];
+    tenant.clients.forEach((c) => {
+      linhas.push([
+        resolveName(tenant, c.phone, c.name) || c.name || "", c.phone, c.stage || "",
+        (c.tags || []).join(", "), c.notes || "", new Date(c.createdAt).toLocaleString("pt-BR"),
+      ]);
+    });
+    const { url } = await googleClient.criarPlanilha(accessToken, `ZapFlow - Clientes - ${new Date().toLocaleDateString("pt-BR")}`, linhas);
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error("[google] exportar clientes:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível exportar a planilha." });
+  }
+});
+
 // --- Agenda de contatos salvos ---
 app.get("/api/agenda", (req, res) => {
   const tenant = req.tenant;
@@ -1788,6 +1810,128 @@ app.delete("/api/visitas/vendedores/:id", async (req, res) => {
   } catch (err) {
     console.error("[visitas] deactivateVendedor:", err.message);
     res.status(500).json({ error: "Não foi possível desativar o vendedor." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Google conectado (V3) — OAuth por empresa, o próprio dono conecta a conta.
+// Calendar de uso geral + exportação de Clientes/Visitas pra planilha nova
+// (a planilha já fica no Drive automaticamente, escopo drive.file).
+// ---------------------------------------------------------------------------
+/** Devolve um access token válido pra empresa (renova e persiste sozinho quando preciso), ou null se não conectada. */
+async function obterConexaoGoogle(empresaId) {
+  const conexao = await repo.googleRepo.get(empresaId);
+  if (!conexao) return null;
+  const { accessToken, renovado, tokenExpiry } = await googleClient.obterAccessTokenValido(conexao);
+  if (renovado) await repo.googleRepo.updateAccessToken(empresaId, { accessToken, tokenExpiry });
+  return accessToken;
+}
+
+app.get("/auth/google/connect", (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).send("Acesso restrito.");
+  if (!googleClient.googleOAuthConfigured) {
+    return res.status(500).send("Integração com o Google ainda não foi configurada (GOOGLE_CLIENT_ID/SECRET/PUBLIC_URL).");
+  }
+  res.redirect(googleClient.buildAuthUrl(req.tenant.empresa.id));
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  const { code, state, error: oauthError } = req.query;
+  if (oauthError) return res.redirect("/dashboard.html?view=calendario&google=erro");
+  const empresaIdDoState = googleClient.validarState(state);
+  if (!empresaIdDoState || empresaIdDoState !== req.tenant?.empresa?.id) {
+    return res.redirect("/dashboard.html?view=calendario&google=erro");
+  }
+  try {
+    const tokens = await googleClient.trocarCodigoPorTokens(code);
+    const email = await googleClient.buscarEmailConectado(tokens.access_token).catch(() => null);
+    await repo.googleRepo.save(req.tenant.empresa.id, {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      tokenExpiry: new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString(),
+      scope: tokens.scope || "",
+      connectedEmail: email,
+    });
+    res.redirect("/dashboard.html?view=calendario&google=ok");
+  } catch (err) {
+    console.error("[google] callback:", err.response?.data || err.message);
+    res.redirect("/dashboard.html?view=calendario&google=erro");
+  }
+});
+
+app.post("/api/google/disconnect", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  try {
+    await repo.googleRepo.clear(req.tenant.empresa.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[google] disconnect:", err.message);
+    res.status(500).json({ error: "Não foi possível desconectar." });
+  }
+});
+
+app.get("/api/google/status", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  try {
+    const conexao = await repo.googleRepo.get(req.tenant.empresa.id);
+    res.json({ connected: Boolean(conexao), email: conexao?.connectedEmail || null, configured: googleClient.googleOAuthConfigured });
+  } catch (err) {
+    console.error("[google] status:", err.message);
+    res.status(500).json({ error: "Não foi possível verificar a conexão." });
+  }
+});
+
+app.get("/api/calendario/eventos", async (req, res) => {
+  try {
+    const accessToken = await obterConexaoGoogle(req.tenant.empresa.id);
+    if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google primeiro." });
+    const eventos = await googleClient.listarEventos(accessToken);
+    res.json({ eventos });
+  } catch (err) {
+    console.error("[google] listar eventos:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível carregar os eventos." });
+  }
+});
+
+app.post("/api/calendario/eventos", async (req, res) => {
+  const { titulo, inicio, fim, descricao } = req.body || {};
+  if (!titulo || !inicio || !fim) return res.status(400).json({ error: "Preencha título, início e fim." });
+  try {
+    const accessToken = await obterConexaoGoogle(req.tenant.empresa.id);
+    if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google primeiro." });
+    const evento = await googleClient.criarEvento(accessToken, { titulo, inicio, fim, descricao });
+    res.json({ ok: true, evento });
+  } catch (err) {
+    console.error("[google] criar evento:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível criar o evento." });
+  }
+});
+
+// Exporta as visitas da equipe pra uma planilha Google nova.
+app.post("/api/visitas/exportar-planilha", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  const tenant = req.tenant;
+  try {
+    const accessToken = await obterConexaoGoogle(tenant.empresa.id);
+    if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google na aba Calendário primeiro." });
+    const [visitas, vendedores] = await Promise.all([
+      repo.visitasRepo.listForEmpresa(tenant.empresa.id),
+      repo.usuariosRepo.listVendedores(tenant.empresa.id),
+    ]);
+    const nomesPorId = new Map(vendedores.map((v) => [v.id, v.name || v.username]));
+    const linhas = [["Cliente", "Vendedor", "Contato", "Telefone", "Motivo", "Resultado", "Observação", "Próxima ação", "Próxima visita", "Data da visita"]];
+    visitas.forEach((v) => {
+      linhas.push([
+        v.clienteNome, nomesPorId.get(v.vendedorId) || "Você", v.contatoNome || "", v.contatoTelefone || "",
+        v.motivo, v.resultado, v.observacao || "", v.proximaAcao || "", v.proximaVisitaData || "",
+        new Date(v.dataHora).toLocaleString("pt-BR"),
+      ]);
+    });
+    const { url } = await googleClient.criarPlanilha(accessToken, `ZapFlow - Visitas - ${new Date().toLocaleDateString("pt-BR")}`, linhas);
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error("[google] exportar visitas:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível exportar a planilha." });
   }
 });
 

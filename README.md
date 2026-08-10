@@ -89,10 +89,31 @@ campanhas/automações, e seu próprio login.
   - `owner` — acesso completo (campanhas, CRM, conversas, automações). É quem o
     cliente pagante recebe para acessar "o ZapFlow dele".
   - `vendedor` — cadastrado pelo próprio `owner` (até `max_vendedores` por empresa,
-    hoje fixo em 5), acesso restrito só ao módulo de Visitas (ainda não implementado
-    nesta fase — por enquanto o login funciona e mostra uma tela "em breve").
+    hoje fixo em 5) direto na aba **Visitas em Campo**, acesso restrito só a esse
+    módulo (registrar visitas, ver Hoje/Follow-up/Histórico, enviar follow-up avulso).
 - **Webhook por empresa**: não existe mais uma URL de webhook global — cada empresa
   tem a sua (`/api/webhook/{empresaId}/{secret}`), impressa pelo script de onboarding.
+
+## 🌍 Google conectado (modo Supabase — Calendar, Sheets, Drive)
+
+Cada empresa conecta a **própria** conta Google (o `owner` faz a conexão pela aba
+**Calendário** — diferente da Z-API, que é o Rafael quem configura). Uma vez conectada:
+
+- **Calendário**: cria e lista compromissos direto na Google Agenda da empresa
+  (uso geral, não é amarrado ao fluxo de Visitas).
+- **Planilhas**: botão "Exportar para planilha" nas views Clientes e Visitas —
+  cria uma planilha Google nova com os dados atuais e abre o link.
+- **Drive**: não tem tela própria ainda — as planilhas exportadas já ficam salvas
+  no Drive automaticamente (escopo `drive.file`, a app só enxerga o que ela mesma cria).
+
+**Setup único do app inteiro** (não é por empresa): crie um projeto no
+[Google Cloud Console](https://console.cloud.google.com), ative Calendar API/Sheets
+API/Drive API, configure a tela de consentimento OAuth (adicione cada e-mail de teste
+como "Test user" enquanto o app não passar pela verificação do Google) e crie uma
+credencial OAuth 2.0 Client ID (Web) com o redirect URI
+`{PUBLIC_URL}/auth/google/callback`. Preencha `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+e `PUBLIC_URL` no `.env`/Railway — sem isso a aba Calendário informa que a integração
+ainda não foi configurada, sem quebrar o resto do app.
 
 ### 4. Iniciar
 
