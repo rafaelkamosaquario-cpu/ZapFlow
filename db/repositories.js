@@ -90,6 +90,19 @@ export const usuariosRepo = {
     assertOk(error, "usuarios.countVendedores");
     return count || 0;
   },
+  async listVendedores(empresaId) {
+    requireEmpresaId(empresaId, "usuarios.listVendedores");
+    const { data, error } = await supabase.from("usuarios").select("*")
+      .eq("empresa_id", empresaId).eq("role", "vendedor").order("created_at");
+    assertOk(error, "usuarios.listVendedores");
+    return (data || []).map(usuarioFromRow);
+  },
+  async deactivate(empresaId, usuarioId) {
+    requireEmpresaId(empresaId, "usuarios.deactivate");
+    const { error } = await supabase.from("usuarios").update({ active: false })
+      .eq("id", usuarioId).eq("empresa_id", empresaId);
+    assertOk(error, "usuarios.deactivate");
+  },
 };
 function usuarioFromRow(r) {
   return {
@@ -403,6 +416,63 @@ export const eventosRepo = {
     if (!externalId) return;
     await supabase.from("eventos_webhook").update({ processed: true })
       .eq("empresa_id", empresaId).eq("external_id", externalId);
+  },
+};
+
+// ----------------------------------------------------------------------------
+// visitas (V2 — Visitas em Campo)
+// ----------------------------------------------------------------------------
+function visitaFromRow(r) {
+  return {
+    id: r.id, vendedorId: r.vendedor_id, clienteNome: r.cliente_nome,
+    contatoNome: r.contato_nome || "", contatoTelefone: r.contato_telefone || "",
+    latitude: r.latitude, longitude: r.longitude,
+    motivo: r.motivo, resultado: r.resultado, observacao: r.observacao || "",
+    proximaAcao: r.proxima_acao || "", proximaVisitaData: r.proxima_visita_data || null,
+    valorPotencial: r.valor_potencial ?? null,
+    dataHora: ms(r.data_hora), createdAt: ms(r.created_at),
+  };
+}
+/** "Hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje. */
+function aplicarFiltroHoje(query, hoje) {
+  if (!hoje) return query;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start.getTime() + 24 * 3600 * 1000);
+  const hojeDate = start.toISOString().slice(0, 10);
+  return query.or(
+    `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
+  );
+}
+export const visitasRepo = {
+  async create(empresaId, vendedorId, v) {
+    requireEmpresaId(empresaId, "visitas.create");
+    const { data, error } = await supabase.from("visitas").insert({
+      empresa_id: empresaId, vendedor_id: vendedorId,
+      cliente_nome: v.clienteNome, contato_nome: v.contatoNome || "", contato_telefone: v.contatoTelefone || null,
+      latitude: v.latitude ?? null, longitude: v.longitude ?? null,
+      motivo: v.motivo, resultado: v.resultado, observacao: v.observacao || "",
+      proxima_acao: v.proximaAcao || "", proxima_visita_data: v.proximaVisitaData || null,
+      valor_potencial: v.valorPotencial ?? null,
+    }).select("*").single();
+    assertOk(error, "visitas.create");
+    return visitaFromRow(data);
+  },
+  async listForVendedor(empresaId, vendedorId, { hoje } = {}) {
+    requireEmpresaId(empresaId, "visitas.listForVendedor");
+    let q = supabase.from("visitas").select("*").eq("empresa_id", empresaId).eq("vendedor_id", vendedorId);
+    q = aplicarFiltroHoje(q, hoje);
+    const { data, error } = await q.order("data_hora", { ascending: false });
+    assertOk(error, "visitas.listForVendedor");
+    return (data || []).map(visitaFromRow);
+  },
+  async listForEmpresa(empresaId, { hoje } = {}) {
+    requireEmpresaId(empresaId, "visitas.listForEmpresa");
+    let q = supabase.from("visitas").select("*").eq("empresa_id", empresaId);
+    q = aplicarFiltroHoje(q, hoje);
+    const { data, error } = await q.order("data_hora", { ascending: false });
+    assertOk(error, "visitas.listForEmpresa");
+    return (data || []).map(visitaFromRow);
   },
 };
 

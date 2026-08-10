@@ -30,7 +30,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
@@ -101,6 +101,7 @@ function loadView(view) {
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
   else if (view === "chatbot") loadChatbot();
+  else if (view === "visitas") loadVisitasView();
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,6 +1161,135 @@ $("#btnSaveBot").addEventListener("click", async () => {
     status.className = "status err";
   }
 });
+
+// ---------------------------------------------------------------------------
+// Visitas em Campo (V2) — gestão de vendedores + visitas da equipe (dono)
+// ---------------------------------------------------------------------------
+let visitasOwnerTab = "hoje";
+
+async function loadVisitasView() {
+  await loadVendedores();
+  await loadVisitasOwner();
+}
+
+async function loadVendedores() {
+  const wrap = $("#vendedoresList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const res = await fetch("/api/visitas/vendedores");
+    const data = await res.json();
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    const vendedores = data.vendedores || [];
+    const ativos = vendedores.filter((v) => v.active).length;
+    $("#btnAddVendedor").disabled = ativos >= data.maxVendedores;
+    if (!vendedores.length) { wrap.innerHTML = "<p class='hint'>Nenhum vendedor cadastrado ainda.</p>"; return; }
+    wrap.innerHTML = "";
+    vendedores.forEach((v) => {
+      const div = document.createElement("div");
+      div.className = "dash-card" + (v.active ? "" : " cancel");
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <b>${escapeHtml(v.name || v.username)}</b>
+          <span class="badge ${v.active ? "ok" : "err"}">${v.active ? "Ativo" : "Inativo"}</span>
+        </div>
+        <div class="dash-card-body">
+          <div>Usuário: ${escapeHtml(v.username)}</div>
+          ${v.phone ? `<div>Telefone: ${escapeHtml(v.phone)}</div>` : ""}
+        </div>`;
+      if (v.active) {
+        const btnDel = document.createElement("button");
+        btnDel.type = "button";
+        btnDel.className = "btn ghost sm";
+        btnDel.style.marginTop = "8px";
+        btnDel.textContent = "Desativar";
+        btnDel.addEventListener("click", () => desativarVendedor(v.id));
+        div.appendChild(btnDel);
+      }
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+  }
+}
+
+async function desativarVendedor(id) {
+  if (!confirm("Desativar este vendedor? O histórico de visitas dele é mantido.")) return;
+  await fetch(`/api/visitas/vendedores/${id}`, { method: "DELETE" });
+  loadVendedores();
+}
+
+$("#btnAddVendedor").addEventListener("click", async () => {
+  const name = $("#vdNome").value.trim();
+  const phone = $("#vdTelefone").value.trim();
+  const status = $("#vendedorStatus");
+  status.style.color = "";
+  if (!name || !phone) { status.textContent = "Informe nome e telefone."; return; }
+  try {
+    const res = await fetch("/api/visitas/vendedores", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }),
+    });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || "Erro ao cadastrar."; return; }
+    status.style.color = "var(--success)";
+    status.innerHTML = `<b>Vendedor criado!</b> Usuário: <code>${escapeHtml(data.vendedor.username)}</code> — Senha temporária: <code>${escapeHtml(data.tempPassword)}</code><br>Anote agora — a senha não fica visível de novo depois.`;
+    $("#vdNome").value = "";
+    $("#vdTelefone").value = "";
+    loadVendedores();
+  } catch {
+    status.textContent = "Erro de conexão.";
+  }
+});
+
+$$(".tab", $("#visitasTabsOwner")).forEach((btn) => {
+  btn.addEventListener("click", () => {
+    visitasOwnerTab = btn.dataset.tab;
+    $$(".tab", $("#visitasTabsOwner")).forEach((b) => b.classList.toggle("active", b === btn));
+    loadVisitasOwner();
+  });
+});
+
+async function loadVisitasOwner() {
+  const wrap = $("#visitasOwnerList");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const res = await fetch(`/api/visitas?tab=${visitasOwnerTab}`);
+    const data = await res.json();
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    const list = data.visitas || [];
+    if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhuma visita encontrada.</p>"; return; }
+    wrap.innerHTML = "";
+    list.forEach((v) => wrap.appendChild(renderVisitaCardOwner(v)));
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+  }
+}
+
+function renderVisitaCardOwner(v) {
+  const div = document.createElement("div");
+  div.className = "dash-card";
+  const dataFmt = new Date(v.dataHora).toLocaleString("pt-BR");
+  const mapsLink = (v.latitude != null && v.longitude != null)
+    ? `<a href="https://www.google.com/maps?q=${v.latitude},${v.longitude}" target="_blank" rel="noopener">📍 Abrir no Google Maps</a>`
+    : "";
+  const proxima = v.proximaVisitaData
+    ? `<div>🔁 Retorno: ${new Date(v.proximaVisitaData + "T00:00:00").toLocaleDateString("pt-BR")}</div>`
+    : "";
+  div.innerHTML = `
+    <div class="dash-card-head">
+      <b>${escapeHtml(v.clienteNome)}</b>
+      <span class="badge">${escapeHtml(v.resultado)}</span>
+    </div>
+    <div class="dash-card-body">
+      <div>Vendedor: ${escapeHtml(v.vendedorNome || "—")}</div>
+      <div>${escapeHtml(v.motivo)} • ${dataFmt}</div>
+      ${v.contatoNome ? `<div>Contato: ${escapeHtml(v.contatoNome)}</div>` : ""}
+      ${v.observacao ? `<div>${escapeHtml(v.observacao)}</div>` : ""}
+      ${v.proximaAcao ? `<div>Próxima ação: ${escapeHtml(v.proximaAcao)}</div>` : ""}
+      ${proxima}
+      ${mapsLink ? `<div>${mapsLink}</div>` : ""}
+    </div>`;
+  return div;
+}
 
 // ---------------------------------------------------------------------------
 // Modal helpers

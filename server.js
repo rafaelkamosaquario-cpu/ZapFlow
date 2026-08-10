@@ -1633,6 +1633,136 @@ app.put("/api/chatbot", async (req, res) => {
   res.json({ ok: true, chatbot: tenant.chatbot });
 });
 
+// ---------------------------------------------------------------------------
+// Visitas em Campo (V2) — só existe em modo Supabase (papéis owner/vendedor).
+// Sem Geocoding/Places/Maps JS nesta versão: só lat/long brutas (Geolocation
+// do navegador, grátis) + link "abrir no Google Maps" no frontend.
+// ---------------------------------------------------------------------------
+const VISITA_MOTIVOS = ["Venda", "Prospecção", "Cobrança", "Pós-venda", "Outro"];
+const VISITA_RESULTADOS = ["Interessado", "Negociação", "Sem interesse", "Pedido fechado", "Retornar"];
+
+app.use("/api/visitas", (req, res, next) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Visitas em Campo está disponível apenas no modo multi-empresa (Supabase)." });
+  next();
+});
+
+function usernameFromPhone(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+function generateTempPassword() {
+  return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+}
+
+app.post("/api/visitas", async (req, res) => {
+  const tenant = req.tenant;
+  const b = req.body || {};
+  const clienteNome = String(b.clienteNome || "").trim();
+  const motivo = String(b.motivo || "");
+  const resultado = String(b.resultado || "");
+  if (!clienteNome) return res.status(400).json({ error: "Informe o nome do cliente." });
+  if (!VISITA_MOTIVOS.includes(motivo)) return res.status(400).json({ error: "Motivo inválido." });
+  if (!VISITA_RESULTADOS.includes(resultado)) return res.status(400).json({ error: "Resultado inválido." });
+  try {
+    const visita = await repo.visitasRepo.create(tenant.empresa.id, req.session.uid, {
+      clienteNome,
+      contatoNome: String(b.contatoNome || "").trim().slice(0, 80),
+      contatoTelefone: String(b.contatoTelefone || "").trim().slice(0, 30),
+      latitude: typeof b.latitude === "number" ? b.latitude : null,
+      longitude: typeof b.longitude === "number" ? b.longitude : null,
+      motivo, resultado,
+      observacao: String(b.observacao || "").slice(0, 2000),
+      proximaAcao: String(b.proximaAcao || "").slice(0, 500),
+      proximaVisitaData: b.proximaVisitaData || null,
+      valorPotencial: typeof b.valorPotencial === "number" ? b.valorPotencial : null,
+    });
+    res.json({ ok: true, visita });
+  } catch (err) {
+    console.error("[visitas] create:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar a visita." });
+  }
+});
+
+// Escopo (mine|todas) decidido pelo servidor a partir do papel — nunca por
+// parâmetro do cliente, senão um vendedor poderia pedir os dados da equipe.
+app.get("/api/visitas", async (req, res) => {
+  const tenant = req.tenant;
+  const hoje = req.query.tab === "hoje";
+  try {
+    if (req.session.role === "owner") {
+      const [visitas, vendedores] = await Promise.all([
+        repo.visitasRepo.listForEmpresa(tenant.empresa.id, { hoje }),
+        repo.usuariosRepo.listVendedores(tenant.empresa.id),
+      ]);
+      const nomesPorId = new Map(vendedores.map((v) => [v.id, v.name || v.username]));
+      const enriched = visitas.map((v) => ({ ...v, vendedorNome: nomesPorId.get(v.vendedorId) || "Você" }));
+      return res.json({ visitas: enriched });
+    }
+    const visitas = await repo.visitasRepo.listForVendedor(tenant.empresa.id, req.session.uid, { hoje });
+    res.json({ visitas });
+  } catch (err) {
+    console.error("[visitas] list:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar as visitas." });
+  }
+});
+
+// --- Gestão de vendedores (só o dono) ---
+app.get("/api/visitas/vendedores", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  try {
+    const vendedores = await repo.usuariosRepo.listVendedores(req.tenant.empresa.id);
+    res.json({ vendedores, maxVendedores: req.tenant.empresa.maxVendedores });
+  } catch (err) {
+    console.error("[visitas] listVendedores:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar os vendedores." });
+  }
+});
+
+app.post("/api/visitas/vendedores", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  const tenant = req.tenant;
+  const name = String(req.body?.name || "").trim();
+  const phone = String(req.body?.phone || "").trim();
+  if (!name) return res.status(400).json({ error: "Informe o nome do vendedor." });
+  if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido. Inclua o DDD." });
+  try {
+    const atual = await repo.usuariosRepo.countVendedores(tenant.empresa.id);
+    if (atual >= tenant.empresa.maxVendedores) {
+      return res.status(400).json({ error: `Limite de ${tenant.empresa.maxVendedores} vendedores atingido no seu plano.` });
+    }
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    let username = usernameFromPhone(phone);
+    let vendedor = null;
+    for (let tentativa = 0; tentativa < 5 && !vendedor; tentativa++) {
+      try {
+        vendedor = await repo.usuariosRepo.create({
+          empresaId: tenant.empresa.id, username, passwordHash, role: "vendedor", name, phone,
+        });
+      } catch (err) {
+        // username já existe (é único globalmente, não só por empresa) — tenta um sufixo novo
+        if (err.supabase?.code !== "23505") throw err;
+        username = usernameFromPhone(phone) + crypto.randomBytes(2).toString("hex");
+      }
+    }
+    if (!vendedor) return res.status(500).json({ error: "Não foi possível gerar um usuário disponível. Tente novamente." });
+    res.json({ ok: true, vendedor, tempPassword });
+  } catch (err) {
+    console.error("[visitas] createVendedor:", err.message);
+    res.status(500).json({ error: "Não foi possível cadastrar o vendedor." });
+  }
+});
+
+app.delete("/api/visitas/vendedores/:id", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  try {
+    await repo.usuariosRepo.deactivate(req.tenant.empresa.id, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[visitas] deactivateVendedor:", err.message);
+    res.status(500).json({ error: "Não foi possível desativar o vendedor." });
+  }
+});
+
 // --- Webhook da Z-API (respostas recebidas), por empresa ---
 // Cada instância Z-API (criada manualmente por empresa) é configurada
 // apontando pra essa URL específica. O segredo vai na própria URL porque a

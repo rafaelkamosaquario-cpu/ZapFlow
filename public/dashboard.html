@@ -31,6 +31,7 @@
       <button class="side-tab" data-view="followup"><i data-icon="refresh" data-size="20"></i> <span class="side-label">Follow-up</span></button>
       <button class="side-tab" data-view="responses"><i data-icon="reply" data-size="20"></i> <span class="side-label">Respostas</span></button>
       <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automação</span></button>
+      <button class="side-tab" data-view="visitas"><i data-icon="store" data-size="20"></i> <span class="side-label">Visitas em Campo</span></button>
     </nav>
     <div class="side-foot">
       <a class="side-tab" href="/"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Nova campanha</span></a>
@@ -343,6 +344,31 @@
       <p class="hint">Reengaje quem <b>recebeu mas não respondeu</b>. Prepare uma nova campanha só para eles.</p>
       <div id="followupList" class="dash-list"></div>
     </section>
+
+    <!-- Visitas em Campo -->
+    <section class="dash-view hidden" data-view="visitas">
+      <h2 class="dash-title">Visitas em Campo</h2>
+      <p class="hint">Vendedores da sua equipe e as visitas registradas por eles pelo celular.</p>
+
+      <h3 class="dash-subtitle">Vendedores</h3>
+      <div id="vendedoresList" class="dash-list"></div>
+      <div class="manual-add">
+        <p class="manual-title">Adicionar vendedor</p>
+        <div class="manual-row">
+          <input type="text" id="vdNome" placeholder="Nome" />
+          <input type="tel" id="vdTelefone" placeholder="Telefone (com DDD)" />
+          <button class="btn primary" id="btnAddVendedor" type="button">Adicionar</button>
+        </div>
+        <span class="manual-error" id="vendedorStatus"></span>
+      </div>
+
+      <h3 class="dash-subtitle">Visitas da equipe</h3>
+      <div class="tabs" id="visitasTabsOwner">
+        <button class="tab active" type="button" data-tab="hoje">Hoje</button>
+        <button class="tab" type="button" data-tab="historico">Histórico</button>
+      </div>
+      <div id="visitasOwnerList" class="dash-list"></div>
+    </section>
   </main>
 
   <!-- Chat da conversa -->
@@ -457,6 +483,7 @@
       <button class="msheet-item" data-view="followup"><i data-icon="refresh" data-size="22"></i><span>Follow-up</span></button>
       <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>
       <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></button>
+      <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas em Campo</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
     </div>
     <div class="msheet-theme">
