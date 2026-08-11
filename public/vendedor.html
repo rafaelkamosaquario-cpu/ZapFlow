@@ -32,74 +32,109 @@
 
   <main class="container">
     <section class="card">
+      <div id="resumoStrip" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;"></div>
+
       <div class="tabs" id="visitaTabs">
         <button class="tab active" type="button" data-tab="hoje">Hoje</button>
         <button class="tab" type="button" data-tab="followup">Follow-up</button>
         <button class="tab" type="button" data-tab="historico">Histórico</button>
       </div>
-      <button class="btn primary" id="btnNovaVisita" type="button" style="width:100%; margin-top:10px;">
-        <i data-icon="plus" data-size="18"></i> Registrar visita
+      <button class="btn primary" id="btnIniciarVisita" type="button" style="width:100%; margin-top:10px;">
+        <i data-icon="plus" data-size="18"></i> Iniciar visita
       </button>
       <p class="hint" id="visitasHint"></p>
       <div id="visitasList" class="dash-list"></div>
     </section>
   </main>
 
-  <!-- Formulário: registrar visita -->
-  <div class="modal hidden" id="visitaModal">
+  <!-- Iniciar visita -->
+  <div class="modal hidden" id="iniciarModal">
     <div class="modal-box">
       <div class="modal-head">
-        <h3>Registrar visita</h3>
-        <button class="modal-close" id="btnFecharVisita" type="button"><i data-icon="x" data-size="18"></i></button>
+        <h3>Iniciar visita</h3>
+        <button class="modal-close" id="btnFecharIniciar" type="button"><i data-icon="x" data-size="18"></i></button>
       </div>
-
       <p class="hint" id="geoStatus">📍 Obtendo localização...</p>
-
       <label>Cliente
         <input type="text" id="vfCliente" placeholder="Nome do cliente/empresa" />
       </label>
-      <label>Contato
-        <input type="text" id="vfContato" placeholder="Nome de quem você falou" />
+      <label>Objetivo da visita
+        <input type="text" id="vfObjetivo" placeholder="Ex.: Apresentar proposta" />
       </label>
-      <label>Telefone do contato
-        <input type="tel" id="vfTelefone" placeholder="(opcional)" />
-      </label>
-      <label>Motivo da visita
-        <select id="vfMotivo">
-          <option>Venda</option>
-          <option>Prospecção</option>
-          <option>Cobrança</option>
-          <option>Pós-venda</option>
-          <option>Outro</option>
-        </select>
-      </label>
-      <label>Resultado
-        <select id="vfResultado">
-          <option>Interessado</option>
-          <option>Negociação</option>
-          <option>Sem interesse</option>
-          <option>Pedido fechado</option>
-          <option>Retornar</option>
-        </select>
-      </label>
-      <label>Observação
-        <textarea id="vfObservacao" rows="3" placeholder="Digite aqui"></textarea>
-      </label>
-      <label>Próxima ação
-        <input type="text" id="vfProximaAcao" placeholder="Ex.: enviar tabela amanhã" />
-      </label>
-      <label>Próxima visita (opcional)
-        <input type="date" id="vfProximaData" />
-      </label>
-      <label>Valor potencial em R$ (opcional)
-        <input type="number" id="vfValor" step="0.01" min="0" />
-      </label>
+      <button class="btn primary" id="btnConfirmarIniciar" type="button" style="width:100%; margin-top:6px;">Iniciar</button>
+      <p class="status" id="iniciarStatus"></p>
+    </div>
+  </div>
 
-      <div style="display:flex; gap:10px; margin-top:6px;">
-        <button class="btn secondary" id="btnCancelarVisita" type="button" style="flex:1;">Cancelar</button>
-        <button class="btn primary" id="btnSalvarVisita" type="button" style="flex:1;">Salvar visita</button>
+  <!-- Visita em andamento -->
+  <div class="modal hidden" id="duranteModal">
+    <div class="modal-box modal-wide">
+      <div class="modal-head">
+        <h3 id="duranteCliente">Visita em andamento</h3>
       </div>
-      <p class="status" id="visitaStatus"></p>
+      <p class="hint" id="duranteObjetivo"></p>
+      <p class="hint">⏱️ Duração: <b id="duranteTimer">00:00</b></p>
+
+      <div class="manual-add" style="margin-top:6px;">
+        <p class="manual-title">Contato e observação</p>
+        <div class="manual-row">
+          <input type="text" id="durContato" placeholder="Nome do contato" />
+          <input type="tel" id="durTelefone" placeholder="Telefone do contato" />
+        </div>
+        <textarea id="durObservacao" rows="2" placeholder="📝 Observações da visita" style="margin-top:8px;"></textarea>
+        <button class="btn secondary sm" id="btnSalvarDetalhes" type="button" style="margin-top:6px;">Salvar</button>
+        <span class="status" id="detalhesStatus"></span>
+      </div>
+
+      <div class="manual-add">
+        <p class="manual-title">📷 Foto</p>
+        <input type="file" id="durFoto" accept="image/*" capture="environment" />
+        <span class="status" id="fotoStatus"></span>
+        <div id="fotosPreview" class="hint"></div>
+      </div>
+
+      <div class="manual-add">
+        <p class="manual-title">💰 Oportunidade</p>
+        <div class="manual-row">
+          <input type="number" id="durValor" placeholder="Valor potencial (R$)" step="0.01" min="0" />
+          <button class="btn secondary sm" id="btnSalvarValor" type="button">Salvar</button>
+        </div>
+        <span class="status" id="valorStatus"></span>
+      </div>
+
+      <div class="manual-add">
+        <p class="manual-title">📅 Agendar retorno</p>
+        <div class="manual-row">
+          <input type="date" id="durData" />
+          <input type="time" id="durHora" value="09:00" />
+          <button class="btn secondary sm" id="btnAgendar" type="button">Agendar</button>
+        </div>
+        <span class="status" id="agendarStatus"></span>
+      </div>
+
+      <div class="manual-add">
+        <p class="manual-title">Finalizar visita</p>
+        <label>Motivo
+          <select id="finMotivo">
+            <option>Venda</option>
+            <option>Prospecção</option>
+            <option>Cobrança</option>
+            <option>Pós-venda</option>
+            <option>Outro</option>
+          </select>
+        </label>
+        <label>Resultado
+          <select id="finResultado">
+            <option>Interessado</option>
+            <option>Negociação</option>
+            <option>Sem interesse</option>
+            <option>Pedido fechado</option>
+            <option>Retornar</option>
+          </select>
+        </label>
+        <button class="btn primary" id="btnFinalizar" type="button" style="width:100%;">Finalizar visita</button>
+        <span class="status" id="finalizarStatus"></span>
+      </div>
     </div>
   </div>
 

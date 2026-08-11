@@ -1676,32 +1676,169 @@ function generateTempPassword() {
   return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
 }
 
+// Ciclo de vida (V2.1): Iniciar → Durante (PATCH/foto/agendar-retorno) → Finalizar.
 app.post("/api/visitas", async (req, res) => {
   const tenant = req.tenant;
   const b = req.body || {};
   const clienteNome = String(b.clienteNome || "").trim();
-  const motivo = String(b.motivo || "");
-  const resultado = String(b.resultado || "");
   if (!clienteNome) return res.status(400).json({ error: "Informe o nome do cliente." });
-  if (!VISITA_MOTIVOS.includes(motivo)) return res.status(400).json({ error: "Motivo inválido." });
-  if (!VISITA_RESULTADOS.includes(resultado)) return res.status(400).json({ error: "Resultado inválido." });
   try {
+    const existente = await repo.visitasRepo.getEmAndamento(tenant.empresa.id, req.session.uid);
+    if (existente) return res.status(400).json({ error: "Você já tem uma visita em andamento. Finalize-a antes de iniciar outra." });
     const visita = await repo.visitasRepo.create(tenant.empresa.id, req.session.uid, {
       clienteNome,
-      contatoNome: String(b.contatoNome || "").trim().slice(0, 80),
-      contatoTelefone: String(b.contatoTelefone || "").trim().slice(0, 30),
+      objetivo: String(b.objetivo || "").trim().slice(0, 200),
       latitude: typeof b.latitude === "number" ? b.latitude : null,
       longitude: typeof b.longitude === "number" ? b.longitude : null,
-      motivo, resultado,
-      observacao: String(b.observacao || "").slice(0, 2000),
-      proximaAcao: String(b.proximaAcao || "").slice(0, 500),
-      proximaVisitaData: b.proximaVisitaData || null,
-      valorPotencial: typeof b.valorPotencial === "number" ? b.valorPotencial : null,
     });
     res.json({ ok: true, visita });
   } catch (err) {
     console.error("[visitas] create:", err.message);
-    res.status(500).json({ error: "Não foi possível salvar a visita." });
+    res.status(500).json({ error: "Não foi possível iniciar a visita." });
+  }
+});
+
+app.get("/api/visitas/em-andamento", async (req, res) => {
+  try {
+    const visita = await repo.visitasRepo.getEmAndamento(req.tenant.empresa.id, req.session.uid);
+    res.json({ visita });
+  } catch (err) {
+    console.error("[visitas] em-andamento:", err.message);
+    res.status(500).json({ error: "Não foi possível verificar a visita em andamento." });
+  }
+});
+
+/** Carrega a visita e confere posse (vendedor só mexe na própria; dono mexe em qualquer uma). Devolve null e já responde o erro se não puder. */
+async function carregarVisitaComPermissao(req, res) {
+  const visita = await repo.visitasRepo.getById(req.tenant.empresa.id, req.params.id);
+  if (!visita) { res.status(404).json({ error: "Visita não encontrada." }); return null; }
+  if (req.session.role === "vendedor" && visita.vendedorId !== req.session.uid) {
+    res.status(403).json({ error: "Acesso restrito." });
+    return null;
+  }
+  return visita;
+}
+
+app.patch("/api/visitas/:id", async (req, res) => {
+  const b = req.body || {};
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    const patch = {};
+    if (b.contatoNome !== undefined) patch.contatoNome = String(b.contatoNome).trim().slice(0, 80);
+    if (b.contatoTelefone !== undefined) patch.contatoTelefone = String(b.contatoTelefone).trim().slice(0, 30);
+    if (b.observacao !== undefined) patch.observacao = String(b.observacao).slice(0, 2000);
+    if (b.proximaAcao !== undefined) patch.proximaAcao = String(b.proximaAcao).slice(0, 500);
+    if (b.valorPotencial !== undefined) patch.valorPotencial = typeof b.valorPotencial === "number" ? b.valorPotencial : null;
+    const atualizada = await repo.visitasRepo.update(req.tenant.empresa.id, req.params.id, patch);
+    res.json({ ok: true, visita: atualizada });
+  } catch (err) {
+    console.error("[visitas] update:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar." });
+  }
+});
+
+// Agenda o retorno e, se o Google estiver conectado, já cria o evento na Agenda.
+app.post("/api/visitas/:id/agendar-retorno", async (req, res) => {
+  const data = String(req.body?.data || "");
+  const hora = /^\d{2}:\d{2}$/.test(req.body?.hora) ? req.body.hora : "09:00";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: "Data inválida." });
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    let googleEventoId;
+    const accessToken = await obterConexaoGoogle(req.tenant.empresa.id);
+    if (accessToken) {
+      const inicio = new Date(`${data}T${hora}:00`);
+      const fim = new Date(inicio.getTime() + 30 * 60 * 1000);
+      try {
+        const evento = await googleClient.criarEvento(accessToken, {
+          titulo: `Retorno — ${visita.clienteNome}`,
+          descricao: visita.objetivo || undefined,
+          inicio: inicio.toISOString(), fim: fim.toISOString(),
+        });
+        googleEventoId = evento.id;
+      } catch (err) {
+        console.error("[visitas] agendar-retorno (calendar):", err.response?.data?.error || err.message);
+        // Segue sem o evento — a data local já vale, não bloqueia o vendedor por causa disso.
+      }
+    }
+    const atualizada = await repo.visitasRepo.update(req.tenant.empresa.id, req.params.id, {
+      proximaVisitaData: data, ...(googleEventoId ? { googleEventoId } : {}),
+    });
+    res.json({ ok: true, visita: atualizada, calendarioCriado: Boolean(googleEventoId) });
+  } catch (err) {
+    console.error("[visitas] agendar-retorno:", err.message);
+    res.status(500).json({ error: "Não foi possível agendar o retorno." });
+  }
+});
+
+app.post("/api/visitas/:id/foto", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Nenhuma imagem enviada." });
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    const accessToken = await obterConexaoGoogle(req.tenant.empresa.id);
+    if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google primeiro (aba Calendário) pra guardar fotos." });
+    const nome = `ZapFlow - ${visita.clienteNome} - ${Date.now()}.jpg`;
+    const { url } = await googleClient.uploadArquivo(accessToken, {
+      nome, mimeType: req.file.mimetype || "image/jpeg", buffer: req.file.buffer,
+    });
+    const fotos = [...visita.fotos, { url, nome }];
+    const atualizada = await repo.visitasRepo.update(req.tenant.empresa.id, req.params.id, { fotos });
+    res.json({ ok: true, visita: atualizada });
+  } catch (err) {
+    console.error("[visitas] foto:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível enviar a foto." });
+  }
+});
+
+app.post("/api/visitas/:id/finalizar", async (req, res) => {
+  const motivo = String(req.body?.motivo || "");
+  const resultado = String(req.body?.resultado || "");
+  if (!VISITA_MOTIVOS.includes(motivo)) return res.status(400).json({ error: "Motivo inválido." });
+  if (!VISITA_RESULTADOS.includes(resultado)) return res.status(400).json({ error: "Resultado inválido." });
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    if (visita.finishedAt) return res.status(400).json({ error: "Essa visita já foi finalizada." });
+    const finalizada = await repo.visitasRepo.finalizar(req.tenant.empresa.id, req.params.id, { motivo, resultado });
+    res.json({ ok: true, visita: finalizada });
+  } catch (err) {
+    console.error("[visitas] finalizar:", err.message);
+    res.status(500).json({ error: "Não foi possível finalizar a visita." });
+  }
+});
+
+// Números da tela "Hoje". Vendedor: só os dele. Dono: a empresa inteira + conversas/compromissos.
+app.get("/api/visitas/resumo", async (req, res) => {
+  const tenant = req.tenant;
+  try {
+    if (req.session.role === "owner") {
+      const resumo = await repo.visitasRepo.resumoDia(tenant.empresa.id, null);
+      const conversasAguardando = tenant.conversas.reduce((set, m) => {
+        // última mensagem por contato é "in" (recebida) => aguardando resposta
+        const atual = set.get(m.key);
+        if (!atual || m.ts > atual.ts) set.set(m.key, m);
+        return set;
+      }, new Map());
+      const aguardando = [...conversasAguardando.values()].filter((m) => m.dir === "in").length;
+      let compromissosHoje = 0;
+      const accessToken = await obterConexaoGoogle(tenant.empresa.id).catch(() => null);
+      if (accessToken) {
+        try {
+          const eventos = await googleClient.listarEventos(accessToken);
+          const hojeStr = new Date().toISOString().slice(0, 10);
+          compromissosHoje = eventos.filter((e) => String(e.inicio || "").startsWith(hojeStr)).length;
+        } catch { /* Calendar fora do ar não deve quebrar o resumo */ }
+      }
+      return res.json({ ...resumo, conversasAguardando: aguardando, compromissosHoje });
+    }
+    const resumo = await repo.visitasRepo.resumoDia(tenant.empresa.id, req.session.uid);
+    res.json(resumo);
+  } catch (err) {
+    console.error("[visitas] resumo:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar o resumo." });
   }
 });
 

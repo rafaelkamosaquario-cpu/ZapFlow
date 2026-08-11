@@ -220,8 +220,25 @@ function renderActions(data, jobs, waConnected) {
   }));
 }
 
+async function loadResumoOwner() {
+  const wrap = $("#ovResumoStrip");
+  if (!wrap) return;
+  try {
+    const res = await fetch("/api/visitas/resumo");
+    const r = await res.json();
+    if (!res.ok) { wrap.innerHTML = ""; return; }
+    const pill = (label, valor) => `<span class="badge" style="font-size:13px; padding:6px 12px;">${valor} ${label}</span>`;
+    wrap.innerHTML = pill("retornos pendentes", r.retornos) + pill("visitas hoje", r.visitasHoje)
+      + pill("oportunidades quentes", r.oportunidades) + pill("conversas aguardando", r.conversasAguardando)
+      + (r.compromissosHoje ? pill("compromissos hoje", r.compromissosHoje) : "");
+  } catch {
+    wrap.innerHTML = "";
+  }
+}
+
 async function loadOverview() {
   $("#ovGreeting").textContent = saudacao();
+  loadResumoOwner();
   // Estado de carregamento (skeleton): esconde corpo/vazio/erro
   $("#ovError").classList.add("hidden");
   $("#ovEmpty").classList.add("hidden");
@@ -1307,23 +1324,30 @@ function renderVisitaCardOwner(v) {
   const div = document.createElement("div");
   div.className = "dash-card";
   const dataFmt = new Date(v.dataHora).toLocaleString("pt-BR");
+  const emAndamento = !v.finishedAt;
+  const badge = emAndamento ? `<span class="badge manual">Em andamento</span>` : `<span class="badge">${escapeHtml(v.resultado || "")}</span>`;
+  const duracao = v.finishedAt ? `<div>⏱️ Duração: ${Math.round((v.finishedAt - v.dataHora) / 60000)} min</div>` : "";
   const mapsLink = (v.latitude != null && v.longitude != null)
     ? `<a href="https://www.google.com/maps?q=${v.latitude},${v.longitude}" target="_blank" rel="noopener">📍 Abrir no Google Maps</a>`
     : "";
   const proxima = v.proximaVisitaData
     ? `<div>🔁 Retorno: ${new Date(v.proximaVisitaData + "T00:00:00").toLocaleDateString("pt-BR")}</div>`
     : "";
+  const fotos = (v.fotos || []).length ? `<div>📷 ${v.fotos.length} foto(s)</div>` : "";
   div.innerHTML = `
     <div class="dash-card-head">
       <b>${escapeHtml(v.clienteNome)}</b>
-      <span class="badge">${escapeHtml(v.resultado)}</span>
+      ${badge}
     </div>
     <div class="dash-card-body">
       <div>Vendedor: ${escapeHtml(v.vendedorNome || "—")}</div>
-      <div>${escapeHtml(v.motivo)} • ${dataFmt}</div>
+      ${v.objetivo ? `<div>${escapeHtml(v.objetivo)}</div>` : ""}
+      <div>${v.motivo ? escapeHtml(v.motivo) + " • " : ""}${dataFmt}</div>
+      ${duracao}
       ${v.contatoNome ? `<div>Contato: ${escapeHtml(v.contatoNome)}</div>` : ""}
       ${v.observacao ? `<div>${escapeHtml(v.observacao)}</div>` : ""}
       ${v.proximaAcao ? `<div>Próxima ação: ${escapeHtml(v.proximaAcao)}</div>` : ""}
+      ${fotos}
       ${proxima}
       ${mapsLink ? `<div>${mapsLink}</div>` : ""}
     </div>

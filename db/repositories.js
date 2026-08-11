@@ -465,19 +465,23 @@ export const eventosRepo = {
 // ----------------------------------------------------------------------------
 function visitaFromRow(r) {
   return {
-    id: r.id, vendedorId: r.vendedor_id, clienteNome: r.cliente_nome,
+    id: r.id, vendedorId: r.vendedor_id, clienteNome: r.cliente_nome, objetivo: r.objetivo || "",
     contatoNome: r.contato_nome || "", contatoTelefone: r.contato_telefone || "",
     latitude: r.latitude, longitude: r.longitude,
     motivo: r.motivo, resultado: r.resultado, observacao: r.observacao || "",
     proximaAcao: r.proxima_acao || "", proximaVisitaData: r.proxima_visita_data || null,
     valorPotencial: r.valor_potencial ?? null,
-    dataHora: ms(r.data_hora), createdAt: ms(r.created_at),
+    fotos: Array.isArray(r.fotos) ? r.fotos : [], googleEventoId: r.google_evento_id || null,
+    dataHora: ms(r.data_hora), finishedAt: r.finished_at ? ms(r.finished_at) : null,
+    createdAt: ms(r.created_at),
   };
 }
 /**
- * "hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje.
- * "followup": visitas marcadas com resultado "Retornar".
- * qualquer outro valor (ou nenhum): sem filtro (histórico completo).
+ * "hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje
+ * (inclui visitas em andamento — ainda não tem resultado, mas já são "de hoje").
+ * "followup": finalizadas com resultado "Retornar".
+ * "historico": só finalizadas (visita em andamento não é histórico ainda).
+ * qualquer outro valor (ex.: exportação): sem filtro.
  */
 function aplicarFiltroTab(query, tab) {
   if (tab === "hoje") {
@@ -489,22 +493,56 @@ function aplicarFiltroTab(query, tab) {
       `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
     );
   }
-  if (tab === "followup") return query.eq("resultado", "Retornar");
+  if (tab === "followup") return query.eq("resultado", "Retornar").not("finished_at", "is", null);
+  if (tab === "historico") return query.not("finished_at", "is", null);
   return query;
 }
 export const visitasRepo = {
+  /** Iniciar visita: grava só o essencial (cliente, objetivo, localização). */
   async create(empresaId, vendedorId, v) {
     requireEmpresaId(empresaId, "visitas.create");
     const { data, error } = await supabase.from("visitas").insert({
       empresa_id: empresaId, vendedor_id: vendedorId,
-      cliente_nome: v.clienteNome, contato_nome: v.contatoNome || "", contato_telefone: v.contatoTelefone || null,
+      cliente_nome: v.clienteNome, objetivo: v.objetivo || "",
       latitude: v.latitude ?? null, longitude: v.longitude ?? null,
-      motivo: v.motivo, resultado: v.resultado, observacao: v.observacao || "",
-      proxima_acao: v.proximaAcao || "", proxima_visita_data: v.proximaVisitaData || null,
-      valor_potencial: v.valorPotencial ?? null,
     }).select("*").single();
     assertOk(error, "visitas.create");
     return visitaFromRow(data);
+  },
+  /** Durante a visita: grava qualquer subconjunto de campos (nunca motivo/resultado — só finalizar faz isso). */
+  async update(empresaId, id, patch) {
+    requireEmpresaId(empresaId, "visitas.update");
+    const row = {};
+    if (patch.contatoNome !== undefined) row.contato_nome = patch.contatoNome;
+    if (patch.contatoTelefone !== undefined) row.contato_telefone = patch.contatoTelefone;
+    if (patch.observacao !== undefined) row.observacao = patch.observacao;
+    if (patch.proximaAcao !== undefined) row.proxima_acao = patch.proximaAcao;
+    if (patch.proximaVisitaData !== undefined) row.proxima_visita_data = patch.proximaVisitaData;
+    if (patch.valorPotencial !== undefined) row.valor_potencial = patch.valorPotencial;
+    if (patch.googleEventoId !== undefined) row.google_evento_id = patch.googleEventoId;
+    if (patch.fotos !== undefined) row.fotos = patch.fotos;
+    const { data, error } = await supabase.from("visitas").update(row)
+      .eq("id", id).eq("empresa_id", empresaId).select("*").single();
+    assertOk(error, "visitas.update");
+    return visitaFromRow(data);
+  },
+  /** Finalizar: os únicos 2 campos exigidos nesse momento, mais o carimbo de término. */
+  async finalizar(empresaId, id, { motivo, resultado }) {
+    requireEmpresaId(empresaId, "visitas.finalizar");
+    const { data, error } = await supabase.from("visitas")
+      .update({ motivo, resultado, finished_at: new Date().toISOString() })
+      .eq("id", id).eq("empresa_id", empresaId).select("*").single();
+    assertOk(error, "visitas.finalizar");
+    return visitaFromRow(data);
+  },
+  /** A visita em andamento do vendedor (se existir) — pra retomar o estado ao reabrir a página. */
+  async getEmAndamento(empresaId, vendedorId) {
+    requireEmpresaId(empresaId, "visitas.getEmAndamento");
+    const { data, error } = await supabase.from("visitas").select("*")
+      .eq("empresa_id", empresaId).eq("vendedor_id", vendedorId).is("finished_at", null)
+      .order("data_hora", { ascending: false }).limit(1).maybeSingle();
+    assertOk(error, "visitas.getEmAndamento");
+    return data ? visitaFromRow(data) : null;
   },
   async getById(empresaId, id) {
     requireEmpresaId(empresaId, "visitas.getById");
@@ -527,6 +565,21 @@ export const visitasRepo = {
     const { data, error } = await q.order("data_hora", { ascending: false });
     assertOk(error, "visitas.listForEmpresa");
     return (data || []).map(visitaFromRow);
+  },
+  /** Números da tela "Hoje". vendedorId nulo = soma a empresa inteira (visão do dono). */
+  async resumoDia(empresaId, vendedorId) {
+    requireEmpresaId(empresaId, "visitas.resumoDia");
+    let q = supabase.from("visitas").select("resultado,valor_potencial,proxima_visita_data").eq("empresa_id", empresaId);
+    if (vendedorId) q = q.eq("vendedor_id", vendedorId);
+    const { data, error } = await q;
+    assertOk(error, "visitas.resumoDia");
+    const rows = data || [];
+    const hojeStr = new Date().toISOString().slice(0, 10);
+    return {
+      retornos: rows.filter((r) => r.resultado === "Retornar").length,
+      visitasHoje: rows.filter((r) => r.proxima_visita_data === hojeStr).length,
+      oportunidades: rows.filter((r) => r.valor_potencial != null && ["Interessado", "Negociação"].includes(r.resultado)).length,
+    };
   },
 };
 
