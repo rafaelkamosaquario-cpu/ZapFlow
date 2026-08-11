@@ -12,6 +12,9 @@ import { supabaseEnabled, projectRef } from "./db/supabase.js";
 import * as repo from "./db/repositories.js";
 import { checkDatabase } from "./db/health.js";
 import * as googleClient from "./lib/googleClient.js";
+import * as openaiClient from "./lib/openaiClient.js";
+import { montarInput } from "./lib/ai/systemPrompt.js";
+import { FERRAMENTAS_DEFINICOES, criarExecutores } from "./lib/ai/tools.js";
 
 dotenv.config();
 
@@ -2069,6 +2072,89 @@ app.post("/api/visitas/exportar-planilha", async (req, res) => {
   } catch (err) {
     console.error("[google] exportar visitas:", err.response?.data?.error || err.message);
     res.status(500).json({ error: "Não foi possível exportar a planilha." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Zappy IA (V4) — fundação + assistente. Só owner, só quando OPENAI_API_KEY
+// estiver configurada. A IA nunca envia campanha/mensagem sozinha: no máximo
+// cria um evento no Calendar (aditivo) ou devolve um RASCUNHO de campanha que
+// cai no fluxo de Nova Campanha já existente, exigindo confirmação manual.
+// ---------------------------------------------------------------------------
+app.use("/api/ia", (req, res, next) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  next();
+});
+
+app.get("/api/ia/configuracao", async (req, res) => {
+  try {
+    const perfil = await repo.configuracoesIaRepo.get(req.tenant.empresa.id);
+    res.json({ perfil, iaConfigurada: openaiClient.openaiConfigured });
+  } catch (err) {
+    console.error("[ia] configuracao get:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar a configuração." });
+  }
+});
+
+app.put("/api/ia/configuracao", async (req, res) => {
+  const b = req.body || {};
+  try {
+    await repo.configuracoesIaRepo.save(req.tenant.empresa.id, {
+      segmento: String(b.segmento || "").slice(0, 200),
+      descricao: String(b.descricao || "").slice(0, 2000),
+      produtosServicos: String(b.produtosServicos || "").slice(0, 2000),
+      publicoAlvo: String(b.publicoAlvo || "").slice(0, 500),
+      regiao: String(b.regiao || "").slice(0, 200),
+      diferenciais: String(b.diferenciais || "").slice(0, 1000),
+      tomComunicacao: String(b.tomComunicacao || "").slice(0, 500),
+      condicoesComerciais: String(b.condicoesComerciais || "").slice(0, 2000),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[ia] configuracao put:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar a configuração." });
+  }
+});
+
+/** Extrai o bloco [RASCUNHO_CAMPANHA]{...} do texto final, se existir. Devolve { texto, rascunho }. */
+function extrairRascunhoCampanha(textoFinal) {
+  const marca = "[RASCUNHO_CAMPANHA]";
+  const idx = textoFinal.indexOf(marca);
+  if (idx === -1) return { texto: textoFinal, rascunho: null };
+  const texto = textoFinal.slice(0, idx).trim();
+  try {
+    const rascunho = JSON.parse(textoFinal.slice(idx + marca.length).trim());
+    if (!rascunho.mensagem || !Array.isArray(rascunho.telefones)) return { texto, rascunho: null };
+    return { texto, rascunho };
+  } catch {
+    return { texto, rascunho: null };
+  }
+}
+
+app.post("/api/ia/perguntar", async (req, res) => {
+  if (!openaiClient.openaiConfigured) {
+    return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
+  }
+  const tenant = req.tenant;
+  const mensagem = String(req.body?.mensagem || "").trim();
+  const historico = Array.isArray(req.body?.historico) ? req.body.historico.slice(-20) : [];
+  if (!mensagem) return res.status(400).json({ error: "Escreva uma mensagem." });
+  try {
+    const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem });
+    const executores = criarExecutores(tenant, { obterConexaoGoogle });
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({
+      model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
+    });
+    await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
+      modelo: openaiClient.MODELOS.padrao, acao: "chat",
+      tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+    });
+    const { texto, rascunho } = extrairRascunhoCampanha(textoFinal);
+    res.json({ resposta: texto, rascunhoCampanha: rascunho });
+  } catch (err) {
+    console.error("[ia] perguntar:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível falar com a IA agora." });
   }
 });
 

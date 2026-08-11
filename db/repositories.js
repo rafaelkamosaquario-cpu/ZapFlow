@@ -396,6 +396,50 @@ export const googleRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// configuracoes_ia (V4 — perfil comercial injetado no prompt; singleton por
+// empresa, mesmo padrão de automacoes/google_conexoes)
+// ----------------------------------------------------------------------------
+function perfilIaFromRow(r) {
+  return {
+    segmento: r.segmento || "", descricao: r.descricao || "", produtosServicos: r.produtos_servicos || "",
+    publicoAlvo: r.publico_alvo || "", regiao: r.regiao || "", diferenciais: r.diferenciais || "",
+    tomComunicacao: r.tom_comunicacao || "", condicoesComerciais: r.condicoes_comerciais || "",
+  };
+}
+export const configuracoesIaRepo = {
+  async get(empresaId) {
+    requireEmpresaId(empresaId, "configuracoesIa.get");
+    const { data, error } = await supabase.from("configuracoes_ia").select("*").eq("empresa_id", empresaId).maybeSingle();
+    assertOk(error, "configuracoesIa.get");
+    return data ? perfilIaFromRow(data) : null;
+  },
+  async save(empresaId, p) {
+    requireEmpresaId(empresaId, "configuracoesIa.save");
+    const { error } = await supabase.from("configuracoes_ia").upsert({
+      empresa_id: empresaId, segmento: p.segmento || "", descricao: p.descricao || "",
+      produtos_servicos: p.produtosServicos || "", publico_alvo: p.publicoAlvo || "",
+      regiao: p.regiao || "", diferenciais: p.diferenciais || "",
+      tom_comunicacao: p.tomComunicacao || "", condicoes_comerciais: p.condicoesComerciais || "",
+    }, { onConflict: "empresa_id" });
+    assertOk(error, "configuracoesIa.save");
+  },
+};
+
+// ----------------------------------------------------------------------------
+// ia_consumo (V4 — log de tokens por chamada; só registro, sem bloqueio)
+// ----------------------------------------------------------------------------
+export const iaConsumoRepo = {
+  async registrar(empresaId, usuarioId, { modelo, acao, tokensEntrada, tokensSaida }) {
+    requireEmpresaId(empresaId, "iaConsumo.registrar");
+    const { error } = await supabase.from("ia_consumo").insert({
+      empresa_id: empresaId, usuario_id: usuarioId, modelo, acao,
+      tokens_entrada: tokensEntrada || 0, tokens_saida: tokensSaida || 0,
+    });
+    if (error) console.error("[Supabase] ia_consumo:", error.message); // log auxiliar, nunca derruba a resposta da IA
+  },
+};
+
+// ----------------------------------------------------------------------------
 // respostas (metrics.responses)
 // ----------------------------------------------------------------------------
 export const respostasRepo = {

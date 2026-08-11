@@ -33,6 +33,7 @@
       <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automação</span></button>
       <button class="side-tab" data-view="visitas"><i data-icon="store" data-size="20"></i> <span class="side-label">Visitas em Campo</span></button>
       <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
+      <button class="side-tab" data-view="ia"><i data-icon="sparkles" data-size="20"></i> <span class="side-label">ZapFlow IA</span></button>
     </nav>
     <div class="side-foot">
       <a class="side-tab" href="/"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Nova campanha</span></a>
@@ -419,6 +420,47 @@
         <div id="eventosList" class="dash-list"></div>
       </div>
     </section>
+
+    <!-- ZapFlow IA (V4) -->
+    <section class="dash-view hidden" data-view="ia">
+      <h2 class="dash-title">✨ ZapFlow IA</h2>
+      <p class="hint" id="iaConfigHint"></p>
+
+      <h3 class="dash-subtitle">Perfil da empresa</h3>
+      <p class="hint">Preencha uma vez — a IA usa isso pra personalizar tudo que responde.</p>
+      <label>Segmento
+        <input type="text" id="iaSegmento" placeholder="Ex.: pneus e recapagem" />
+      </label>
+      <label>Descrição
+        <textarea id="iaDescricao" rows="2"></textarea>
+      </label>
+      <label>Produtos/serviços
+        <textarea id="iaProdutos" rows="2"></textarea>
+      </label>
+      <div class="manual-row">
+        <label class="inline" style="flex:1;">Público-alvo <input type="text" id="iaPublico" /></label>
+        <label class="inline" style="flex:1;">Região <input type="text" id="iaRegiao" /></label>
+      </div>
+      <label>Diferenciais
+        <textarea id="iaDiferenciais" rows="2"></textarea>
+      </label>
+      <label>Tom de comunicação
+        <input type="text" id="iaTom" placeholder="Ex.: direto, comercial, profissional" />
+      </label>
+      <label>Condições comerciais
+        <textarea id="iaCondicoes" rows="2"></textarea>
+      </label>
+      <button class="btn secondary" id="btnSalvarPerfilIa" type="button">Salvar perfil</button>
+      <span class="status" id="perfilIaStatus"></span>
+
+      <h3 class="dash-subtitle">Assistente</h3>
+      <div id="iaMessages" class="chat-messages" style="min-height:220px;"></div>
+      <div id="iaRascunho" class="campaign-summary hidden" style="margin-top:10px;"></div>
+      <div class="chat-reply">
+        <input type="text" id="iaInput" placeholder="Pergunte algo ou peça uma campanha..." />
+        <button class="btn primary" id="iaSend" type="button">Enviar</button>
+      </div>
+    </section>
   </main>
 
   <!-- Chat da conversa -->
@@ -535,6 +577,7 @@
       <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></button>
       <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas em Campo</span></button>
       <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>
+      <button class="msheet-item" data-view="ia"><i data-icon="sparkles" data-size="22"></i><span>ZapFlow IA</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
     </div>
     <div class="msheet-theme">

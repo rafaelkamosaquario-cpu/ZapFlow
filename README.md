@@ -115,6 +115,28 @@ credencial OAuth 2.0 Client ID (Web) com o redirect URI
 e `PUBLIC_URL` no `.env`/Railway — sem isso a aba Calendário informa que a integração
 ainda não foi configurada, sem quebrar o resto do app.
 
+## ✨ ZapFlow IA / Zappy (modo Supabase — OpenAI)
+
+Assistente com acesso aos dados da empresa via *function calling* (Responses API da
+OpenAI): consulta clientes/visitas/conversas, cria compromissos no Google Calendar
+(quando conectado) e monta **rascunhos** de campanha. A IA nunca envia mensagem nem
+campanha sozinha — o rascunho cai no fluxo normal de Nova Campanha (mesmo mecanismo
+de `sessionStorage` que o botão "Criar campanha para este grupo" do CRM já usa),
+exigindo confirmação manual do usuário.
+
+- Aba **"ZapFlow IA"** no painel do dono: primeiro o **Perfil da empresa** (segmento,
+  produtos, público, tom de comunicação — usado pra personalizar toda resposta),
+  depois o **Assistente** (chat).
+- **Setup**: crie uma conta em [platform.openai.com](https://platform.openai.com),
+  gere uma API key e configure `OPENAI_API_KEY` no `.env`/Railway — 1 chave só pro
+  app inteiro, nunca por empresa. Sem ela, a aba mostra que a integração ainda não
+  foi configurada, sem quebrar o resto do app.
+- Modelo usado hoje: `gpt-5.6-terra` (equilíbrio custo/capacidade) pra tudo. O
+  roteador (`lib/openaiClient.js`) já suporta `gpt-5.6-luna`/`gpt-5.6-sol` pra quando
+  fizer sentido diferenciar por tipo de tarefa.
+- Todo uso é registrado em `ia_consumo` (tokens por chamada) — **sem bloqueio por
+  cota** nesta versão, é só histórico pra quando um sistema de planos existir.
+
 ### 4. Iniciar
 
 ```bash

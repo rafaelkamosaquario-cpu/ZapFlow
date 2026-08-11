@@ -30,7 +30,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo", calendario: "Calendário" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
@@ -103,6 +103,7 @@ function loadView(view) {
   else if (view === "chatbot") loadChatbot();
   else if (view === "visitas") loadVisitasView();
   else if (view === "calendario") loadCalendarioView();
+  else if (view === "ia") loadZappyIA();
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,6 +1496,112 @@ $("#btnCriarEvento").addEventListener("click", async () => {
     history.replaceState({}, "", url);
   }
 })();
+
+// ---------------------------------------------------------------------------
+// ZapFlow IA (V4)
+// ---------------------------------------------------------------------------
+let iaHistorico = [];
+let iaCarregado = false;
+
+async function loadZappyIA() {
+  if (iaCarregado) return; // perfil + saudação só precisam carregar 1x por sessão de navegação
+  iaCarregado = true;
+  try {
+    const res = await fetch("/api/ia/configuracao");
+    const data = await res.json();
+    if (!res.ok) return;
+    $("#iaConfigHint").textContent = data.iaConfigurada ? "" : "Integração com IA ainda não foi configurada pelo suporte.";
+    const p = data.perfil || {};
+    $("#iaSegmento").value = p.segmento || "";
+    $("#iaDescricao").value = p.descricao || "";
+    $("#iaProdutos").value = p.produtosServicos || "";
+    $("#iaPublico").value = p.publicoAlvo || "";
+    $("#iaRegiao").value = p.regiao || "";
+    $("#iaDiferenciais").value = p.diferenciais || "";
+    $("#iaTom").value = p.tomComunicacao || "";
+    $("#iaCondicoes").value = p.condicoesComerciais || "";
+    if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas e conversas, criar compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
+  } catch {
+    $("#iaConfigHint").textContent = "Erro ao carregar.";
+  }
+}
+
+$("#btnSalvarPerfilIa").addEventListener("click", async () => {
+  const status = $("#perfilIaStatus");
+  try {
+    const res = await fetch("/api/ia/configuracao", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        segmento: $("#iaSegmento").value.trim(), descricao: $("#iaDescricao").value.trim(),
+        produtosServicos: $("#iaProdutos").value.trim(), publicoAlvo: $("#iaPublico").value.trim(),
+        regiao: $("#iaRegiao").value.trim(), diferenciais: $("#iaDiferenciais").value.trim(),
+        tomComunicacao: $("#iaTom").value.trim(), condicoesComerciais: $("#iaCondicoes").value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error || "Erro ao salvar."; status.className = "status err"; return; }
+    status.textContent = "Perfil salvo!";
+    status.className = "status ok";
+  } catch {
+    status.textContent = "Erro de conexão.";
+    status.className = "status err";
+  }
+});
+
+function iaAddBubble(role, texto) {
+  const box = $("#iaMessages");
+  const div = document.createElement("div");
+  div.className = `bubble ${role === "user" ? "out" : "in"}`;
+  div.innerHTML = `<div class="bubble-text">${escapeHtml(texto)}</div>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function iaEnviarMensagem() {
+  const input = $("#iaInput");
+  const mensagem = input.value.trim();
+  if (!mensagem) return;
+  iaAddBubble("user", mensagem);
+  input.value = "";
+  $("#iaRascunho").classList.add("hidden");
+  const pensando = document.createElement("div");
+  pensando.className = "bubble in";
+  pensando.id = "iaPensando";
+  pensando.innerHTML = `<div class="bubble-text">Pensando...</div>`;
+  $("#iaMessages").appendChild(pensando);
+  $("#iaMessages").scrollTop = $("#iaMessages").scrollHeight;
+  try {
+    const res = await fetch("/api/ia/perguntar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensagem, historico: iaHistorico }),
+    });
+    const data = await res.json();
+    document.getElementById("iaPensando")?.remove();
+    if (!res.ok) { iaAddBubble("assistant", data.error || "Não consegui responder agora."); return; }
+    iaHistorico.push({ role: "user", content: mensagem }, { role: "assistant", content: data.resposta });
+    iaAddBubble("assistant", data.resposta);
+    if (data.rascunhoCampanha) {
+      const r = data.rascunhoCampanha;
+      const box = $("#iaRascunho");
+      box.classList.remove("hidden");
+      box.innerHTML = `
+        <p><b>Rascunho de campanha</b> — ${r.telefones.length} contato(s)</p>
+        <p class="campaign-msg">${escapeHtml(r.mensagem)}</p>
+        <button class="btn primary sm" id="btnUsarRascunhoIa" type="button">Editar e enviar</button>`;
+      $("#btnUsarRascunhoIa").addEventListener("click", () => {
+        const contacts = r.telefones.map((phone) => ({ phone, name: "" }));
+        sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "sugestão do ZapFlow IA", contacts }));
+        sessionStorage.setItem("zapflow_loadtemplate", JSON.stringify({ message: r.mensagem }));
+        window.location.href = "/";
+      });
+    }
+  } catch {
+    document.getElementById("iaPensando")?.remove();
+    iaAddBubble("assistant", "Erro de conexão.");
+  }
+}
+$("#iaSend").addEventListener("click", iaEnviarMensagem);
+$("#iaInput").addEventListener("keydown", (e) => { if (e.key === "Enter") iaEnviarMensagem(); });
 
 // ---------------------------------------------------------------------------
 // Modal helpers
