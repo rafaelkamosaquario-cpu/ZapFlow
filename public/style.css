@@ -568,6 +568,9 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .mini-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--muted); text-align: center; padding: 16px; }
 .mini-empty svg { color: var(--muted); opacity: .6; }
 .mini-empty p { margin: 0; font-size: 13.5px; }
+.mini-empty.list-empty { padding: 32px 16px; }
+.mini-empty h4 { margin: 4px 0 0; font-size: 15px; font-weight: 700; color: var(--text); }
+.mini-empty .btn { margin-top: 6px; text-decoration: none; }
 
 /* Estado vazio principal */
 .ov-empty-state { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 36px 22px; text-align: center; box-shadow: var(--shadow-card); }

@@ -372,7 +372,11 @@ async function loadVisitas() {
     }
     const list = data.visitas || [];
     if (!list.length) {
-      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum follow-up pendente." };
+      const vazio = {
+        hoje: "Nenhuma visita hoje ainda. Toque em \"Iniciar visita\" para registrar a primeira.",
+        followup: "Nenhum follow-up pendente. Tudo em dia.",
+        historico: "Nenhuma visita registrada ainda. Suas visitas aparecem aqui depois de finalizadas.",
+      };
       hint.textContent = vazio[activeTab] || "Nenhuma visita registrada.";
       return;
     }

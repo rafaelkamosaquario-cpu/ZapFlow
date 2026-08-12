@@ -15,7 +15,25 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
-const fmtDate = (ts) => new Date(ts).toLocaleString("pt-BR");
+/** "Hoje · 14:30" / "Ontem · 16:20" / "Amanhã · 09:00" / "12/08/2026 · 14:30" (data completa fora da janela de 1 dia). */
+function fmtDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(d) - startOf(new Date())) / 86400000);
+  if (diffDays === 0) return `Hoje · ${time}`;
+  if (diffDays === -1) return `Ontem · ${time}`;
+  if (diffDays === 1) return `Amanhã · ${time}`;
+  return `${d.toLocaleDateString("pt-BR")} · ${time}`;
+}
+/** Telefone brasileiro pra exibição: (41) 99999-9999. Mantém o valor original se não reconhecer o formato. */
+function fmtPhone(phone) {
+  const d = String(phone || "").replace(/\D/g, "").replace(/^55/, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return phone || "";
+}
 /** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
 async function withLoading(btn, loadingText, fn) {
   const original = btn.textContent;
@@ -28,11 +46,14 @@ async function withLoading(btn, loadingText, fn) {
     btn.textContent = original;
   }
 }
+/** Forma compacta pra KPIs/cards: "R$ 18,5 mil". */
 const fmtMoney = (v) => {
   v = Number(v) || 0;
-  if (v >= 1000) return "R$" + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k";
-  return "R$" + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  if (v >= 1000) return "R$ " + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mil";
+  return "R$ " + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 };
+/** Forma completa pra telas de detalhe: "R$ 18.500,00". */
+const fmtMoneyFull = (v) => "R$ " + (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const STATUS = {
   pendente: { txt: "Pendente", cls: "pend" },
@@ -553,7 +574,7 @@ function clientCard(c) {
       <span class="stage-pill ${STAGE_CLS[c.stage] || ""}">${escapeHtml(c.stage)}</span>
     </div>
     <div class="dash-card-body">
-      <span class="resp-sub">${escapeHtml(c.phone)} · ${last}</span>
+      <span class="resp-sub">${escapeHtml(fmtPhone(c.phone))} · ${last}</span>
       <span>${sourceBadge(c.nameSource)}${tags}</span>
     </div>`;
   div.addEventListener("click", () => openClient(c));
@@ -563,7 +584,7 @@ function clientCard(c) {
 function openClient(c) {
   crmCurrent = c;
   $("#clientTitle").textContent = displayNameOf(c) === "Contato não identificado" ? "Contato não identificado" : (c.displayName || c.name);
-  $("#clientPhone").textContent = c.phone + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.nameSource] ? `  · origem: ${SOURCE_LABEL[c.nameSource]}` : "");
+  $("#clientPhone").textContent = fmtPhone(c.phone) + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.nameSource] ? `  · origem: ${SOURCE_LABEL[c.nameSource]}` : "");
   $("#clientName").value = c.name || "";
   $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
   $("#clientTags").value = (c.tags || []).join(", ");
@@ -682,7 +703,7 @@ async function loadConversas() {
           <span class="dash-when">${fmtDate(t.lastTs)}</span>
         </div>
         <div class="dash-card-body">
-          <span class="resp-sub">${escapeHtml(t.phone)}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
+          <span class="resp-sub">${escapeHtml(fmtPhone(t.phone))}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
           <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
           <span>${badge}${sourceBadge(t.nameSource)}${agenda}${tags}</span>
         </div>`;
@@ -719,7 +740,7 @@ async function openChat(key, nome, thread) {
     chatPhone = data.phone || chatPhone;
     // Identidade do contato (telefone menor, origem, etapa)
     const src = SOURCE_LABEL[data.nameSource];
-    $("#chatSub").textContent = [data.phone, src ? `origem: ${src}` : "", data.stage].filter(Boolean).join(" · ");
+    $("#chatSub").textContent = [fmtPhone(data.phone), src ? `origem: ${src}` : "", data.stage].filter(Boolean).join(" · ");
     // Botão "Salvar na agenda"
     const agBtn = $("#btnChatToAgenda");
     agBtn.classList.toggle("hidden", !!data.inAgenda);
@@ -797,7 +818,7 @@ async function loadAgenda() {
           </div>
         </div>
         <div class="dash-card-body">
-          <span>${escapeHtml(c.phone)} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
+          <span>${escapeHtml(fmtPhone(c.phone))} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
         </div>`;
       div.querySelector(".ag-add").addEventListener("click", (e) => {
         toggleCart(c, e.currentTarget);
@@ -922,7 +943,10 @@ async function loadCampaigns() {
   try {
     const res = await fetch("/api/schedules");
     allJobs = (await res.json()).jobs || [];
-    if (!allJobs.length) { wrap.innerHTML = "<p class='hint'>Nenhuma campanha ainda.</p>"; return; }
+    if (!allJobs.length) {
+      wrap.innerHTML = `<div class="mini-empty list-empty">${ZapIcons.svg("megaphone", 28)}<h4>Nenhuma campanha criada ainda</h4><p>Crie sua primeira campanha para começar a conversar com sua base de clientes.</p><a class="btn primary" href="/">Criar campanha</a></div>`;
+      return;
+    }
     wrap.innerHTML = "";
     allJobs.forEach((job) => wrap.appendChild(campaignCard(job)));
   } catch {
@@ -1115,7 +1139,7 @@ async function loadResponses() {
           <span class="dash-when">${fmtDate(r.ts)}</span>
         </div>
         <div class="dash-card-body">
-          <span class="resp-sub">${escapeHtml(r.phone)}${r.stage ? ` · ${escapeHtml(r.stage)}` : ""}</span>
+          <span class="resp-sub">${escapeHtml(fmtPhone(r.phone))}${r.stage ? ` · ${escapeHtml(r.stage)}` : ""}</span>
           ${r.content ? `<span class="sched-msg">"${escapeHtml(r.content)}"</span>` : ""}
           <span>${sourceBadge(r.nameSource)}${agenda}${tags}${saveBtn}</span>
         </div>`;
@@ -1137,7 +1161,10 @@ async function loadFollowup() {
   try {
     const res = await fetch("/api/schedules");
     const jobs = ((await res.json()).jobs || []).filter((j) => j.result && j.result.success > 0);
-    if (!jobs.length) { wrap.innerHTML = "<p class='hint'>Nenhuma campanha concluída ainda.</p>"; return; }
+    if (!jobs.length) {
+      wrap.innerHTML = `<div class="mini-empty list-empty">${ZapIcons.svg("refresh", 28)}<h4>Nenhum follow-up por aqui ainda</h4><p>Assim que uma campanha for enviada, os contatos sem resposta aparecem aqui para você reengajar.</p></div>`;
+      return;
+    }
     wrap.innerHTML = "";
     jobs.forEach((job) => {
       const naoResp = Math.max(0, (job.result.success || 0) - (job.repliedCount || 0));
@@ -1269,7 +1296,7 @@ async function loadVendedores() {
         </div>
         <div class="dash-card-body">
           <div>Usuário: ${escapeHtml(v.username)}</div>
-          ${v.phone ? `<div>Telefone: ${escapeHtml(v.phone)}</div>` : ""}
+          ${v.phone ? `<div>Telefone: ${escapeHtml(fmtPhone(v.phone))}</div>` : ""}
         </div>`;
       if (v.active) {
         const btnDel = document.createElement("button");
@@ -1353,7 +1380,11 @@ async function loadVisitasOwner() {
     if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar as visitas.")}</p>`; return; }
     const list = data.visitas || [];
     if (!list.length) {
-      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum follow-up pendente." };
+      const vazio = {
+        hoje: "Nenhuma visita hoje ainda.",
+        followup: "Nenhum follow-up pendente. Tudo em dia com a equipe.",
+        historico: "Nenhuma visita registrada ainda. Quando sua equipe iniciar visitas, elas aparecem aqui.",
+      };
       wrap.innerHTML = `<p class="hint">${vazio[visitasOwnerTab] || "Nenhuma visita encontrada."}</p>`;
       return;
     }
