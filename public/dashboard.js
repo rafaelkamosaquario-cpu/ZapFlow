@@ -880,6 +880,7 @@ async function openChat(key, nome, thread) {
   $("#chatSub").textContent = "";
   $("#chatStatus").textContent = "";
   $("#btnChatToAgenda").classList.add("hidden");
+  $("#btnChatToClientes").classList.add("hidden");
   $("#chatStageMover").innerHTML = "";
   $("#chatMessages").innerHTML = "<p class='hint'>Carregando...</p>";
   openModal("chatModal");
@@ -893,6 +894,23 @@ async function openChat(key, nome, thread) {
     const agBtn = $("#btnChatToAgenda");
     agBtn.classList.toggle("hidden", !!data.inAgenda);
     agBtn.onclick = () => openSaveAgenda(data.phone, data.name, () => { loadConversas(); openChat(key, data.name || nome, { phone: data.phone }); });
+    // Botão "Adicionar aos Clientes" (só aparece se ainda não estiver no funil)
+    const toClientBtn = $("#btnChatToClientes");
+    toClientBtn.classList.toggle("hidden", !!data.stage);
+    toClientBtn.onclick = async () => {
+      try {
+        await withLoading(toClientBtn, "Adicionando...", async () => {
+          const res = await fetch("/api/clients/stage", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: data.phone, stage: "Novo" }),
+          });
+          if (!res.ok) throw new Error();
+        });
+        openChat(key, data.name || nome, { phone: data.phone });
+      } catch {
+        alert("Não foi possível adicionar aos Clientes. Tente novamente.");
+      }
+    };
     // Ação rápida "Mover para" (atualiza etapa e funil imediatamente)
     renderStageMover($("#chatStageMover"), data.phone, data.stage, () => { loadConversas(); });
     const box = $("#chatMessages");
@@ -962,6 +980,7 @@ async function loadAgenda() {
           <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
           <div class="row" style="gap:6px;margin:0">
             <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "Inserido" : "Inserir"}</button>
+            ${c.isClient ? `<span class="hint">Já é cliente</span>` : `<button class="btn ghost ag-to-client">Adicionar aos Clientes</button>`}
             <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
           </div>
         </div>
@@ -977,6 +996,20 @@ async function loadAgenda() {
         agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
         updateAgCart();
         loadAgenda();
+      });
+      div.querySelector(".ag-to-client")?.addEventListener("click", async (e) => {
+        try {
+          await withLoading(e.currentTarget, "Adicionando...", async () => {
+            const res = await fetch("/api/clients/stage", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phone: c.phone, stage: "Novo" }),
+            });
+            if (!res.ok) throw new Error();
+          });
+          e.currentTarget.outerHTML = `<span class="hint">Já é cliente</span>`;
+        } catch {
+          alert("Não foi possível adicionar aos Clientes. Tente novamente.");
+        }
       });
       wrap.appendChild(div);
     });

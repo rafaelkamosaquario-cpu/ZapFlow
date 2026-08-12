@@ -1629,6 +1629,8 @@ app.get("/api/agenda", (req, res) => {
   const s = String(req.query.search || "").trim().toLowerCase();
   let list = tenant.agenda.filter((a) => !s || `${a.name} ${a.phone}`.toLowerCase().includes(s));
   list = list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", "pt")).slice(0, 2000);
+  const clientKeys = new Set(tenant.clients.map((c) => c.key || phoneKey(c.phone)));
+  list = list.map((a) => ({ ...a, isClient: clientKeys.has(phoneKey(a.phone)) }));
   res.json({ contacts: list, total: tenant.agenda.length, shown: list.length });
 });
 
