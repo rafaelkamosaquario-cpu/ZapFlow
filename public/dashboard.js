@@ -35,7 +35,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Automação", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
@@ -44,6 +44,7 @@ function activateView(view) {
   $$(".side-tab, .mtab, .msheet-item").forEach((t) => { if (t.dataset.view) t.classList.toggle("active", t.dataset.view === view); });
   $$(".dash-view").forEach((v) => v.classList.toggle("hidden", v.dataset.view !== view));
   const pn = $("#topPageName"); if (pn) pn.textContent = VIEW_NAMES[view] || "";
+  const dh = $("#deskHeader"); if (dh) dh.classList.toggle("hidden", view === "overview");
   closeSheet();
   loadView(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -106,6 +107,7 @@ function loadView(view) {
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
   else if (view === "chatbot") loadChatbot();
+  else if (view === "vendedores") loadVendedoresView();
   else if (view === "visitas") loadVisitasView();
   else if (view === "calendario") loadCalendarioView();
   else if (view === "ia") loadZappyIA();
@@ -1210,8 +1212,11 @@ $("#btnSaveBot").addEventListener("click", async () => {
 // ---------------------------------------------------------------------------
 let visitasOwnerTab = "hoje";
 
-async function loadVisitasView() {
+async function loadVendedoresView() {
   await loadVendedores();
+}
+
+async function loadVisitasView() {
   await loadVisitasOwner();
 }
 

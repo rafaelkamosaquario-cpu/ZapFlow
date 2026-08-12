@@ -24,19 +24,27 @@
     </div>
     <nav class="side-nav">
       <button class="side-tab active" data-view="overview"><i data-icon="house" data-size="20"></i> <span class="side-label">Início</span></button>
+      <button class="side-tab" data-view="ia"><i data-icon="sparkles" data-size="20"></i> <span class="side-label">ZapFlow IA</span></button>
+
+      <span class="side-group-label">Comercial</span>
       <button class="side-tab" data-view="conversas"><i data-icon="messages" data-size="20"></i> <span class="side-label">Conversas</span></button>
       <button class="side-tab" data-view="clients"><i data-icon="users" data-size="20"></i> <span class="side-label">Clientes</span></button>
       <button class="side-tab" data-view="agenda"><i data-icon="contact" data-size="20"></i> <span class="side-label">Agenda de contatos</span></button>
       <button class="side-tab" data-view="campaigns"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Campanhas</span></button>
       <button class="side-tab" data-view="followup"><i data-icon="refresh" data-size="20"></i> <span class="side-label">Follow-up</span></button>
       <button class="side-tab" data-view="responses"><i data-icon="reply" data-size="20"></i> <span class="side-label">Respostas</span></button>
-      <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automação</span></button>
-      <button class="side-tab" data-view="visitas"><i data-icon="store" data-size="20"></i> <span class="side-label">Visitas em Campo</span></button>
+
+      <span class="side-group-label">Equipe</span>
+      <button class="side-tab" data-view="vendedores"><i data-icon="user" data-size="20"></i> <span class="side-label">Vendedores</span></button>
+      <button class="side-tab" data-view="visitas"><i data-icon="store" data-size="20"></i> <span class="side-label">Visitas</span></button>
+
+      <span class="side-group-label">Automação</span>
+      <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Respostas automáticas</span></button>
+
+      <span class="side-group-label">Organização</span>
       <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
-      <button class="side-tab" data-view="ia"><i data-icon="sparkles" data-size="20"></i> <span class="side-label">ZapFlow IA</span></button>
     </nav>
     <div class="side-foot">
-      <a class="side-tab" href="/"><i data-icon="megaphone" data-size="20"></i> <span class="side-label">Nova campanha</span></a>
       <div class="side-theme">
         <span class="side-label side-theme-label">Tema</span>
         <div class="theme-switch">
@@ -62,6 +70,12 @@
   </header>
 
   <main class="container">
+    <!-- Cabeçalho persistente (desktop) — some quando não está no Início, que já tem o próprio cabeçalho.
+         Sem título aqui pra não duplicar o <h2> de cada tela; só o CTA global. -->
+    <div class="desk-header hidden" id="deskHeader">
+      <a class="btn primary" href="/"><i data-icon="plus" data-size="16"></i> Nova campanha</a>
+    </div>
+
     <!-- Visão Geral (Dashboard) -->
     <section class="dash-view" data-view="overview">
       <!-- Cabeçalho -->
@@ -368,12 +382,11 @@
       <div id="followupList" class="dash-list"></div>
     </section>
 
-    <!-- Visitas em Campo -->
-    <section class="dash-view hidden" data-view="visitas">
-      <h2 class="dash-title">Visitas em Campo</h2>
-      <p class="hint">Vendedores da sua equipe e as visitas registradas por eles pelo celular.</p>
+    <!-- Vendedores (equipe) -->
+    <section class="dash-view hidden" data-view="vendedores">
+      <h2 class="dash-title">Vendedores</h2>
+      <p class="hint">Cadastre e gerencie os vendedores da sua equipe.</p>
 
-      <h3 class="dash-subtitle">Vendedores</h3>
       <div id="vendedoresList" class="dash-list"></div>
       <div class="manual-add">
         <p class="manual-title">Adicionar vendedor</p>
@@ -384,8 +397,14 @@
         </div>
         <span class="manual-error" id="vendedorStatus"></span>
       </div>
+    </section>
 
-      <div class="dash-card-head" style="margin-top:24px;">
+    <!-- Visitas em Campo -->
+    <section class="dash-view hidden" data-view="visitas">
+      <h2 class="dash-title">Visitas em Campo</h2>
+      <p class="hint">Visitas registradas pela sua equipe pelo celular.</p>
+
+      <div class="dash-card-head">
         <h3 class="dash-subtitle" style="margin:0;">Visitas da equipe</h3>
         <button class="btn secondary sm" id="btnExportVisitas" type="button">Exportar para planilha</button>
       </div>
@@ -590,8 +609,9 @@
       <button class="msheet-item" data-view="campaigns"><i data-icon="megaphone" data-size="22"></i><span>Campanhas</span></button>
       <button class="msheet-item" data-view="followup"><i data-icon="refresh" data-size="22"></i><span>Follow-up</span></button>
       <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>
-      <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Automação</span></button>
-      <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas em Campo</span></button>
+      <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Respostas automáticas</span></button>
+      <button class="msheet-item" data-view="vendedores"><i data-icon="user" data-size="22"></i><span>Vendedores</span></button>
+      <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas</span></button>
       <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>
       <button class="msheet-item" data-view="ia"><i data-icon="sparkles" data-size="22"></i><span>ZapFlow IA</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
