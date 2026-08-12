@@ -265,8 +265,8 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .tabs { display: flex; gap: 8px; margin: 6px 0 10px; flex-wrap: wrap; }
 .tab {
   background: var(--card-2); border: 1px solid var(--border);
-  color: var(--muted); padding: 8px 14px; border-radius: 8px;
-  cursor: pointer; font-size: 13px; font-weight: 600;
+  color: var(--muted); padding: 10px 14px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 600; min-height: 40px;
 }
 .tab.active { background: var(--primary-light); color: #fff; border-color: var(--primary-light); }
 .preview { max-width: 200px; margin-top: 12px; border-radius: 9px; display: block; }
@@ -695,7 +695,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .conv-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 10px; }
 .conv-fbtn {
   background: var(--card-2); border: 1px solid var(--border); color: var(--muted);
-  padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600;
+  padding: 10px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 600; min-height: 40px;
 }
 .conv-fbtn.active { background: var(--primary-light); color: #fff; border-color: var(--primary-light); }
 .conv-item .conv-last { color: var(--muted); }

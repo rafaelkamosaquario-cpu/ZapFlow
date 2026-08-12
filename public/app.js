@@ -1149,7 +1149,7 @@ function renderTemplates(list) {
       </div>`;
     wrap.appendChild(div);
     div.querySelector(".t-load").addEventListener("click", () => loadTemplateInto(t));
-    div.querySelector(".t-del").addEventListener("click", () => deleteTemplate(t.id));
+    div.querySelector(".t-del").addEventListener("click", (e) => deleteTemplate(t.id, t.name, e.currentTarget));
   });
 }
 
@@ -1169,9 +1169,9 @@ function loadTemplateInto(t) {
   closeModal("templatesModal");
 }
 
-async function deleteTemplate(id) {
-  if (!confirm("Excluir este modelo?")) return;
-  await fetch("/api/templates/" + id, { method: "DELETE" });
+async function deleteTemplate(id, name, btn) {
+  if (!confirm(`Excluir o modelo "${name || "sem nome"}"? Essa ação não pode ser desfeita.`)) return;
+  await withLoading(btn, "Excluindo...", () => fetch("/api/templates/" + id, { method: "DELETE" }));
   const res = await fetch("/api/templates");
   const data = await res.json();
   renderTemplates(data.templates || []);
