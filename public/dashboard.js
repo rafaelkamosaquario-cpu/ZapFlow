@@ -533,7 +533,7 @@ async function loadClients() {
     wrap.innerHTML = "";
     crmList.forEach((c) => wrap.appendChild(clientCard(c)));
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar clientes.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os clientes. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -624,6 +624,7 @@ function renderStageMover(container, phone, currentStage, onDone) {
         if (onDone) onDone(stage);
       } catch {
         container.querySelectorAll(".stage-move-btn").forEach((x) => (x.disabled = false));
+        alert("Não foi possível mover o cliente de etapa. Tente novamente.");
       }
     });
   });
@@ -908,7 +909,7 @@ async function loadConversas() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar conversas.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar as conversas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -970,7 +971,7 @@ async function openChat(key, nome, thread) {
        </div>`).join("") || "<p class='hint'>Sem mensagens.</p>";
     box.scrollTop = box.scrollHeight;
   } catch {
-    $("#chatMessages").innerHTML = "<p class='hint'>Erro ao carregar a conversa.</p>";
+    $("#chatMessages").innerHTML = "<p class='hint'>Não foi possível carregar esta conversa. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1064,7 +1065,7 @@ async function loadAgenda() {
     });
     updateAgCart();
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar a agenda.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar a agenda. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1130,7 +1131,7 @@ $("#agFile").addEventListener("change", async (e) => {
   try {
     const res = await fetch("/api/agenda/upload", { method: "POST", body: fd });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha");
+    if (!res.ok) throw new Error(data.error || "Não foi possível importar a planilha. Verifique o formato do arquivo e tente novamente.");
     status.textContent = `${data.imported} contato(s) importado(s)!`; status.className = "status ok";
     loadAgenda();
   } catch (err) {
@@ -1180,7 +1181,7 @@ async function loadCampaigns() {
     wrap.innerHTML = "";
     allJobs.forEach((job) => wrap.appendChild(campaignCard(job)));
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar campanhas.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar as campanhas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1249,7 +1250,7 @@ async function loadDrafts() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar os modelos.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os modelos. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1323,7 +1324,7 @@ async function openCampaign(id) {
       return `<div class="d-line">${icon} ${name}${escapeHtml(l.phone || "")}${rep}${err}</div>`;
     }).join("") || "<p class='hint'>Sem detalhes.</p>";
   } catch {
-    $("#campaignContacts").innerHTML = "<p class='hint'>Erro ao carregar a campanha.</p>";
+    $("#campaignContacts").innerHTML = "<p class='hint'>Não foi possível carregar os detalhes da campanha. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1378,7 +1379,7 @@ async function loadResponses() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar respostas.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar as respostas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 

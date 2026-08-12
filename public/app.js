@@ -99,11 +99,11 @@ async function runConnectionTest() {
       }
     } else {
       setConnState("off", "WhatsApp desconectado");
-      setBoth(data.error || "Falha na conexão.", "err");
+      setBoth(data.error || "Não foi possível confirmar a conexão com o WhatsApp. Confira o ID da instância e os tokens.", "err");
     }
-  } catch (err) {
+  } catch {
     setConnState("off", "WhatsApp desconectado");
-    setBoth(err.message, "err");
+    setBoth("Não foi possível verificar a conexão. Verifique sua internet e tente novamente.", "err");
   }
 }
 
@@ -136,7 +136,7 @@ async function handleFile(file) {
   try {
     const res = await fetch("/api/contacts", { method: "POST", body: formData });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao ler a planilha.");
+    if (!res.ok) throw new Error(data.error || "Não foi possível ler a planilha. Verifique o formato do arquivo e tente novamente.");
 
     importedContacts = data.valid;
     importedInvalid = data.invalid;
@@ -200,7 +200,7 @@ if (btnSyncChip) {
         body: JSON.stringify(getCredentials()),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Falha ao sincronizar.");
+      if (!res.ok) throw new Error(data.error || "Não foi possível sincronizar os contatos do aparelho. Tente novamente.");
 
       // Puxa a agenda (já com os contatos do chip) e adiciona à lista de disparo
       const ag = await (await fetch("/api/agenda")).json();
@@ -289,7 +289,7 @@ async function loadSavedContacts() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar os contatos salvos.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os contatos salvos. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -649,7 +649,7 @@ async function handleSendAll() {
         if (res.ok) scheduled++;
       } else {
         const res = await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...getCredentials(), contacts, message, images, delayMs: getDelayMs(), name }) });
-        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Falha ao enviar."); }
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Não foi possível enviar esta mensagem. Verifique a conexão com o WhatsApp e tente novamente."); }
         const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
         while (true) {
           const { value, done } = await reader.read(); if (done) break;
@@ -850,7 +850,7 @@ async function sendNowBlock(block, message, images) {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Falha ao iniciar o envio.");
+      throw new Error(data.error || "Não foi possível iniciar o envio. Verifique a conexão com o WhatsApp e tente novamente.");
     }
 
     const reader = res.body.getReader();
@@ -910,7 +910,7 @@ async function scheduleBlock(block, message, images) {
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha ao agendar.");
+    if (!res.ok) throw new Error(data.error || "Não foi possível agendar esta mensagem. Tente novamente.");
     status.textContent = `Agendada para ${quando}`;
     status.className = "m-status status ok";
     loadSchedules();
@@ -1207,7 +1207,7 @@ async function openMetrics() {
     renderMetricPanel("#panelHoje", data.hoje);
     renderMetricPanel("#panelMes", data.mes);
   } catch {
-    $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Erro ao carregar métricas.</p>";
+    $("#panelHoje .metric-content").innerHTML = "<p class='hint'>Não foi possível carregar as métricas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 

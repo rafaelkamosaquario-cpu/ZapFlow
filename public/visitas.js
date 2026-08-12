@@ -450,7 +450,7 @@ async function loadVisitas() {
     const res = await fetch(`/api/visitas?tab=${activeTab}`);
     const data = await res.json();
     if (!res.ok) {
-      hint.textContent = data.error || "Erro ao carregar visitas.";
+      hint.textContent = data.error || "Não foi possível carregar as visitas. Verifique sua conexão e tente novamente.";
       return;
     }
     const list = data.visitas || [];

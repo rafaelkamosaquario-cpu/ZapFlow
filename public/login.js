@@ -31,7 +31,7 @@ form.addEventListener("submit", async (e) => {
       errorEl.textContent = data.error || "Não foi possível entrar.";
     }
   } catch (err) {
-    errorEl.textContent = "Erro de conexão. Tente novamente.";
+    errorEl.textContent = "Não foi possível conectar ao servidor. Verifique sua internet e tente novamente.";
   } finally {
     btn.disabled = false;
     btn.textContent = "Entrar";
