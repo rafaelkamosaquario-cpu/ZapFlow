@@ -1861,6 +1861,43 @@ app.get("/api/visitas/resumo", async (req, res) => {
   }
 });
 
+// Desempenho da equipe por período, agrupado por vendedor (Item 5.10 — só o dono).
+app.get("/api/visitas/equipe", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  const tenant = req.tenant;
+  const period = String(req.query.period || "hoje");
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let desde = dayStart;
+  if (period === "7d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 6); }
+  else if (period === "30d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 29); }
+  else if (period === "mes") desde = new Date(now.getFullYear(), now.getMonth(), 1);
+  try {
+    const [rows, vendedores] = await Promise.all([
+      repo.visitasRepo.listarParaResumoEquipe(tenant.empresa.id, { desde: desde.toISOString() }),
+      repo.usuariosRepo.listVendedores(tenant.empresa.id),
+    ]);
+    const porVendedor = new Map();
+    for (const v of vendedores) {
+      porVendedor.set(v.id, { vendedorId: v.id, vendedorNome: v.name || v.username, visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 });
+    }
+    const total = { visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 };
+    const abertos = ["Interessado", "Proposta solicitada", "Em negociação"];
+    for (const r of rows) {
+      let alvo = porVendedor.get(r.vendedor_id);
+      if (!alvo) { alvo = { vendedorId: r.vendedor_id, vendedorNome: "Ex-vendedor", visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 }; porVendedor.set(r.vendedor_id, alvo); }
+      alvo.visitas++; total.visitas++;
+      if (r.finished_at) { alvo.concluidas++; total.concluidas++; } else { alvo.pendentes++; total.pendentes++; }
+      if (r.valor_potencial != null && abertos.includes(r.resultado)) { alvo.potencial += Number(r.valor_potencial) || 0; total.potencial += Number(r.valor_potencial) || 0; }
+      if (r.resultado === "Retornar depois") { alvo.followups++; total.followups++; }
+    }
+    res.json({ period, total, vendedores: [...porVendedor.values()].sort((a, b) => b.visitas - a.visitas) });
+  } catch (err) {
+    console.error("[visitas] equipe:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar o desempenho da equipe." });
+  }
+});
+
 // Escopo (mine|todas) decidido pelo servidor a partir do papel — nunca por
 // parâmetro do cliente, senão um vendedor poderia pedir os dados da equipe.
 app.get("/api/visitas", async (req, res) => {
@@ -2090,14 +2127,39 @@ app.post("/api/calendario/eventos", async (req, res) => {
 app.post("/api/visitas/exportar-planilha", async (req, res) => {
   if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
   const tenant = req.tenant;
+  const period = String(req.body?.period || "");
+  const vendedorId = req.body?.vendedorId || null;
   try {
     const accessToken = await obterConexaoGoogle(tenant.empresa.id);
     if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google na aba Calendário primeiro." });
-    const [visitas, vendedores] = await Promise.all([
+    const [todas, vendedores] = await Promise.all([
       repo.visitasRepo.listForEmpresa(tenant.empresa.id),
       repo.usuariosRepo.listVendedores(tenant.empresa.id),
     ]);
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let desde = null;
+    if (period === "7d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 6); }
+    else if (period === "30d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 29); }
+    else if (period === "mes") desde = new Date(now.getFullYear(), now.getMonth(), 1);
+    else if (period === "hoje") desde = dayStart;
+    const visitas = todas.filter((v) => (!desde || v.dataHora >= desde.getTime()) && (!vendedorId || v.vendedorId === vendedorId));
     const nomesPorId = new Map(vendedores.map((v) => [v.id, v.name || v.username]));
+
+    // Resumo por vendedor primeiro (visão de relatório), depois o detalhe linha a linha.
+    const porVendedor = new Map();
+    for (const v of visitas) {
+      const nome = nomesPorId.get(v.vendedorId) || "Você";
+      const alvo = porVendedor.get(nome) || { visitas: 0, concluidas: 0, potencial: 0, followups: 0 };
+      alvo.visitas++;
+      if (v.finishedAt) alvo.concluidas++;
+      if (v.valorPotencial != null && ["Interessado", "Proposta solicitada", "Em negociação"].includes(v.resultado)) alvo.potencial += Number(v.valorPotencial) || 0;
+      if (v.resultado === "Retornar depois") alvo.followups++;
+      porVendedor.set(nome, alvo);
+    }
+    const resumoLinhas = [["Vendedor", "Visitas", "Concluídas", "Potencial (R$)", "Follow-ups"]];
+    for (const [nome, r] of porVendedor) resumoLinhas.push([nome, r.visitas, r.concluidas, r.potencial.toFixed(2), r.followups]);
+
     const linhas = [["Cliente", "Vendedor", "Contato", "Telefone", "Motivo", "Resultado", "Observação", "Próxima ação", "Próxima visita", "Data da visita"]];
     visitas.forEach((v) => {
       linhas.push([
@@ -2106,7 +2168,9 @@ app.post("/api/visitas/exportar-planilha", async (req, res) => {
         new Date(v.dataHora).toLocaleString("pt-BR"),
       ]);
     });
-    const { url } = await googleClient.criarPlanilha(accessToken, `ZapFlow - Visitas - ${new Date().toLocaleDateString("pt-BR")}`, linhas);
+    const tituloPeriodo = { hoje: "Hoje", "7d": "7 dias", "30d": "30 dias", mes: "Este mês" }[period] || "Tudo";
+    const todasLinhas = [...resumoLinhas, [], ...linhas];
+    const { url } = await googleClient.criarPlanilha(accessToken, `ZapFlow - Visitas (${tituloPeriodo}) - ${new Date().toLocaleDateString("pt-BR")}`, todasLinhas);
     res.json({ ok: true, url });
   } catch (err) {
     console.error("[google] exportar visitas:", err.response?.data?.error || err.message);

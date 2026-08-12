@@ -1313,9 +1313,64 @@ async function loadAuditoria() {
   }
 }
 
+let equipePeriod = "hoje";
 async function loadVisitasView() {
-  await loadVisitasOwner();
+  await Promise.all([loadVisitasOwner(), loadEquipeResumo()]);
 }
+
+/** Item 5.10/5.11 — resumo + desempenho por vendedor + gráfico simples de barras. */
+async function loadEquipeResumo() {
+  const listWrap = $("#equipeVendedoresList");
+  const chartWrap = $("#equipeChart");
+  try {
+    const res = await fetch(`/api/visitas/equipe?period=${equipePeriod}`);
+    const data = await res.json();
+    if (!res.ok) { listWrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar o desempenho da equipe.")}</p>`; chartWrap.innerHTML = ""; return; }
+    const t = data.total;
+    $("#eqVisitas").textContent = t.visitas;
+    $("#eqConcluidas").textContent = t.concluidas;
+    $("#eqPendentes").textContent = t.pendentes;
+    $("#eqPotencial").textContent = fmtMoney(t.potencial);
+    $("#eqFollowups").textContent = t.followups;
+
+    const vendedores = data.vendedores || [];
+    if (!vendedores.length) {
+      listWrap.innerHTML = "<p class='hint'>Nenhum vendedor cadastrado ainda.</p>";
+      chartWrap.innerHTML = "";
+    } else {
+      listWrap.innerHTML = vendedores.map((v) => `
+        <div class="dash-card" style="cursor:default;">
+          <div class="dash-card-head"><b>${escapeHtml(v.vendedorNome)}</b></div>
+          <div class="dash-card-body">
+            <span class="resp-sub">${v.visitas} visita(s) · ${v.concluidas} concluída(s) · ${v.pendentes} pendente(s) · ${fmtMoney(v.potencial)} em potencial · ${v.followups} follow-up(s)</span>
+          </div>
+        </div>`).join("");
+      const max = Math.max(1, ...vendedores.map((v) => v.visitas));
+      chartWrap.innerHTML = vendedores.map((v) => `
+        <div class="week-col">
+          <div class="week-bar" style="height:${Math.round((v.visitas / max) * 100)}%" title="${v.visitas} visita(s)"></div>
+          <span class="week-label">${escapeHtml((v.vendedorNome || "").split(" ")[0])}</span>
+        </div>`).join("");
+    }
+
+    // Filtro de vendedor da lista de baixo (Hoje/Follow-up/Histórico)
+    const sel = $("#visitasFiltroVendedor");
+    const atual = sel.value;
+    sel.innerHTML = `<option value="">Todos os vendedores</option>` +
+      vendedores.map((v) => `<option value="${v.vendedorId}">${escapeHtml(v.vendedorNome)}</option>`).join("");
+    sel.value = atual;
+  } catch {
+    listWrap.innerHTML = "<p class='hint'>Não foi possível carregar o desempenho da equipe. Verifique sua conexão e tente novamente.</p>";
+    chartWrap.innerHTML = "";
+  }
+}
+$$(".period-pill", $("#equipePeriodPills")).forEach((p) => p.addEventListener("click", () => {
+  $$(".period-pill", $("#equipePeriodPills")).forEach((x) => x.classList.remove("active"));
+  p.classList.add("active");
+  equipePeriod = p.dataset.period;
+  loadEquipeResumo();
+}));
+$("#visitasFiltroVendedor").addEventListener("change", loadVisitasOwner);
 
 async function loadVendedores() {
   const wrap = $("#vendedoresList");
@@ -1392,9 +1447,13 @@ $("#btnAddVendedor").addEventListener("click", async (e) => {
 $("#btnExportVisitas").addEventListener("click", async (e) => {
   const status = $("#exportVisitasStatus");
   status.textContent = "";
+  const vendedorId = $("#visitasFiltroVendedor").value;
   try {
     const data = await withLoading(e.currentTarget, "Exportando...", async () => {
-      const res = await fetch("/api/visitas/exportar-planilha", { method: "POST" });
+      const res = await fetch("/api/visitas/exportar-planilha", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period: equipePeriod, vendedorId: vendedorId || undefined }),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Não foi possível exportar a planilha de visitas. Tente novamente.");
       return d;
@@ -1421,7 +1480,8 @@ async function loadVisitasOwner() {
     const res = await fetch(`/api/visitas?tab=${visitasOwnerTab}`);
     const data = await res.json();
     if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar as visitas.")}</p>`; return; }
-    const list = data.visitas || [];
+    const vendedorFiltro = $("#visitasFiltroVendedor")?.value || "";
+    const list = (data.visitas || []).filter((v) => !vendedorFiltro || v.vendedorId === vendedorFiltro);
     if (!list.length) {
       const vazio = {
         hoje: "Nenhuma visita hoje ainda.",

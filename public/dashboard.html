@@ -411,11 +411,48 @@
     <!-- Visitas em Campo -->
     <section class="dash-view hidden" data-view="visitas">
       <h2 class="dash-title">Visitas em Campo</h2>
-      <p class="hint">Visitas registradas pela sua equipe pelo celular.</p>
+      <p class="hint">Acompanhe a operação de campo da sua equipe.</p>
 
-      <div class="dash-card-head">
-        <h3 class="dash-subtitle" style="margin:0;">Visitas da equipe</h3>
-        <button class="btn secondary sm" id="btnExportVisitas" type="button">Exportar para planilha</button>
+      <div class="period-pills" id="equipePeriodPills" role="tablist" aria-label="Período">
+        <button class="period-pill active" data-period="hoje">Hoje</button>
+        <button class="period-pill" data-period="7d">7 dias</button>
+        <button class="period-pill" data-period="30d">30 dias</button>
+        <button class="period-pill" data-period="mes">Este mês</button>
+      </div>
+
+      <div class="kpi-grid" id="equipeKpiGrid" style="margin-top:14px;">
+        <div class="kpi" style="cursor:default;">
+          <span class="kpi-label">Visitas</span>
+          <span class="kpi-num" id="eqVisitas">0</span>
+        </div>
+        <div class="kpi" style="cursor:default;">
+          <span class="kpi-label">Concluídas</span>
+          <span class="kpi-num" id="eqConcluidas">0</span>
+        </div>
+        <div class="kpi" style="cursor:default;">
+          <span class="kpi-label">Pendentes</span>
+          <span class="kpi-num" id="eqPendentes">0</span>
+        </div>
+        <div class="kpi" style="cursor:default;">
+          <span class="kpi-label">Potencial</span>
+          <span class="kpi-num" id="eqPotencial">R$ 0</span>
+        </div>
+        <div class="kpi" style="cursor:default;">
+          <span class="kpi-label">Follow-ups</span>
+          <span class="kpi-num" id="eqFollowups">0</span>
+        </div>
+      </div>
+
+      <h3 class="dash-subtitle" style="margin-top:22px;">Desempenho por vendedor</h3>
+      <div id="equipeVendedoresList" class="dash-list"></div>
+      <div id="equipeChart" class="week-chart" style="margin-top:10px;"></div>
+
+      <div class="dash-card-head" style="margin-top:26px;">
+        <h3 class="dash-subtitle" style="margin:0;">Visitas</h3>
+        <div class="row" style="gap:8px; margin:0;">
+          <select id="visitasFiltroVendedor" style="min-height:38px;"><option value="">Todos os vendedores</option></select>
+          <button class="btn secondary sm" id="btnExportVisitas" type="button">Exportar relatório</button>
+        </div>
       </div>
       <span class="manual-error" id="exportVisitasStatus"></span>
       <div class="tabs" id="visitasTabsOwner">

@@ -648,6 +648,17 @@ export const visitasRepo = {
       oportunidadesValor: abertas.reduce((a, r) => a + (Number(r.valor_potencial) || 0), 0),
     };
   },
+  /** Linhas cruas de visitas num período, pro dono agrupar por vendedor (Item 5.10). */
+  async listarParaResumoEquipe(empresaId, { desde, ate } = {}) {
+    requireEmpresaId(empresaId, "visitas.listarParaResumoEquipe");
+    let q = supabase.from("visitas").select("vendedor_id,resultado,valor_potencial,finished_at,data_hora")
+      .eq("empresa_id", empresaId);
+    if (desde) q = q.gte("data_hora", desde);
+    if (ate) q = q.lte("data_hora", ate);
+    const { data, error } = await q;
+    assertOk(error, "visitas.listarParaResumoEquipe");
+    return data || [];
+  },
 };
 
 // ----------------------------------------------------------------------------
