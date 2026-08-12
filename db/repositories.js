@@ -440,6 +440,26 @@ export const iaConsumoRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// auditoria (Item 8.12 — log simples de quem fez o quê; só leitura pro dono)
+// ----------------------------------------------------------------------------
+export const auditoriaRepo = {
+  async registrar(empresaId, { atorNome, atorPapel, acao }) {
+    requireEmpresaId(empresaId, "auditoria.registrar");
+    const { error } = await supabase.from("auditoria").insert({
+      empresa_id: empresaId, ator_nome: atorNome || "Alguém", ator_papel: atorPapel || "owner", acao,
+    });
+    if (error) console.error("[Supabase] auditoria:", error.message); // log auxiliar, nunca derruba a ação principal
+  },
+  async listar(empresaId, limite = 20) {
+    requireEmpresaId(empresaId, "auditoria.listar");
+    const { data, error } = await supabase.from("auditoria").select("ator_nome,ator_papel,acao,created_at")
+      .eq("empresa_id", empresaId).order("created_at", { ascending: false }).limit(limite);
+    assertOk(error, "auditoria.listar");
+    return (data || []).map((r) => ({ atorNome: r.ator_nome, atorPapel: r.ator_papel, acao: r.acao, criadoEm: r.created_at }));
+  },
+};
+
+// ----------------------------------------------------------------------------
 // respostas (metrics.responses)
 // ----------------------------------------------------------------------------
 export const respostasRepo = {

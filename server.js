@@ -105,9 +105,9 @@ const SESSION_SECRET_BUF = crypto.createHash("sha256")
   .update(process.env.SESSION_SECRET || "dev-only-insecure-secret")
   .digest();
 
-function makeSessionToken({ uid, empresaId, role }) {
+function makeSessionToken({ uid, empresaId, role, name }) {
   const exp = Date.now() + SESSION_HOURS * 3600 * 1000;
-  const payload = JSON.stringify({ uid, empresaId, role, exp });
+  const payload = JSON.stringify({ uid, empresaId, role, name, exp });
   const sig = crypto.createHmac("sha256", SESSION_SECRET_BUF).update(payload).digest("hex");
   return Buffer.from(payload + "|" + sig).toString("base64url");
 }
@@ -123,7 +123,7 @@ function validSessionToken(token) {
     if (sig !== expect) return null;
     const payload = JSON.parse(payloadStr);
     if (!payload.exp || Number(payload.exp) <= Date.now()) return null;
-    return { uid: payload.uid, empresaId: payload.empresaId, role: payload.role };
+    return { uid: payload.uid, empresaId: payload.empresaId, role: payload.role, name: payload.name || "" };
   } catch {
     return null;
   }
@@ -266,7 +266,7 @@ app.post("/api/login", async (req, res) => {
     if (!match) return res.status(401).json({ ok: false, error: "Usuário ou senha incorretos." });
     const empresa = await repo.empresasRepo.getById(found.empresaId);
     if (!empresa || !empresa.active) return res.status(401).json({ ok: false, error: "Empresa inativa. Fale com o suporte." });
-    res.cookie("zapflow_session", makeSessionToken({ uid: found.id, empresaId: empresa.id, role: found.role }), {
+    res.cookie("zapflow_session", makeSessionToken({ uid: found.id, empresaId: empresa.id, role: found.role, name: found.name }), {
       httpOnly: true, sameSite: "lax", maxAge: SESSION_HOURS * 3600 * 1000,
     });
     return res.json({ ok: true, role: found.role });
@@ -1460,10 +1460,17 @@ app.post("/api/clients/stage", async (req, res) => {
   if (!CRM_STAGES.includes(stage)) return res.status(400).json({ error: "Etapa inválida." });
   const c = upsertClient(tenant, phone);
   if (!c) return res.status(400).json({ error: "Não foi possível registrar o cliente." });
+  const etapaAnterior = c.stage;
   c.stage = stage;
   c.stageManual = true;
   c.updatedAt = Date.now();
   await saveClients(tenant, c);
+  if (etapaAnterior !== stage && USE_SUPABASE) {
+    repo.auditoriaRepo.registrar(tenant.empresa.id, {
+      atorNome: req.session.name, atorPapel: req.session.role,
+      acao: `Moveu ${bestName(tenant, c.phone, c.name).name} de ${etapaAnterior} para ${stage}`,
+    }).catch(() => {});
+  }
   res.json({ ok: true, client: { ...c, displayName: bestName(tenant, c.phone, c.name).name, inAgenda: inAgenda(tenant, c.phone) } });
 });
 
@@ -1898,6 +1905,19 @@ app.post("/api/visitas/:id/followup", async (req, res) => {
   }
 });
 
+// Atividade recente (Item 8.12 — auditoria básica, só leitura, só o dono)
+app.get("/api/auditoria", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  if (!USE_SUPABASE) return res.json({ eventos: [] });
+  try {
+    const eventos = await repo.auditoriaRepo.listar(req.tenant.empresa.id, 20);
+    res.json({ eventos });
+  } catch (err) {
+    console.error("[auditoria] listar:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar a atividade recente." });
+  }
+});
+
 // --- Gestão de vendedores (só o dono) ---
 app.get("/api/visitas/vendedores", async (req, res) => {
   if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
@@ -1938,6 +1958,9 @@ app.post("/api/visitas/vendedores", async (req, res) => {
       }
     }
     if (!vendedor) return res.status(500).json({ error: "Não foi possível gerar um usuário disponível. Tente novamente." });
+    repo.auditoriaRepo.registrar(tenant.empresa.id, {
+      atorNome: req.session.name, atorPapel: req.session.role, acao: `Cadastrou o vendedor ${name}`,
+    }).catch(() => {});
     res.json({ ok: true, vendedor, tempPassword });
   } catch (err) {
     console.error("[visitas] createVendedor:", err.message);
@@ -1948,7 +1971,14 @@ app.post("/api/visitas/vendedores", async (req, res) => {
 app.delete("/api/visitas/vendedores/:id", async (req, res) => {
   if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
   try {
-    await repo.usuariosRepo.deactivate(req.tenant.empresa.id, req.params.id);
+    const tenant = req.tenant;
+    const vendedores = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
+    const alvo = vendedores.find((v) => v.id === req.params.id);
+    await repo.usuariosRepo.deactivate(tenant.empresa.id, req.params.id);
+    repo.auditoriaRepo.registrar(tenant.empresa.id, {
+      atorNome: req.session.name, atorPapel: req.session.role,
+      acao: `Desativou o vendedor ${alvo ? (alvo.name || alvo.username) : req.params.id}`,
+    }).catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     console.error("[visitas] deactivateVendedor:", err.message);

@@ -1,6 +1,22 @@
 const $ = (s, c = document) => c.querySelector(s);
 const $$ = (s, c = document) => Array.from(c.querySelectorAll(s));
 
+// Sessão expirada: qualquer chamada à API que volte 401 manda pro login com um aviso,
+// em vez de deixar a tela travada mostrando "Erro de conexão." sem explicar o motivo.
+(function interceptarSessaoExpirada() {
+  const _fetch = window.fetch;
+  window.fetch = async (...args) => {
+    const res = await _fetch(...args);
+    const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+    if (res.status === 401 && !url.includes("/api/login")) {
+      sessionStorage.setItem("zapflow_session_expired", "1");
+      sessionStorage.setItem("zapflow_return_to", location.pathname + location.search);
+      location.href = "/login";
+    }
+    return res;
+  };
+})();
+
 // PWA: busca atualização do app e recarrega sozinho quando o SW novo assume
 if ("serviceWorker" in navigator) {
   let refreshing = false;
@@ -131,6 +147,10 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
   if (v && VIEW_NAMES[v]) setTimeout(() => activateView(v), 0);
 })();
 
+// Faixa global de "WhatsApp desconectado" -- roda em toda tela, não só no Início.
+checkWaStatus();
+setInterval(checkWaStatus, 60000);
+
 function loadView(view) {
   if (view === "overview") loadOverview();
   else if (view === "clients") loadClients();
@@ -195,12 +215,12 @@ function melhorDiaFromSerie(serie) {
 }
 
 function setWa(state, text) {
-  const el = $("#waStatus"); if (!el) return;
-  el.querySelector(".wa-dot").className = "wa-dot " + state;
-  el.querySelector(".wa-text").textContent = text;
+  const el = $("#waStatus");
+  if (el) { el.querySelector(".wa-dot").className = "wa-dot " + state; el.querySelector(".wa-text").textContent = text; }
+  const banner = $("#waBanner");
+  if (banner) banner.classList.toggle("hidden", state !== "off");
 }
 async function checkWaStatus() {
-  if (!$("#waStatus")) return null;
   setWa("checking", "Verificando conexão");
   const creds = {
     instanceId: localStorage.getItem("frota_instanceId") || "",
@@ -1268,6 +1288,29 @@ let visitasOwnerTab = "hoje";
 
 async function loadVendedoresView() {
   await loadVendedores();
+  loadAuditoria();
+}
+
+async function loadAuditoria() {
+  const wrap = $("#auditoriaList");
+  if (!wrap) return;
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const res = await fetch("/api/auditoria");
+    const data = await res.json();
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar a atividade recente.")}</p>`; return; }
+    const eventos = data.eventos || [];
+    if (!eventos.length) { wrap.innerHTML = "<p class='hint'>Nenhuma atividade registrada ainda.</p>"; return; }
+    wrap.innerHTML = eventos.map((e) => `
+      <div class="dash-card" style="cursor:default;">
+        <div class="dash-card-body">
+          <span>${escapeHtml(e.acao)}</span>
+          <span class="resp-sub">${escapeHtml(e.atorNome || "Alguém")} · ${fmtDate(e.criadoEm)}</span>
+        </div>
+      </div>`).join("");
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar a atividade recente. Verifique sua conexão e tente novamente.</p>";
+  }
 }
 
 async function loadVisitasView() {
@@ -1637,15 +1680,18 @@ function iaAddBubble(role, texto) {
 
 async function iaEnviarMensagem() {
   const input = $("#iaInput");
+  const sendBtn = $("#iaSend");
   const mensagem = input.value.trim();
   if (!mensagem) return;
   iaAddBubble("user", mensagem);
   input.value = "";
+  input.disabled = true;
+  sendBtn.disabled = true;
   $("#iaRascunho").classList.add("hidden");
   const pensando = document.createElement("div");
   pensando.className = "bubble in";
   pensando.id = "iaPensando";
-  pensando.innerHTML = `<div class="bubble-text">Pensando...</div>`;
+  pensando.innerHTML = `<div class="bubble-text">Zappy está pensando...</div>`;
   $("#iaMessages").appendChild(pensando);
   $("#iaMessages").scrollTop = $("#iaMessages").scrollHeight;
   try {
@@ -1655,7 +1701,7 @@ async function iaEnviarMensagem() {
     });
     const data = await res.json();
     document.getElementById("iaPensando")?.remove();
-    if (!res.ok) { iaAddBubble("assistant", data.error || "Não consegui responder agora."); return; }
+    if (!res.ok) { iaAddBubble("assistant", data.error || "Não consegui responder agora. Tente novamente em alguns instantes."); return; }
     iaHistorico.push({ role: "user", content: mensagem }, { role: "assistant", content: data.resposta });
     iaAddBubble("assistant", data.resposta);
     if (data.rascunhoCampanha) {
@@ -1676,6 +1722,10 @@ async function iaEnviarMensagem() {
   } catch {
     document.getElementById("iaPensando")?.remove();
     iaAddBubble("assistant", "Não consegui processar sua mensagem agora. Tente novamente em alguns instantes.");
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
   }
 }
 $("#iaSend").addEventListener("click", iaEnviarMensagem);

@@ -70,6 +70,12 @@
   </header>
 
   <main class="container">
+    <!-- Faixa global de WhatsApp desconectado — visível em qualquer tela, some quando conectado -->
+    <div class="wa-banner hidden" id="waBanner">
+      <span><i data-icon="wifioff" data-size="18"></i> WhatsApp desconectado — reconecte para continuar enviando e recebendo mensagens.</span>
+      <a class="btn primary sm" href="/">Reconectar</a>
+    </div>
+
     <!-- Cabeçalho persistente (desktop) — some quando não está no Início, que já tem o próprio cabeçalho.
          Sem título aqui pra não duplicar o <h2> de cada tela; só o CTA global. -->
     <div class="desk-header hidden" id="deskHeader">
@@ -397,6 +403,9 @@
         </div>
         <span class="manual-error" id="vendedorStatus"></span>
       </div>
+
+      <h3 class="dash-subtitle" style="margin-top:24px;">Atividade recente</h3>
+      <div id="auditoriaList" class="dash-list"></div>
     </section>
 
     <!-- Visitas em Campo -->

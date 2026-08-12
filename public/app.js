@@ -9,6 +9,23 @@ const MAX_MESSAGES = 5;
 
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+
+// Sessão expirada: qualquer chamada à API que volte 401 manda pro login com um aviso,
+// em vez de deixar a tela travada mostrando "Erro de conexão." sem explicar o motivo.
+(function interceptarSessaoExpirada() {
+  const _fetch = window.fetch;
+  window.fetch = async (...args) => {
+    const res = await _fetch(...args);
+    const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+    if (res.status === 401 && !url.includes("/api/login")) {
+      sessionStorage.setItem("zapflow_session_expired", "1");
+      sessionStorage.setItem("zapflow_return_to", location.pathname + location.search);
+      location.href = "/login";
+    }
+    return res;
+  };
+})();
+
 /** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
 async function withLoading(btn, loadingText, fn) {
   const original = btn.textContent;

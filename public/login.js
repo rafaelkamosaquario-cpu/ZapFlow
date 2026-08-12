@@ -2,6 +2,12 @@ const form = document.getElementById("loginForm");
 const errorEl = document.getElementById("loginError");
 const btn = document.getElementById("loginBtn");
 
+// Se veio de um redirect por sessão expirada, avisa antes de qualquer tentativa de login.
+if (sessionStorage.getItem("zapflow_session_expired")) {
+  sessionStorage.removeItem("zapflow_session_expired");
+  errorEl.textContent = "Sua sessão expirou. Entre novamente para continuar.";
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorEl.textContent = "";
@@ -18,7 +24,9 @@ form.addEventListener("submit", async (e) => {
     });
     const data = await res.json();
     if (data.ok) {
-      window.location.href = data.role === "vendedor" ? "/vendedor.html" : "/";
+      const voltarPara = sessionStorage.getItem("zapflow_return_to");
+      sessionStorage.removeItem("zapflow_return_to");
+      window.location.href = voltarPara || (data.role === "vendedor" ? "/vendedor.html" : "/");
     } else {
       errorEl.textContent = data.error || "Não foi possível entrar.";
     }
