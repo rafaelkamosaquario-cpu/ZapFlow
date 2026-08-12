@@ -601,18 +601,21 @@ function clientCard(c) {
   return div;
 }
 
+let c360Timeline = [];
+let c360Filtro = "";
+
 function openClient(c) {
   crmCurrent = c;
   $("#clientTitle").textContent = displayNameOf(c) === "Contato não identificado" ? "Contato não identificado" : (c.displayName || c.name);
   $("#clientPhone").textContent = fmtPhone(c.phone) + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.nameSource] ? `  · origem: ${SOURCE_LABEL[c.nameSource]}` : "");
   $("#clientName").value = c.name || "";
-  $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === c.stage ? "selected" : ""}>${s}</option>`).join("");
   $("#clientTags").value = (c.tags || []).join(", ");
-  $("#clientNotes").value = c.notes || "";
   $("#clientMeta").textContent =
     (c.lastSentAt ? `Último envio: ${fmtDate(c.lastSentAt)}. ` : "") +
     (c.lastReplyAt ? `Última resposta: ${fmtDate(c.lastReplyAt)}.` : "");
   $("#clientStatus").textContent = "";
+  $("#clientWhatsapp").href = `https://wa.me/${somenteDigitos(c.phone)}`;
+  $("#iaClienteResultado").textContent = "";
   // Botão "Salvar na agenda" (só quando ainda não está na agenda)
   const agBtn = $("#btnClientToAgenda");
   agBtn.classList.toggle("hidden", !!c.inAgenda);
@@ -620,20 +623,144 @@ function openClient(c) {
   // Ação rápida "Mover para" (atualiza etapa, funil e card imediatamente)
   renderStageMover($("#clientStageMover"), c.phone, c.stage, (stage) => {
     c.stage = stage;
-    $("#clientStage").innerHTML = crmMeta.stages.map((s) => `<option ${s === stage ? "selected" : ""}>${s}</option>`).join("");
     loadCrmMeta();
     loadClients();
   });
   openModal("clientModal");
+  c360Filtro = "";
+  $$("#timelineFiltros button").forEach((b) => b.classList.toggle("active", !b.dataset.tipo));
+  loadClienteDetalhe(c);
+}
+
+const somenteDigitos = (s) => String(s || "").replace(/\D/g, "");
+
+async function loadClienteDetalhe(c) {
+  $("#c360Oportunidade").textContent = "—";
+  $("#c360UltimaConversa").textContent = "—";
+  $("#c360UltimaVisita").textContent = "—";
+  $("#c360Campanhas").textContent = "—";
+  $("#c360ProximaAcao").classList.add("hidden");
+  $("#clientTimeline").innerHTML = "<p class='hint'>Carregando...</p>";
+  $("#clientNotasList").innerHTML = "";
+  try {
+    const [detalheRes, vendedoresRes] = await Promise.all([
+      fetch(`/api/clients/${c.id}/detalhe`),
+      fetch("/api/visitas/vendedores").catch(() => null),
+    ]);
+    const data = await detalheRes.json();
+    if (!detalheRes.ok) { $("#clientTimeline").innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar o histórico.")}</p>`; return; }
+
+    const r = data.resumo;
+    $("#c360Oportunidade").textContent = r.oportunidadeValor != null ? fmtMoney(r.oportunidadeValor) : "—";
+    $("#c360UltimaConversa").textContent = r.ultimaConversaEm ? fmtDate(r.ultimaConversaEm) : "—";
+    $("#c360UltimaVisita").textContent = r.ultimaVisitaEm ? fmtDate(r.ultimaVisitaEm) : "—";
+    $("#c360Campanhas").textContent = r.campanhasCount;
+    if (r.proximaAcao) {
+      $("#c360ProximaAcao").classList.remove("hidden");
+      $("#c360ProximaAcaoTexto").textContent = r.proximaAcao.texto;
+      $("#c360ProximaAcaoData").textContent = "📅 " + fmtDataCurta(r.proximaAcao.data);
+    }
+
+    // Vendedor responsável
+    const sel = $("#clientVendedorResponsavel");
+    let vendedores = [];
+    if (vendedoresRes && vendedoresRes.ok) vendedores = (await vendedoresRes.json()).vendedores || [];
+    sel.innerHTML = `<option value="">Sem responsável</option>` + vendedores.map((v) => `<option value="${v.id}">${escapeHtml(v.name || v.username)}</option>`).join("");
+    sel.value = c.vendedorResponsavelId || "";
+    sel.onchange = async () => {
+      await fetch(`/api/clients/${c.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendedorResponsavelId: sel.value || null }),
+      });
+      c.vendedorResponsavelId = sel.value || null;
+    };
+
+    c360Timeline = data.timeline || [];
+    renderTimeline();
+    renderNotas(data.notas || []);
+  } catch {
+    $("#clientTimeline").innerHTML = "<p class='hint'>Não foi possível carregar o histórico. Verifique sua conexão e tente novamente.</p>";
+  }
+}
+
+const TIMELINE_ICONE = { conversa: "💬", campanha: "📣", visita: "📍", nota: "📝" };
+function renderTimeline() {
+  const wrap = $("#clientTimeline");
+  const lista = c360Filtro ? c360Timeline.filter((e) => e.tipo === c360Filtro) : c360Timeline;
+  if (!lista.length) { wrap.innerHTML = "<p class='hint'>Nada por aqui ainda.</p>"; return; }
+  wrap.innerHTML = lista.map((e) => `
+    <div class="timeline-item tipo-${e.tipo}">
+      <div class="timeline-body">
+        <div class="timeline-when">${TIMELINE_ICONE[e.tipo] || ""} ${fmtDate(e.ts)}</div>
+        <div class="timeline-text">${escapeHtml(e.texto || "")}${e.tipo === "campanha" ? (e.respondida ? " · respondida" : e.entregue ? " · entregue" : " · falhou") : ""}${e.tipo === "nota" && e.autor ? ` — <i>${escapeHtml(e.autor)}</i>` : ""}</div>
+      </div>
+    </div>`).join("");
+}
+$$("#timelineFiltros button").forEach((b) => b.addEventListener("click", () => {
+  $$("#timelineFiltros button").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  c360Filtro = b.dataset.tipo;
+  renderTimeline();
+}));
+
+function renderNotas(notas) {
+  const wrap = $("#clientNotasList");
+  if (!notas.length) { wrap.innerHTML = "<p class='hint'>Nenhuma nota ainda.</p>"; return; }
+  wrap.innerHTML = notas.map((n) => `
+    <div class="nota-item">
+      <div class="nota-meta">${escapeHtml(n.autorNome)} · ${fmtDate(n.criadoEm)}</div>
+      <div>${escapeHtml(n.texto)}</div>
+    </div>`).join("");
+}
+$("#btnAddNota").addEventListener("click", async (e) => {
+  if (!crmCurrent) return;
+  const input = $("#novaNotaTexto");
+  const texto = input.value.trim();
+  if (!texto) return;
+  try {
+    const data = await withLoading(e.currentTarget, "Adicionando...", async () => {
+      const res = await fetch(`/api/clients/${crmCurrent.id}/notas`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar a nota.");
+      return d;
+    });
+    input.value = "";
+    c360Timeline.unshift({ tipo: "nota", ts: new Date(data.nota.criadoEm).getTime(), texto: data.nota.texto, autor: data.nota.autorNome });
+    renderTimeline();
+    loadClienteDetalhe(crmCurrent); // recarrega a lista de notas (mais simples que atualizar as duas em memória)
+  } catch (err) {
+    alert(err.message || "Não foi possível salvar a nota.");
+  }
+});
+
+$("#btnIaResumirCliente").addEventListener("click", (e) => iaClienteAcao(e.currentTarget, "resumo"));
+$("#btnIaSugerirAcao").addEventListener("click", (e) => iaClienteAcao(e.currentTarget, "sugestao"));
+async function iaClienteAcao(btn, tipo) {
+  if (!crmCurrent) return;
+  const out = $("#iaClienteResultado");
+  out.textContent = "";
+  try {
+    const data = await withLoading(btn, "Pensando...", async () => {
+      const res = await fetch(`/api/clients/${crmCurrent.id}/ia`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipo }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível consultar a IA agora.");
+      return d;
+    });
+    out.textContent = data.resposta;
+  } catch (err) {
+    out.textContent = err.message || "Não foi possível consultar a IA agora.";
+  }
 }
 
 $("#btnSaveClient").addEventListener("click", async (e) => {
   if (!crmCurrent) return;
   const body = {
     name: $("#clientName").value.trim(),
-    stage: $("#clientStage").value,
     tags: $("#clientTags").value.split(",").map((t) => t.trim()).filter(Boolean),
-    notes: $("#clientNotes").value.trim(),
   };
   try {
     await withLoading(e.currentTarget, "Salvando...", async () => {
@@ -642,7 +769,8 @@ $("#btnSaveClient").addEventListener("click", async (e) => {
       });
       if (!res.ok) throw new Error();
     });
-    closeModal("clientModal");
+    $("#clientStatus").textContent = "Alterações salvas!";
+    $("#clientStatus").className = "status ok";
     loadClients();
   } catch {
     $("#clientStatus").textContent = "Não foi possível salvar as alterações. Tente novamente.";

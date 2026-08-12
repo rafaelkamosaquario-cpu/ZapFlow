@@ -1428,17 +1428,145 @@ app.get("/api/clients/meta", (req, res) => {
   res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: tenant.clients.length });
 });
 
+// Cliente 360° (Item 6): agrega conversas, campanhas, visitas e notas num só lugar.
+// Visitas ligam por telefone (best-effort -- não há client_id na tabela de visitas
+// ainda, então uma visita sem contato_telefone preenchido nunca aparece aqui).
+// Compartilhado entre GET /detalhe e POST /ia (o botão de IA usa os mesmos dados agregados).
+async function agregarClienteDetalhe(tenant, c) {
+  const key = c.key || phoneKey(c.phone);
+
+  const mensagens = tenant.conversas.filter((m) => m.key === key).sort((a, b) => b.ts - a.ts);
+
+  const campanhas = tenant.jobs
+    .map((j) => ({ job: j, log: (j.logs || []).find((l) => phoneKey(l.phone) === key) }))
+    .filter((x) => x.log)
+    .map(({ job, log }) => ({
+      id: job.id, nome: campaignLabel(job.message, job.hadImage || job.imageCount),
+      enviadaEm: job.finishedAt || job.scheduledAt || job.createdAt,
+      entregue: !!log.ok,
+      respondida: mensagens.some((m) => m.dir === "in" && m.ts >= (job.startedAt || job.createdAt || 0)),
+    }))
+    .sort((a, b) => (b.enviadaEm || 0) - (a.enviadaEm || 0));
+
+  const todasVisitas = USE_SUPABASE ? await repo.visitasRepo.listForEmpresa(tenant.empresa.id) : [];
+  const visitas = todasVisitas
+    .filter((v) => v.contatoTelefone && phoneKey(v.contatoTelefone) === key)
+    .sort((a, b) => b.dataHora - a.dataHora);
+
+  const notas = USE_SUPABASE ? await repo.clienteNotasRepo.listar(tenant.empresa.id, c.id) : [];
+
+  let vendedorResponsavelNome = null;
+  if (c.vendedorResponsavelId && USE_SUPABASE) {
+    const vendedores = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
+    vendedorResponsavelNome = vendedores.find((v) => v.id === c.vendedorResponsavelId)?.name || null;
+  }
+
+  const timeline = [
+    ...mensagens.map((m) => ({ tipo: "conversa", ts: m.ts, texto: m.text, dir: m.dir })),
+    ...campanhas.map((cm) => ({ tipo: "campanha", ts: cm.enviadaEm, texto: cm.nome, entregue: cm.entregue, respondida: cm.respondida })),
+    ...visitas.map((v) => ({ tipo: "visita", ts: v.dataHora, texto: `Visita — ${v.resultado || "em andamento"}`, visitaId: v.id })),
+    ...notas.map((n) => ({ tipo: "nota", ts: new Date(n.criadoEm).getTime(), texto: n.texto, autor: n.autorNome })),
+  ].filter((e) => e.ts).sort((a, b) => b.ts - a.ts);
+
+  const ultimaVisita = visitas[0] || null;
+  const oportunidade = visitas.find((v) => v.valorPotencial != null && ["Interessado", "Proposta solicitada", "Em negociação"].includes(v.resultado));
+  const proximaAcaoVisita = visitas.find((v) => v.proximaVisitaData && v.resultado === "Retornar depois");
+  const identidade = bestName(tenant, c.phone, c.lastCampaignName || "");
+
+  return {
+    client: { ...c, displayName: identidade.name || c.name, nameSource: identidade.source, inAgenda: inAgenda(tenant, c.phone) },
+    vendedorResponsavelNome,
+    resumo: {
+      oportunidadeValor: oportunidade?.valorPotencial ?? null,
+      ultimaConversaEm: mensagens[0]?.ts || null,
+      ultimaVisitaEm: ultimaVisita?.dataHora || null,
+      campanhasCount: campanhas.length,
+      proximaAcao: proximaAcaoVisita ? { texto: proximaAcaoVisita.proximaAcao || "Retornar", data: proximaAcaoVisita.proximaVisitaData } : null,
+    },
+    notas,
+    timeline: timeline.slice(0, 200),
+  };
+}
+
+app.get("/api/clients/:id/detalhe", async (req, res) => {
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  try {
+    res.json(await agregarClienteDetalhe(tenant, c));
+  } catch (err) {
+    console.error("[clients] detalhe:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar o histórico do cliente." });
+  }
+});
+
+// Notas do cliente (Item 6.4) -- lista fica com autor e data, nunca sobrescreve silenciosamente.
+app.post("/api/clients/:id/notas", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Notas por cliente estão disponíveis apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  const texto = String(req.body?.texto || "").trim().slice(0, 1000);
+  if (!texto) return res.status(400).json({ error: "Escreva uma nota antes de salvar." });
+  try {
+    const nota = await repo.clienteNotasRepo.adicionar(tenant.empresa.id, c.id, {
+      autorNome: req.session.name || (req.session.role === "owner" ? "Dono" : "Vendedor"),
+      autorPapel: req.session.role, texto,
+    });
+    res.json({ ok: true, nota });
+  } catch (err) {
+    console.error("[clients] adicionar nota:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar a nota. Tente novamente." });
+  }
+});
+
+// IA do Cliente 360° (Item 6.7): resume o histórico ou sugere a próxima ação,
+// usando os mesmos dados agregados do /detalhe. Não é o chat com ferramentas
+// (Zappy já recebe tudo pronto no prompt) — só uma chamada direta à Responses API.
+app.post("/api/clients/:id/ia", async (req, res) => {
+  if (!openaiClient.openaiConfigured) {
+    return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
+  }
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  const tipo = req.body?.tipo === "sugestao" ? "sugestao" : "resumo";
+  try {
+    const detalhe = await agregarClienteDetalhe(tenant, c);
+    const linhasTimeline = detalhe.timeline.slice(0, 30).map((e) => `- [${e.tipo}] ${new Date(e.ts).toLocaleString("pt-BR")}: ${e.texto}`).join("\n") || "(sem histórico registrado)";
+    const contexto = `Cliente: ${detalhe.client.displayName || detalhe.client.name}\nEtapa do funil: ${c.stage}\nVendedor responsável: ${detalhe.vendedorResponsavelNome || "não definido"}\n\nHistórico recente (mais novo primeiro):\n${linhasTimeline}`;
+    const instrucao = tipo === "sugestao"
+      ? `${contexto}\n\nCom base nesse histórico, sugira em até 3 frases qual deve ser a próxima ação comercial com esse cliente. Seja específico e prático.`
+      : `${contexto}\n\nResuma em até 4 frases o histórico desse cliente para o vendedor entender rapidamente onde essa relação está.`;
+    const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
+    await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
+      modelo: openaiClient.MODELOS.padrao, acao: `cliente_${tipo}`,
+      tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+    });
+    res.json({ resposta: textoFinal });
+  } catch (err) {
+    console.error("[clients] ia:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível consultar a IA agora." });
+  }
+});
+
 app.patch("/api/clients/:id", async (req, res) => {
   const tenant = req.tenant;
   const c = tenant.clients.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
-  const { name, stage, tags, notes } = req.body || {};
+  const { name, stage, tags, notes, vendedorResponsavelId } = req.body || {};
   if (typeof name === "string") c.name = name.slice(0, 80);
   if (typeof stage === "string" && stage) { c.stage = stage.slice(0, 40); c.stageManual = true; }
   if (Array.isArray(tags)) c.tags = tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (typeof notes === "string") c.notes = notes.slice(0, 1000);
   c.updatedAt = Date.now();
   await saveClients(tenant, c);
+  if (vendedorResponsavelId !== undefined && USE_SUPABASE) {
+    c.vendedorResponsavelId = vendedorResponsavelId || null;
+    await repo.clientesRepo.definirResponsavel(tenant.empresa.id, c.id, c.vendedorResponsavelId);
+  }
   res.json({ ok: true, client: c });
 });
 
@@ -1965,7 +2093,8 @@ app.get("/api/auditoria", async (req, res) => {
 app.get("/api/visitas/vendedores", async (req, res) => {
   if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
   try {
-    const vendedores = await repo.usuariosRepo.listVendedores(req.tenant.empresa.id);
+    const vendedores = (await repo.usuariosRepo.listVendedores(req.tenant.empresa.id))
+      .map(({ passwordHash, ...v }) => v); // nunca manda o hash da senha pro navegador, mesmo do dono
     res.json({ vendedores, maxVendedores: req.tenant.empresa.maxVendedores });
   } catch (err) {
     console.error("[visitas] listVendedores:", err.message);

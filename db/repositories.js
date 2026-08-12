@@ -150,6 +150,7 @@ function clienteFromRow(r) {
     tags: Array.isArray(r.tags) ? r.tags : [], notes: r.notes || "",
     lastSentAt: r.last_sent_at || undefined, lastReplyAt: r.last_reply_at || undefined,
     lastCampaignName: r.last_campaign_name || undefined,
+    vendedorResponsavelId: r.vendedor_responsavel_id || null,
     createdAt: ms(r.created_at), updatedAt: ms(r.updated_at),
   };
 }
@@ -161,6 +162,12 @@ export const clientesRepo = {
     assertOk(error, "clientes.loadAll");
     return (data || []).map(clienteFromRow);
   },
+  async getById(empresaId, id) {
+    requireEmpresaId(empresaId, "clientes.getById");
+    const { data, error } = await supabase.from("clientes").select("*").eq("id", id).eq("empresa_id", empresaId).maybeSingle();
+    assertOk(error, "clientes.getById");
+    return data ? clienteFromRow(data) : null;
+  },
   async upsertOne(empresaId, c) {
     requireEmpresaId(empresaId, "clientes.upsertOne");
     const { error } = await supabase.from("clientes").upsert({
@@ -168,7 +175,8 @@ export const clientesRepo = {
       stage: c.stage || "Novo", stage_manual: !!c.stageManual,
       tags: c.tags || [], notes: c.notes || "",
       last_sent_at: c.lastSentAt || null, last_reply_at: c.lastReplyAt || null,
-      last_campaign_name: c.lastCampaignName || null, created_at: iso(c.createdAt),
+      last_campaign_name: c.lastCampaignName || null,
+      vendedor_responsavel_id: c.vendedorResponsavelId ?? undefined, created_at: iso(c.createdAt),
     }, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertOne");
   },
@@ -184,10 +192,38 @@ export const clientesRepo = {
     const { error } = await supabase.from("clientes").upsert(rows, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertMany");
   },
+  /** Só o vendedor responsável -- não passa pelo upsertOne pra não sobrescrever outros campos com valor default. */
+  async definirResponsavel(empresaId, id, vendedorId) {
+    requireEmpresaId(empresaId, "clientes.definirResponsavel");
+    const { error } = await supabase.from("clientes").update({ vendedor_responsavel_id: vendedorId || null })
+      .eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "clientes.definirResponsavel");
+  },
   async deleteById(empresaId, id) {
     requireEmpresaId(empresaId, "clientes.deleteById");
     const { error } = await supabase.from("clientes").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "clientes.deleteById");
+  },
+};
+
+// ----------------------------------------------------------------------------
+// cliente_notas (Item 6.4 — notas com autor e data, substitui o texto único)
+// ----------------------------------------------------------------------------
+export const clienteNotasRepo = {
+  async listar(empresaId, clienteId) {
+    requireEmpresaId(empresaId, "clienteNotas.listar");
+    const { data, error } = await supabase.from("cliente_notas").select("id,autor_nome,autor_papel,texto,created_at")
+      .eq("empresa_id", empresaId).eq("cliente_id", clienteId).order("created_at", { ascending: false });
+    assertOk(error, "clienteNotas.listar");
+    return (data || []).map((r) => ({ id: r.id, autorNome: r.autor_nome, autorPapel: r.autor_papel, texto: r.texto, criadoEm: r.created_at }));
+  },
+  async adicionar(empresaId, clienteId, { autorNome, autorPapel, texto }) {
+    requireEmpresaId(empresaId, "clienteNotas.adicionar");
+    const { data, error } = await supabase.from("cliente_notas").insert({
+      empresa_id: empresaId, cliente_id: clienteId, autor_nome: autorNome || "Alguém", autor_papel: autorPapel || "owner", texto,
+    }).select("id,autor_nome,autor_papel,texto,created_at").single();
+    assertOk(error, "clienteNotas.adicionar");
+    return { id: data.id, autorNome: data.autor_nome, autorPapel: data.autor_papel, texto: data.texto, criadoEm: data.created_at };
   },
 };
 

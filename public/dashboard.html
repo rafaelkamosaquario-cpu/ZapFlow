@@ -565,36 +565,86 @@
     </div>
   </div>
 
-  <!-- Detalhe do cliente -->
+  <!-- Cliente 360° (Item 6) -->
   <div class="modal hidden" id="clientModal">
-    <div class="modal-box">
+    <div class="modal-box modal-wide">
       <div class="modal-head">
-        <h3 id="clientTitle">Cliente</h3>
+        <div>
+          <h3 id="clientTitle">Cliente</h3>
+          <p class="c360-sub" id="clientPhone"></p>
+        </div>
         <button class="modal-close" data-close="clientModal" type="button">✕</button>
       </div>
-      <p class="hint" id="clientPhone"></p>
-      <div class="row" style="gap:8px;margin:0 0 10px">
-        <button class="btn secondary" id="btnClientToAgenda" type="button">Salvar na agenda</button>
+
+      <div class="c360-actions">
+        <a class="btn secondary sm" id="clientWhatsapp" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        <button class="btn secondary sm" id="btnClientToAgenda" type="button">Salvar na agenda</button>
+        <button class="btn danger sm" id="btnDeleteClient" type="button" style="margin-left:auto">Excluir</button>
       </div>
-      <div class="stage-mover" id="clientStageMover" aria-label="Mover para etapa"></div>
-      <label>Nome
-        <input type="text" id="clientName" />
-      </label>
-      <label>Etapa (funil)
-        <select id="clientStage"></select>
-      </label>
-      <label>Tags <small class="hint" style="font-weight:400">(separe por vírgula)</small>
-        <input type="text" id="clientTags" placeholder="ex.: VIP, revisão atrasada" />
-      </label>
-      <label>Anotações
-        <textarea id="clientNotes" rows="3" placeholder="Observações sobre o cliente..."></textarea>
-      </label>
-      <p class="hint" id="clientMeta"></p>
-      <div class="row">
-        <button class="btn primary" id="btnSaveClient" type="button">Salvar</button>
-        <span id="clientStatus" class="status"></span>
-        <button class="btn danger" id="btnDeleteClient" type="button" style="margin-left:auto">Excluir</button>
+
+      <div class="stage-mover" id="clientStageMover" aria-label="Mover para etapa" style="margin-top:12px;"></div>
+
+      <div class="c360-info-strip">
+        <div class="mini-card"><span class="mini-label">Oportunidade</span><span class="mini-value" id="c360Oportunidade">—</span></div>
+        <div class="mini-card"><span class="mini-label">Última conversa</span><span class="mini-value" id="c360UltimaConversa">—</span></div>
+        <div class="mini-card"><span class="mini-label">Última visita</span><span class="mini-value" id="c360UltimaVisita">—</span></div>
+        <div class="mini-card"><span class="mini-label">Campanhas</span><span class="mini-value" id="c360Campanhas">—</span></div>
       </div>
+
+      <div class="visita-next hidden" id="c360ProximaAcao">
+        <div><b id="c360ProximaAcaoTexto"></b><br><span id="c360ProximaAcaoData"></span></div>
+      </div>
+
+      <div class="c360-section">
+        <h4>Responsável</h4>
+        <select id="clientVendedorResponsavel"><option value="">Sem responsável</option></select>
+      </div>
+
+      <div class="c360-section">
+        <h4>Editar</h4>
+        <label>Nome
+          <input type="text" id="clientName" />
+        </label>
+        <label>Tags <small class="hint" style="font-weight:400">(separe por vírgula)</small>
+          <input type="text" id="clientTags" placeholder="ex.: VIP, revisão atrasada" />
+        </label>
+        <div class="row">
+          <button class="btn primary sm" id="btnSaveClient" type="button">Salvar</button>
+          <span id="clientStatus" class="status"></span>
+        </div>
+      </div>
+
+      <div class="c360-section">
+        <h4>✨ ZapFlow IA</h4>
+        <div class="row" style="gap:8px;">
+          <button class="btn secondary sm" id="btnIaResumirCliente" type="button">Resumir histórico</button>
+          <button class="btn secondary sm" id="btnIaSugerirAcao" type="button">Sugerir próxima ação</button>
+        </div>
+        <p class="hint" id="iaClienteResultado"></p>
+      </div>
+
+      <div class="c360-section">
+        <h4>Histórico</h4>
+        <div class="timeline-filters" id="timelineFiltros">
+          <button type="button" class="active" data-tipo="">Tudo</button>
+          <button type="button" data-tipo="conversa">Conversas</button>
+          <button type="button" data-tipo="campanha">Campanhas</button>
+          <button type="button" data-tipo="visita">Visitas</button>
+          <button type="button" data-tipo="nota">Notas</button>
+        </div>
+        <div class="timeline" id="clientTimeline"></div>
+      </div>
+
+      <div class="c360-section">
+        <h4>Notas</h4>
+        <div id="clientNotasList"></div>
+        <div class="manual-row" style="margin-top:8px;">
+          <input type="text" id="novaNotaTexto" placeholder="Adicionar nota..." style="flex:1;" />
+          <button class="btn secondary sm" id="btnAddNota" type="button">Adicionar</button>
+        </div>
+      </div>
+
+      <p class="hint" id="clientMeta" style="margin-top:16px;"></p>
     </div>
   </div>
 

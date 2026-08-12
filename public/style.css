@@ -799,6 +799,33 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .modal-close { background: transparent; border: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .modal-close:hover { background: var(--card-2); color: var(--text); }
 
+/* ---------- Cliente 360° (Item 6) ---------- */
+.c360-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.c360-head h3 { margin: 0 0 2px; font-size: 18px; }
+.c360-sub { font-size: 12.5px; color: var(--muted); margin: 0; }
+.c360-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.c360-info-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 14px 0; }
+.c360-info-strip .mini-card { padding: 10px 12px; gap: 1px; }
+.c360-info-strip .mini-label { font-size: 11px; }
+.c360-info-strip .mini-value { font-size: 17px; }
+.c360-section { margin-top: 20px; }
+.c360-section h4 { margin: 0 0 8px; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.timeline-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.timeline-filters button { background: var(--card-2); border: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 20px; cursor: pointer; }
+.timeline-filters button.active { background: var(--primary-light); color: #fff; border-color: var(--primary-light); }
+.timeline { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; }
+.timeline-item { display: flex; gap: 10px; padding: 9px 4px; border-left: 2px solid var(--border); padding-left: 12px; margin-left: 6px; position: relative; }
+.timeline-item::before { content: ""; position: absolute; left: -5px; top: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.timeline-item.tipo-conversa::before { background: var(--primary-light); }
+.timeline-item.tipo-campanha::before { background: var(--warn); }
+.timeline-item.tipo-visita::before { background: var(--accent); }
+.timeline-item.tipo-nota::before { background: var(--success); }
+.timeline-item .timeline-body { flex: 1; min-width: 0; }
+.timeline-item .timeline-when { font-size: 11px; color: var(--muted); }
+.timeline-item .timeline-text { font-size: 13px; color: var(--text); word-break: break-word; }
+.nota-item { background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.nota-item .nota-meta { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+
 /* ---------- Métricas (KPIs) ---------- */
 .metrics-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .metric-panel { background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
