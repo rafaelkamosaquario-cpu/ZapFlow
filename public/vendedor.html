@@ -104,6 +104,7 @@
 
       <div class="manual-add">
         <p class="manual-title">📅 Agendar retorno</p>
+        <input type="text" id="durProximaAcao" placeholder="O que fazer no retorno? (ex.: Enviar proposta)" style="margin-bottom:8px;" />
         <div class="manual-row">
           <input type="date" id="durData" />
           <input type="time" id="durHora" value="09:00" />
@@ -114,27 +115,41 @@
 
       <div class="manual-add">
         <p class="manual-title">Finalizar visita</p>
-        <label>Motivo
+        <label>Motivo da visita
           <select id="finMotivo">
-            <option>Venda</option>
             <option>Prospecção</option>
-            <option>Cobrança</option>
+            <option>Apresentação</option>
+            <option>Negociação</option>
             <option>Pós-venda</option>
+            <option>Cobrança</option>
             <option>Outro</option>
           </select>
         </label>
         <label>Resultado
           <select id="finResultado">
+            <option>Sem contato</option>
             <option>Interessado</option>
-            <option>Negociação</option>
+            <option>Proposta solicitada</option>
+            <option>Em negociação</option>
+            <option>Venda fechada</option>
+            <option>Retornar depois</option>
             <option>Sem interesse</option>
-            <option>Pedido fechado</option>
-            <option>Retornar</option>
           </select>
         </label>
         <button class="btn primary" id="btnFinalizar" type="button" style="width:100%;">Finalizar visita</button>
         <span class="status" id="finalizarStatus"></span>
       </div>
+    </div>
+  </div>
+
+  <!-- Detalhe completo da visita (Item 5.9) -->
+  <div class="modal hidden" id="detalheModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="detTitulo">Visita</h3>
+        <button class="modal-close" id="btnFecharDetalhe" type="button"><i data-icon="x" data-size="18"></i></button>
+      </div>
+      <div id="detalheConteudo"></div>
     </div>
   </div>
 

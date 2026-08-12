@@ -543,7 +543,7 @@ function visitaFromRow(r) {
 /**
  * "hoje": visitas registradas hoje OU com retorno (proxima_visita_data) vencido/hoje
  * (inclui visitas em andamento — ainda não tem resultado, mas já são "de hoje").
- * "followup": finalizadas com resultado "Retornar".
+ * "followup": finalizadas com resultado "Retornar depois".
  * "historico": só finalizadas (visita em andamento não é histórico ainda).
  * qualquer outro valor (ex.: exportação): sem filtro.
  */
@@ -557,7 +557,7 @@ function aplicarFiltroTab(query, tab) {
       `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
     );
   }
-  if (tab === "followup") return query.eq("resultado", "Retornar").not("finished_at", "is", null);
+  if (tab === "followup") return query.eq("resultado", "Retornar depois").not("finished_at", "is", null);
   if (tab === "historico") return query.not("finished_at", "is", null);
   return query;
 }
@@ -639,9 +639,9 @@ export const visitasRepo = {
     assertOk(error, "visitas.resumoDia");
     const rows = data || [];
     const hojeStr = new Date().toISOString().slice(0, 10);
-    const abertas = rows.filter((r) => r.valor_potencial != null && ["Interessado", "Negociação"].includes(r.resultado));
+    const abertas = rows.filter((r) => r.valor_potencial != null && ["Interessado", "Proposta solicitada", "Em negociação"].includes(r.resultado));
     return {
-      retornos: rows.filter((r) => r.resultado === "Retornar").length,
+      retornos: rows.filter((r) => r.resultado === "Retornar depois").length,
       visitasHoje: rows.filter((r) => r.proxima_visita_data === hojeStr).length,
       visitasRealizadasHoje: rows.filter((r) => String(r.data_hora || "").startsWith(hojeStr)).length,
       oportunidades: abertas.length,

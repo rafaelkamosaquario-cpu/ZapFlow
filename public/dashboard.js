@@ -1438,37 +1438,58 @@ async function loadVisitasOwner() {
   }
 }
 
+const RESULTADO_CATEGORIA = {
+  "Sem contato": "neutro", "Interessado": "atencao", "Proposta solicitada": "andamento",
+  "Em negociação": "andamento", "Venda fechada": "sucesso", "Retornar depois": "atencao", "Sem interesse": "perdido",
+};
+function isAtrasadaVisita(v) {
+  if (!v.proximaVisitaData || v.resultado !== "Retornar depois") return false;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  return new Date(v.proximaVisitaData + "T00:00:00").getTime() < hoje.getTime();
+}
+/** Formata uma data solta (YYYY-MM-DD, sem hora) -- sempre em horário local, evita o bug de "T00:00:00" virar UTC e cair um dia antes. */
+function fmtDataCurta(isoDate) {
+  const d = new Date(isoDate + "T00:00:00");
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - hoje.getTime()) / 86400000);
+  if (diff === 0) return "hoje";
+  if (diff === 1) return "amanhã";
+  if (diff === -1) return "ontem";
+  return d.toLocaleDateString("pt-BR");
+}
 function renderVisitaCardOwner(v) {
   const div = document.createElement("div");
   div.className = "dash-card";
-  const dataFmt = new Date(v.dataHora).toLocaleString("pt-BR");
   const emAndamento = !v.finishedAt;
-  const badge = emAndamento ? `<span class="badge manual">Em andamento</span>` : `<span class="badge">${escapeHtml(v.resultado || "")}</span>`;
-  const duracao = v.finishedAt ? `<div>⏱️ Duração: ${Math.round((v.finishedAt - v.dataHora) / 60000)} min</div>` : "";
+  const cat = emAndamento ? null : (RESULTADO_CATEGORIA[v.resultado] || "neutro");
+  const badge = emAndamento ? `<span class="badge manual">Em andamento</span>` : `<span class="badge cat-${cat}">${escapeHtml(v.resultado || "")}</span>`;
+  const atrasado = isAtrasadaVisita(v);
   const mapsLink = (v.latitude != null && v.longitude != null)
-    ? `<a href="https://www.google.com/maps?q=${v.latitude},${v.longitude}" target="_blank" rel="noopener">📍 Abrir no Google Maps</a>`
+    ? `<a class="btn secondary sm" href="https://www.google.com/maps?q=${v.latitude},${v.longitude}" target="_blank" rel="noopener">Maps</a>`
     : "";
-  const proxima = v.proximaVisitaData
-    ? `<div>🔁 Retorno: ${new Date(v.proximaVisitaData + "T00:00:00").toLocaleDateString("pt-BR")}</div>`
-    : "";
-  const fotos = (v.fotos || []).length ? `<div>📷 ${v.fotos.length} foto(s)</div>` : "";
+  const proximaHtml = v.proximaVisitaData ? `
+    <div class="visita-next${atrasado ? " atrasado" : ""}">
+      <div>
+        <b>${escapeHtml(v.proximaAcao || "Retornar")}</b><br>
+        <span>${atrasado ? "⚠ Atrasado — era " : "📅 "}${fmtDataCurta(v.proximaVisitaData)}</span>
+      </div>
+    </div>` : "";
+  const secundario = [
+    v.motivo, `Vendedor: ${v.vendedorNome || "—"}`,
+    v.contatoNome ? `Contato: ${v.contatoNome}` : "",
+    v.finishedAt ? `⏱ ${Math.round((v.finishedAt - v.dataHora) / 60000)} min` : fmtDate(v.dataHora),
+  ].filter(Boolean).map(escapeHtml).join(" · ");
   div.innerHTML = `
     <div class="dash-card-head">
       <b>${escapeHtml(v.clienteNome)}</b>
       ${badge}
     </div>
     <div class="dash-card-body">
-      <div>Vendedor: ${escapeHtml(v.vendedorNome || "—")}</div>
-      ${v.objetivo ? `<div>${escapeHtml(v.objetivo)}</div>` : ""}
-      <div>${v.motivo ? escapeHtml(v.motivo) + " • " : ""}${dataFmt}</div>
-      ${duracao}
-      ${v.contatoNome ? `<div>Contato: ${escapeHtml(v.contatoNome)}</div>` : ""}
-      ${v.observacao ? `<div>${escapeHtml(v.observacao)}</div>` : ""}
-      ${v.proximaAcao ? `<div>Próxima ação: ${escapeHtml(v.proximaAcao)}</div>` : ""}
-      ${fotos}
-      ${proxima}
-      ${mapsLink ? `<div>${mapsLink}</div>` : ""}
+      <span class="resp-sub">${secundario}</span>
+      ${v.observacao ? `<span>${escapeHtml(v.observacao)}</span>` : ""}
     </div>
+    ${proximaHtml}
+    ${mapsLink ? `<div class="visita-actions">${mapsLink}</div>` : ""}
     ${followupBlockOwner(v)}`;
   attachFollowupHandlersOwner(div, v);
   return div;

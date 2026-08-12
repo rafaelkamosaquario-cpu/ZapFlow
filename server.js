@@ -1671,8 +1671,13 @@ app.put("/api/chatbot", async (req, res) => {
 // Sem Geocoding/Places/Maps JS nesta versão: só lat/long brutas (Geolocation
 // do navegador, grátis) + link "abrir no Google Maps" no frontend.
 // ---------------------------------------------------------------------------
-const VISITA_MOTIVOS = ["Venda", "Prospecção", "Cobrança", "Pós-venda", "Outro"];
-const VISITA_RESULTADOS = ["Interessado", "Negociação", "Sem interesse", "Pedido fechado", "Retornar"];
+const VISITA_MOTIVOS = ["Prospecção", "Apresentação", "Negociação", "Pós-venda", "Cobrança", "Outro"];
+const VISITA_RESULTADOS = ["Sem contato", "Interessado", "Proposta solicitada", "Em negociação", "Venda fechada", "Retornar depois", "Sem interesse"];
+// Categoria visual do resultado (badge) -- poucas cores, não uma por valor.
+const RESULTADO_CATEGORIA = {
+  "Sem contato": "neutro", "Interessado": "atencao", "Proposta solicitada": "andamento",
+  "Em negociação": "andamento", "Venda fechada": "sucesso", "Retornar depois": "atencao", "Sem interesse": "perdido",
+};
 
 app.use("/api/visitas", (req, res, next) => {
   if (!USE_SUPABASE) return res.status(501).json({ error: "Visitas em Campo está disponível apenas no modo multi-empresa (Supabase)." });
@@ -1752,6 +1757,7 @@ app.patch("/api/visitas/:id", async (req, res) => {
 app.post("/api/visitas/:id/agendar-retorno", async (req, res) => {
   const data = String(req.body?.data || "");
   const hora = /^\d{2}:\d{2}$/.test(req.body?.hora) ? req.body.hora : "09:00";
+  const proximaAcao = String(req.body?.proximaAcao || "").trim().slice(0, 200);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: "Data inválida." });
   try {
     const visita = await carregarVisitaComPermissao(req, res);
@@ -1764,7 +1770,7 @@ app.post("/api/visitas/:id/agendar-retorno", async (req, res) => {
       try {
         const evento = await googleClient.criarEvento(accessToken, {
           titulo: `Retorno — ${visita.clienteNome}`,
-          descricao: visita.objetivo || undefined,
+          descricao: proximaAcao || visita.objetivo || undefined,
           inicio: inicio.toISOString(), fim: fim.toISOString(),
         });
         googleEventoId = evento.id;
@@ -1774,7 +1780,7 @@ app.post("/api/visitas/:id/agendar-retorno", async (req, res) => {
       }
     }
     const atualizada = await repo.visitasRepo.update(req.tenant.empresa.id, req.params.id, {
-      proximaVisitaData: data, ...(googleEventoId ? { googleEventoId } : {}),
+      proximaVisitaData: data, proximaAcao, ...(googleEventoId ? { googleEventoId } : {}),
     });
     res.json({ ok: true, visita: atualizada, calendarioCriado: Boolean(googleEventoId) });
   } catch (err) {

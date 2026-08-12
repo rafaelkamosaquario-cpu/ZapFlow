@@ -22,6 +22,7 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+const fmtMoneyFull = (v) => "R$ " + (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
 async function withLoading(btn, loadingText, fn) {
   const original = btn.textContent;
@@ -114,6 +115,7 @@ function abrirDuranteModal(visita) {
   $("#durObservacao").value = visita.observacao || "";
   $("#durValor").value = visita.valorPotencial ?? "";
   $("#durData").value = visita.proximaVisitaData || "";
+  $("#durProximaAcao").value = visita.proximaAcao || "";
   renderFotos(visita.fotos || []);
   ["detalhesStatus", "fotoStatus", "valorStatus", "agendarStatus", "finalizarStatus"].forEach((id) => { $("#" + id).textContent = ""; });
   $("#duranteModal").classList.remove("hidden");
@@ -209,11 +211,12 @@ $("#btnAgendar").addEventListener("click", async (e) => {
   const status = $("#agendarStatus");
   const data = $("#durData").value;
   const hora = $("#durHora").value;
+  const proximaAcao = $("#durProximaAcao").value.trim();
   if (!data) { status.textContent = "Escolha uma data para agendar o follow-up."; status.className = "status err"; return; }
   try {
     const dataRes = await withLoading(e.currentTarget, "Agendando...", async () => {
       const res = await fetch(`/api/visitas/${visitaAtual.id}/agendar-retorno`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, hora }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, hora, proximaAcao }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Não foi possível agendar o follow-up. Tente novamente.");
@@ -283,51 +286,89 @@ async function loadResumo() {
 // ---------------------------------------------------------------------------
 // Lista de visitas
 // ---------------------------------------------------------------------------
+const RESULTADO_CATEGORIA = {
+  "Sem contato": "neutro", "Interessado": "atencao", "Proposta solicitada": "andamento",
+  "Em negociação": "andamento", "Venda fechada": "sucesso", "Retornar depois": "atencao", "Sem interesse": "perdido",
+};
+function badgeResultado(v) {
+  if (!v.finishedAt) return `<span class="badge manual">Em andamento</span>`;
+  const cat = RESULTADO_CATEGORIA[v.resultado] || "neutro";
+  return `<span class="badge cat-${cat}">${escapeHtml(v.resultado || "")}</span>`;
+}
+function fmtDataCurta(isoDate) {
+  const d = new Date(isoDate + "T00:00:00");
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - hoje.getTime()) / 86400000);
+  if (diff === 0) return "hoje";
+  if (diff === 1) return "amanhã";
+  if (diff === -1) return "ontem";
+  return d.toLocaleDateString("pt-BR");
+}
+function isAtrasado(v) {
+  if (!v.proximaVisitaData || v.resultado !== "Retornar depois") return false;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  return new Date(v.proximaVisitaData + "T00:00:00").getTime() < hoje.getTime();
+}
+function somenteDigitos(s) { return String(s || "").replace(/\D/g, ""); }
+
 function renderVisitaCard(v) {
   const div = document.createElement("div");
   div.className = "dash-card";
-  const dataFmt = new Date(v.dataHora).toLocaleString("pt-BR");
   const emAndamento = !v.finishedAt;
-  const badge = emAndamento ? `<span class="badge manual">Em andamento</span>` : `<span class="badge">${escapeHtml(v.resultado || "")}</span>`;
-  const duracao = v.finishedAt ? `<div>⏱️ Duração: ${formatDuracao(v.finishedAt - v.dataHora)}</div>` : "";
-  const mapsLink = (v.latitude != null && v.longitude != null)
-    ? `<a href="https://www.google.com/maps?q=${v.latitude},${v.longitude}" target="_blank" rel="noopener">📍 Abrir no Google Maps</a>`
-    : "";
-  const proxima = v.proximaVisitaData
-    ? `<div>🔁 Retorno: ${new Date(v.proximaVisitaData + "T00:00:00").toLocaleDateString("pt-BR")}</div>`
-    : "";
-  const fotos = (v.fotos || []).length ? `<div>📷 ${v.fotos.length} foto(s)</div>` : "";
+  const atrasado = isAtrasado(v);
+
+  const proximaHtml = (v.proximaVisitaData && !emAndamento) ? `
+    <div class="visita-next${atrasado ? " atrasado" : ""}">
+      <div>
+        <b>${escapeHtml(v.proximaAcao || "Retornar")}</b><br>
+        <span>${atrasado ? "⚠ Atrasado — era " : "📅 "}${fmtDataCurta(v.proximaVisitaData)}</span>
+      </div>
+    </div>` : "";
+
+  const secundario = [
+    v.motivo,
+    v.contatoNome ? `Contato: ${v.contatoNome}` : "",
+    v.finishedAt ? `⏱ ${formatDuracao(v.finishedAt - v.dataHora)}` : new Date(v.dataHora).toLocaleString("pt-BR"),
+  ].filter(Boolean).map(escapeHtml).join(" · ");
+
+  const waHref = v.contatoTelefone ? `https://wa.me/${somenteDigitos(v.contatoTelefone)}` : null;
+  const mapsHref = (v.latitude != null && v.longitude != null) ? `https://www.google.com/maps?q=${v.latitude},${v.longitude}` : null;
+  const podeFollowup = !emAndamento && v.contatoTelefone && v.resultado === "Retornar depois";
+
+  const actions = [];
+  if (podeFollowup) actions.push(`<button class="btn secondary sm btn-followup" type="button">Fazer follow-up</button>`);
+  else if (waHref) actions.push(`<a class="btn secondary sm" href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>`);
+  if (mapsHref) actions.push(`<a class="btn secondary sm" href="${mapsHref}" target="_blank" rel="noopener">Maps</a>`);
+  if (!emAndamento) actions.push(`<button class="btn secondary sm btn-detalhes" type="button">Detalhes</button>`);
+
   div.innerHTML = `
     <div class="dash-card-head">
       <b>${escapeHtml(v.clienteNome)}</b>
-      ${badge}
+      ${badgeResultado(v)}
     </div>
     <div class="dash-card-body">
-      ${v.objetivo ? `<div>${escapeHtml(v.objetivo)}</div>` : ""}
-      <div>${v.motivo ? escapeHtml(v.motivo) + " • " : ""}${dataFmt}</div>
-      ${duracao}
-      ${v.contatoNome ? `<div>Contato: ${escapeHtml(v.contatoNome)}</div>` : ""}
-      ${v.observacao ? `<div>${escapeHtml(v.observacao)}</div>` : ""}
-      ${fotos}
-      ${proxima}
-      ${mapsLink ? `<div>${mapsLink}</div>` : ""}
+      <span class="visita-secondary">${secundario}</span>
     </div>
+    ${proximaHtml}
+    <div class="visita-actions">${actions.join("")}</div>
     ${followupBlock(v)}`;
+
   if (emAndamento) {
     div.style.cursor = "pointer";
     div.addEventListener("click", (e) => { if (!e.target.closest("a, button, input")) abrirDuranteModal(v); });
+  } else {
+    div.querySelector(".btn-detalhes")?.addEventListener("click", (e) => { e.stopPropagation(); abrirDetalheVisita(v); });
   }
   attachFollowupHandlers(div, v);
   return div;
 }
 
-/** Bloco de "enviar follow-up" — só aparece se a visita tiver telefone de contato. */
+/** Compõe e envia um follow-up pontual (Z-API) — acionado pelo botão "Fazer follow-up" do card. */
 function followupBlock(v) {
-  if (!v.contatoTelefone) return "";
+  if (!v.contatoTelefone || !v.finishedAt || v.resultado !== "Retornar depois") return "";
   return `
     <div class="followup-block" style="margin-top:10px;">
-      <button class="btn secondary sm btn-followup" type="button">Enviar follow-up</button>
-      <div class="manual-row followup-row hidden" style="margin-top:8px;">
+      <div class="manual-row followup-row hidden">
         <input type="text" class="followup-input" placeholder="Mensagem de follow-up..." />
         <button class="btn primary sm btn-followup-send" type="button">Enviar</button>
       </div>
@@ -374,6 +415,32 @@ function attachFollowupHandlers(div, v) {
   });
 }
 
+/** Tela de detalhe completo da visita (Item 5.9) — reaproveita o objeto já carregado, sem nova chamada. */
+function abrirDetalheVisita(v) {
+  $("#detTitulo").textContent = v.clienteNome;
+  const inicio = new Date(v.dataHora).toLocaleString("pt-BR");
+  const fim = v.finishedAt ? new Date(v.finishedAt).toLocaleString("pt-BR") : "—";
+  const duracao = v.finishedAt ? formatDuracao(v.finishedAt - v.dataHora) : "—";
+  const mapsHref = (v.latitude != null && v.longitude != null) ? `https://www.google.com/maps?q=${v.latitude},${v.longitude}` : null;
+  const waHref = v.contatoTelefone ? `https://wa.me/${somenteDigitos(v.contatoTelefone)}` : null;
+  const fotos = (v.fotos || []).map((f) => `<a href="${f.url}" target="_blank" rel="noopener">📎 ${escapeHtml(f.nome || "foto")}</a>`).join(" · ");
+  $("#detalheConteudo").innerHTML = `
+    <p>${badgeResultado(v)}</p>
+    <p class="hint"><b>Objetivo:</b> ${escapeHtml(v.objetivo || "—")}</p>
+    <p class="hint"><b>Motivo da visita:</b> ${escapeHtml(v.motivo || "—")}</p>
+    <p class="hint"><b>Início:</b> ${inicio}</p>
+    <p class="hint"><b>Fim:</b> ${fim} · <b>Duração:</b> ${duracao}</p>
+    ${mapsHref ? `<p class="hint"><b>Localização:</b> <a href="${mapsHref}" target="_blank" rel="noopener">Abrir no Google Maps</a></p>` : ""}
+    ${v.contatoNome || v.contatoTelefone ? `<p class="hint"><b>Contato:</b> ${escapeHtml(v.contatoNome || "—")}${waHref ? ` · <a href="${waHref}" target="_blank" rel="noopener">Abrir WhatsApp</a>` : ""}</p>` : ""}
+    <p class="hint"><b>Valor potencial:</b> ${v.valorPotencial != null ? fmtMoneyFull(v.valorPotencial) : "—"}</p>
+    <p class="hint"><b>Observações:</b> ${escapeHtml(v.observacao || "—")}</p>
+    <p class="hint"><b>Próxima ação:</b> ${escapeHtml(v.proximaAcao || "—")}${v.proximaVisitaData ? ` (${fmtDataCurta(v.proximaVisitaData)})` : ""}</p>
+    ${fotos ? `<p class="hint"><b>Fotos:</b> ${fotos}</p>` : ""}
+  `;
+  $("#detalheModal").classList.remove("hidden");
+}
+$("#btnFecharDetalhe").addEventListener("click", () => $("#detalheModal").classList.add("hidden"));
+
 async function loadVisitas() {
   const wrap = $("#visitasList");
   const hint = $("#visitasHint");
@@ -397,10 +464,38 @@ async function loadVisitas() {
       return;
     }
     hint.textContent = "";
-    list.forEach((v) => wrap.appendChild(renderVisitaCard(v)));
+    if (activeTab === "hoje") renderGrupoHoje(wrap, list);
+    else if (activeTab === "followup") renderGrupoFollowup(wrap, list);
+    else list.forEach((v) => wrap.appendChild(renderVisitaCard(v)));
   } catch {
     hint.textContent = "Não foi possível carregar as visitas. Verifique sua conexão e tente novamente.";
   }
+}
+
+function addGroupTitle(wrap, texto, count) {
+  const h = document.createElement("div");
+  h.className = "list-group-title";
+  h.innerHTML = `<span>${escapeHtml(texto)}</span><span class="count">${count}</span>`;
+  wrap.appendChild(h);
+}
+
+/** Item 5.7 — Hoje separa quem ainda não voltou (em andamento) de quem já finalizou. */
+function renderGrupoHoje(wrap, list) {
+  const pendentes = list.filter((v) => !v.finishedAt);
+  const concluidas = list.filter((v) => v.finishedAt);
+  if (pendentes.length) { addGroupTitle(wrap, "Em andamento", pendentes.length); pendentes.forEach((v) => wrap.appendChild(renderVisitaCard(v))); }
+  if (concluidas.length) { addGroupTitle(wrap, "Concluídas hoje", concluidas.length); concluidas.forEach((v) => wrap.appendChild(renderVisitaCard(v))); }
+}
+
+/** Item 5.8 — Follow-up agrupado por urgência em vez de lista cronológica solta. */
+function renderGrupoFollowup(wrap, list) {
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const atrasados = list.filter((v) => v.proximaVisitaData && v.proximaVisitaData < hojeStr);
+  const deHoje = list.filter((v) => v.proximaVisitaData === hojeStr);
+  const proximos = list.filter((v) => v.proximaVisitaData && v.proximaVisitaData > hojeStr);
+  if (atrasados.length) { addGroupTitle(wrap, "⚠ Atrasados", atrasados.length); atrasados.forEach((v) => wrap.appendChild(renderVisitaCard(v))); }
+  if (deHoje.length) { addGroupTitle(wrap, "Hoje", deHoje.length); deHoje.forEach((v) => wrap.appendChild(renderVisitaCard(v))); }
+  if (proximos.length) { addGroupTitle(wrap, "Próximos", proximos.length); proximos.forEach((v) => wrap.appendChild(renderVisitaCard(v))); }
 }
 
 // ---------------------------------------------------------------------------
