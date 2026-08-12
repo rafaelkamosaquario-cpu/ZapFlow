@@ -62,7 +62,7 @@ const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
 const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
 const CONVERSAS_FILE = path.join(DATA_DIR, "conversas.json");
 const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
-const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
+const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
 const MAX_TEMPLATES = 10;
 const CONV_MAX = 5000;
 const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
@@ -1320,7 +1320,7 @@ app.get("/api/dashboard", (req, res) => {
   for (const h in hours) { if (hours[h] > mx) { mx = hours[h]; melhorHora = Number(h); } }
 
   // Funil do CRM (contagem por etapa)
-  const funilStages = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente"];
+  const funilStages = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado"];
   const stageCount = {};
   tenant.clients.forEach((c) => { stageCount[c.stage] = (stageCount[c.stage] || 0) + 1; });
   const funil = funilStages.map((s) => ({ stage: s, count: stageCount[s] || 0 }));

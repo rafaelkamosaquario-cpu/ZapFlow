@@ -390,7 +390,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .dash-card.st-contatado { border-left-color: var(--warn); }
 .dash-card.st-respondeu { border-left-color: var(--success); }
 .dash-card.st-negociando { border-left-color: var(--warn); }
-.dash-card.st-cliente { border-left-color: var(--accent); }
+.dash-card.st-fechado { border-left-color: var(--accent); }
 .dash-card.st-perdido { border-left-color: var(--muted); opacity: .75; }
 .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .dash-card-body { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 13px; color: var(--muted); }
@@ -526,7 +526,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .funil-bar.st-contatado { background: var(--warn); }
 .funil-bar.st-respondeu { background: var(--success); }
 .funil-bar.st-negociando { background: #c98a3a; }
-.funil-bar.st-cliente { background: var(--accent); }
+.funil-bar.st-fechado { background: var(--accent); }
 .funil-count { font-size: 14px; font-weight: 700; text-align: right; }
 
 /* Ranking */
@@ -759,7 +759,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .stage-pill.st-contatado { color: var(--warn); border-color: rgba(245,166,35,.5); }
 .stage-pill.st-respondeu { color: var(--success); border-color: rgba(46,204,113,.5); }
 .stage-pill.st-negociando { color: var(--warn); border-color: rgba(245,166,35,.5); }
-.stage-pill.st-cliente { color: var(--accent); border-color: rgba(255,140,66,.5); }
+.stage-pill.st-fechado { color: var(--accent); border-color: rgba(255,140,66,.5); }
 .stage-pill.st-perdido { color: var(--muted); }
 
 /* ---------- Identidade do contato (Conversas / Respostas / Clientes) ---------- */

@@ -87,7 +87,7 @@ const statusOf = (job) =>
 const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
-const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
+const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
 
 function activateView(view) {
   $$(".side-tab, .mtab, .msheet-item").forEach((t) => { if (t.dataset.view) t.classList.toggle("active", t.dataset.view === view); });
@@ -424,7 +424,7 @@ function renderWeekBars(week) {
 }
 
 function renderFunil(funil) {
-  const clsMap = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Cliente: "st-cliente" };
+  const clsMap = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Fechado: "st-fechado" };
   const max = Math.max(1, ...funil.map((f) => f.count));
   $("#funilChart").innerHTML = funil.map((f) =>
     `<div class="funil-row" data-stage="${f.stage}">
@@ -507,7 +507,7 @@ function drawLine(canvas, serie) {
 // ---------------------------------------------------------------------------
 // Clientes (CRM-lite)
 // ---------------------------------------------------------------------------
-const STAGE_CLS = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Cliente: "st-cliente", Perdido: "st-perdido" };
+const STAGE_CLS = { Novo: "st-novo", Contatado: "st-contatado", Respondeu: "st-respondeu", Negociando: "st-negociando", Fechado: "st-fechado", Perdido: "st-perdido" };
 let crmMeta = { stages: [], tags: [] };
 let crmList = [];
 let crmCurrent = null;
