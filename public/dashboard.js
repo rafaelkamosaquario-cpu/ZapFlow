@@ -1247,7 +1247,7 @@ async function loadVendedores() {
       if (v.active) {
         const btnDel = document.createElement("button");
         btnDel.type = "button";
-        btnDel.className = "btn ghost sm";
+        btnDel.className = "btn danger sm";
         btnDel.style.marginTop = "8px";
         btnDel.textContent = "Desativar";
         btnDel.addEventListener("click", () => desativarVendedor(v.id));

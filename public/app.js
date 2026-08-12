@@ -1131,7 +1131,7 @@ function renderTemplates(list) {
       <div class="t-preview">${escapeHtml(preview)}${urls.length ? ` · ${urls.length} img` : ""}</div>
       <div class="t-actions">
         <button class="btn primary t-load" data-id="${t.id}">Usar</button>
-        <button class="btn ghost t-del" data-id="${t.id}">Excluir</button>
+        <button class="btn danger t-del" data-id="${t.id}">Excluir</button>
       </div>`;
     wrap.appendChild(div);
     div.querySelector(".t-load").addEventListener("click", () => loadTemplateInto(t));
