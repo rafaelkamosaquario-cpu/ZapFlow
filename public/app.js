@@ -9,6 +9,18 @@ const MAX_MESSAGES = 5;
 
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+/** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
+async function withLoading(btn, loadingText, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = loadingText;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Credenciais
@@ -1002,8 +1014,8 @@ function renderSchedules(list) {
   wrap.querySelectorAll(".btn-cancel").forEach((b) => {
     b.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (!confirm("Cancelar este agendamento?")) return;
-      await fetch("/api/schedules/" + b.dataset.id, { method: "DELETE" });
+      if (!confirm("Cancelar esta campanha agendada? Ela não será enviada.")) return;
+      await withLoading(b, "Cancelando...", () => fetch("/api/schedules/" + b.dataset.id, { method: "DELETE" }));
       loadSchedules();
     });
   });
@@ -1044,9 +1056,9 @@ async function toggleDetail(link) {
 }
 
 // Limpar histórico (mantém pendentes/em andamento)
-$("#btnClearHistory").addEventListener("click", async () => {
+$("#btnClearHistory").addEventListener("click", async (e) => {
   if (!confirm("Limpar o histórico de envios concluídos?\n(Os agendamentos pendentes serão mantidos.)")) return;
-  await fetch("/api/schedules", { method: "DELETE" });
+  await withLoading(e.currentTarget, "Limpando...", () => fetch("/api/schedules", { method: "DELETE" }));
   loadSchedules();
 });
 
@@ -1083,19 +1095,21 @@ function openSaveTemplate(block) {
   $("#templateName").focus();
 }
 
-$("#confirmSaveTemplate").addEventListener("click", async () => {
+$("#confirmSaveTemplate").addEventListener("click", async (e) => {
   if (!templateTargetBlock) return;
   const { message, imageUrls } = readBlock(templateTargetBlock);
   const name = $("#templateName").value.trim();
-  if (!name) { $("#saveTemplateError").textContent = "Dê um nome ao modelo."; return; }
+  if (!name) { $("#saveTemplateError").textContent = "Dê um nome ao modelo para continuar."; return; }
   try {
-    const res = await fetch("/api/templates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, message, imageUrls }),
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, message, imageUrls }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar o modelo. Tente novamente.");
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
     closeModal("saveTemplateModal");
   } catch (err) {
     $("#saveTemplateError").textContent = err.message;

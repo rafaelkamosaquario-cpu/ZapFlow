@@ -16,6 +16,18 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 const fmtDate = (ts) => new Date(ts).toLocaleString("pt-BR");
+/** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
+async function withLoading(btn, loadingText, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = loadingText;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
 const fmtMoney = (v) => {
   v = Number(v) || 0;
   if (v >= 1000) return "R$" + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k";
@@ -476,17 +488,19 @@ function openSaveAgenda(phone, suggestedName, onDone) {
   openModal("saveAgendaModal");
   setTimeout(() => $("#saveAgName").focus(), 50);
 }
-$("#btnSaveAgConfirm").addEventListener("click", async () => {
+$("#btnSaveAgConfirm").addEventListener("click", async (e) => {
   if (!saveAgCtx) return;
   const status = $("#saveAgStatus");
-  status.textContent = "Salvando..."; status.className = "status";
+  status.textContent = ""; status.className = "status";
   try {
-    const res = await fetch("/api/agenda", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: saveAgCtx.phone, name: $("#saveAgName").value.trim() }),
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/agenda", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: saveAgCtx.phone, name: $("#saveAgName").value.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar este contato na agenda.");
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
     closeModal("saveAgendaModal");
     const cb = saveAgCtx.onDone; saveAgCtx = null;
     if (cb) cb();
@@ -572,7 +586,7 @@ function openClient(c) {
   openModal("clientModal");
 }
 
-$("#btnSaveClient").addEventListener("click", async () => {
+$("#btnSaveClient").addEventListener("click", async (e) => {
   if (!crmCurrent) return;
   const body = {
     name: $("#clientName").value.trim(),
@@ -581,21 +595,23 @@ $("#btnSaveClient").addEventListener("click", async () => {
     notes: $("#clientNotes").value.trim(),
   };
   try {
-    const res = await fetch("/api/clients/" + crmCurrent.id, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/clients/" + crmCurrent.id, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error();
     });
-    if (!res.ok) throw new Error();
     closeModal("clientModal");
     loadClients();
   } catch {
-    $("#clientStatus").textContent = "Erro ao salvar";
+    $("#clientStatus").textContent = "Não foi possível salvar as alterações. Tente novamente.";
     $("#clientStatus").className = "status err";
   }
 });
 
-$("#btnDeleteClient").addEventListener("click", async () => {
-  if (!crmCurrent || !confirm("Excluir este cliente da base?")) return;
-  await fetch("/api/clients/" + crmCurrent.id, { method: "DELETE" });
+$("#btnDeleteClient").addEventListener("click", async (e) => {
+  if (!crmCurrent || !confirm(`Excluir ${displayNameOf(crmCurrent)} da base de clientes? O histórico de conversas é mantido, mas o cadastro no CRM é apagado.`)) return;
+  await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/clients/" + crmCurrent.id, { method: "DELETE" }));
   closeModal("clientModal");
   loadClients();
 });
@@ -609,21 +625,21 @@ $("#btnCrmDispatch").addEventListener("click", () => {
   window.location.href = "/";
 });
 
-$("#btnExportClients").addEventListener("click", async () => {
+$("#btnExportClients").addEventListener("click", async (e) => {
   const status = $("#exportClientsStatus");
-  const btn = $("#btnExportClients");
-  status.textContent = "Exportando...";
-  btn.disabled = true;
+  status.textContent = "";
   try {
-    const res = await fetch("/api/clients/exportar-planilha", { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao exportar."; btn.disabled = false; return; }
-    status.textContent = "Planilha criada!";
+    const data = await withLoading(e.currentTarget, "Exportando...", async () => {
+      const res = await fetch("/api/clients/exportar-planilha", { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível exportar a planilha. Tente novamente.");
+      return d;
+    });
+    status.textContent = "Planilha criada! Abrindo no Google Sheets...";
     window.open(data.url, "_blank");
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
   }
-  btn.disabled = false;
 });
 
 // Filtros (com pequeno debounce na busca)
@@ -786,9 +802,9 @@ async function loadAgenda() {
       div.querySelector(".ag-add").addEventListener("click", (e) => {
         toggleCart(c, e.currentTarget);
       });
-      div.querySelector(".ag-del").addEventListener("click", async () => {
-        if (!confirm("Remover este contato da agenda?")) return;
-        await fetch("/api/agenda/" + c.id, { method: "DELETE" });
+      div.querySelector(".ag-del").addEventListener("click", async (e) => {
+        if (!confirm(`Remover ${c.name || c.phone} da agenda? Isso não afeta o cadastro dele em Clientes, se existir.`)) return;
+        await withLoading(e.currentTarget, "Removendo...", () => fetch("/api/agenda/" + c.id, { method: "DELETE" }));
         agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
         updateAgCart();
         loadAgenda();
@@ -836,15 +852,19 @@ document.getElementById("btnAgCartGo")?.addEventListener("click", () => {
 });
 
 // Adicionar manualmente
-$("#btnAgAdd").addEventListener("click", async () => {
+$("#btnAgAdd").addEventListener("click", async (e) => {
   const name = $("#agName").value.trim();
   const phone = $("#agPhone").value.trim();
   const status = $("#agStatus");
-  if (!phone) { status.textContent = "Informe o telefone."; status.className = "status err"; return; }
-  const res = await fetch("/api/agenda", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }) });
-  const data = await res.json();
-  if (!res.ok) { status.textContent = (data.error || "Erro"); status.className = "status err"; return; }
-  status.textContent = "Salvo!"; status.className = "status ok";
+  if (!phone) { status.textContent = "Informe o telefone para adicionar o contato."; status.className = "status err"; return; }
+  const data = await withLoading(e.currentTarget, "Adicionando...", async () => {
+    const res = await fetch("/api/agenda", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || "Não foi possível adicionar este contato.");
+    return d;
+  }).catch((err) => { status.textContent = err.message; status.className = "status err"; return null; });
+  if (!data) return;
+  status.textContent = "Contato adicionado à agenda!"; status.className = "status ok";
   $("#agName").value = ""; $("#agPhone").value = "";
   loadAgenda();
 });
@@ -869,14 +889,17 @@ $("#agFile").addEventListener("change", async (e) => {
 });
 
 // Sincronizar do chip
-$("#btnAgSync").addEventListener("click", async () => {
+$("#btnAgSync").addEventListener("click", async (e) => {
   const status = $("#agStatus");
   if (!confirm("Importar os contatos salvos no aparelho conectado?")) return;
-  status.textContent = "Sincronizando (pode levar alguns segundos)..."; status.className = "status";
+  status.textContent = ""; status.className = "status";
   try {
-    const res = await fetch("/api/agenda/sync-chip", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha");
+    const data = await withLoading(e.currentTarget, "Sincronizando...", async () => {
+      const res = await fetch("/api/agenda/sync-chip", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível sincronizar os contatos do aparelho. Tente novamente.");
+      return d;
+    });
     status.textContent = `${data.imported} contato(s) sincronizado(s)!`; status.className = "status ok";
     loadAgenda();
   } catch (err) {
@@ -964,9 +987,9 @@ async function loadDrafts() {
         sessionStorage.setItem("zapflow_loadtemplate", JSON.stringify(t));
         window.location.href = "/";
       });
-      div.querySelector(".draft-del").addEventListener("click", async () => {
-        if (!confirm("Excluir este modelo?")) return;
-        await fetch("/api/templates/" + t.id, { method: "DELETE" });
+      div.querySelector(".draft-del").addEventListener("click", async (e) => {
+        if (!confirm(`Excluir o modelo "${t.name || "sem nome"}"? Essa ação não pode ser desfeita.`)) return;
+        await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/templates/" + t.id, { method: "DELETE" }));
         loadDrafts();
       });
       wrap.appendChild(div);
@@ -990,23 +1013,25 @@ $("#btnCancelDraft")?.addEventListener("click", () => {
   $("#draftForm").classList.add("hidden");
   clearDraftForm();
 });
-$("#btnSaveDraft")?.addEventListener("click", async () => {
+$("#btnSaveDraft")?.addEventListener("click", async (e) => {
   const name = $("#draftName").value.trim();
   const msg = $("#draftMsg").value.trim();
   const link = $("#draftLink").value.trim();
   const img = $("#draftImg").value.trim();
   const status = $("#draftStatus");
   const message = link ? (msg ? msg + "\n" + link : link) : msg;
-  if (!name) { status.textContent = "Dê um nome ao modelo."; status.className = "status err"; return; }
-  if (!message && !img) { status.textContent = "Escreva a mensagem ou informe uma imagem."; status.className = "status err"; return; }
+  if (!name) { status.textContent = "Dê um nome ao modelo para continuar."; status.className = "status err"; return; }
+  if (!message && !img) { status.textContent = "Escreva a mensagem ou informe uma imagem para continuar."; status.className = "status err"; return; }
   try {
-    const res = await fetch("/api/templates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, message, imageUrls: img ? [img] : [] }),
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, message, imageUrls: img ? [img] : [] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar o modelo. Tente novamente.");
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha ao salvar.");
     status.textContent = "Modelo salvo!"; status.className = "status ok";
     clearDraftForm();
     $("#draftForm").classList.add("hidden");
@@ -1133,7 +1158,7 @@ async function loadFollowup() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro ao carregar.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os follow-ups. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1150,7 +1175,7 @@ async function loadChatbot() {
     (cfg.rules || []).forEach(addRuleRow);
     if (!cfg.rules || !cfg.rules.length) addRuleRow();
   } catch {
-    $("#rulesList").innerHTML = "<p class='hint'>Erro ao carregar.</p>";
+    $("#rulesList").innerHTML = "<p class='hint'>Não foi possível carregar as respostas automáticas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1182,7 +1207,7 @@ function addRuleRow(rule = {}) {
 
 $("#btnAddRule").addEventListener("click", () => addRuleRow());
 
-$("#btnSaveBot").addEventListener("click", async () => {
+$("#btnSaveBot").addEventListener("click", async (e) => {
   const rules = $$(".rule-card").map((card) => ({
     keywords: $(".rule-keywords", card).value.split(",").map((k) => k.trim()).filter(Boolean),
     matchType: $(".rule-match", card).value,
@@ -1197,12 +1222,14 @@ $("#btnSaveBot").addEventListener("click", async () => {
   };
   const status = $("#botStatus");
   try {
-    const res = await fetch("/api/chatbot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error();
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/chatbot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error();
+    });
     status.textContent = "Respostas automáticas salvas!";
     status.className = "status ok";
   } catch {
-    status.textContent = "Erro ao salvar";
+    status.textContent = "Não foi possível salvar as respostas automáticas. Tente novamente.";
     status.className = "status err";
   }
 });
@@ -1226,7 +1253,7 @@ async function loadVendedores() {
   try {
     const res = await fetch("/api/visitas/vendedores");
     const data = await res.json();
-    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar os vendedores.")}</p>`; return; }
     const vendedores = data.vendedores || [];
     const ativos = vendedores.filter((v) => v.active).length;
     $("#btnAddVendedor").disabled = ativos >= data.maxVendedores;
@@ -1250,59 +1277,63 @@ async function loadVendedores() {
         btnDel.className = "btn danger sm";
         btnDel.style.marginTop = "8px";
         btnDel.textContent = "Desativar";
-        btnDel.addEventListener("click", () => desativarVendedor(v.id));
+        btnDel.addEventListener("click", () => desativarVendedor(v.id, v.name || v.username, btnDel));
         div.appendChild(btnDel);
       }
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os vendedores. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
-async function desativarVendedor(id) {
-  if (!confirm("Desativar este vendedor? O histórico de visitas dele é mantido.")) return;
-  await fetch(`/api/visitas/vendedores/${id}`, { method: "DELETE" });
+async function desativarVendedor(id, nome, btn) {
+  if (!confirm(`Desativar ${nome}? Ele não vai mais conseguir acessar o ZapFlow, mas o histórico de visitas dele é mantido.`)) return;
+  await withLoading(btn, "Desativando...", () => fetch(`/api/visitas/vendedores/${id}`, { method: "DELETE" }));
   loadVendedores();
 }
 
-$("#btnAddVendedor").addEventListener("click", async () => {
+$("#btnAddVendedor").addEventListener("click", async (e) => {
   const name = $("#vdNome").value.trim();
   const phone = $("#vdTelefone").value.trim();
   const status = $("#vendedorStatus");
   status.style.color = "";
-  if (!name || !phone) { status.textContent = "Informe nome e telefone."; return; }
+  if (!name || !phone) { status.textContent = "Informe nome e telefone para adicionar o vendedor."; return; }
   try {
-    const res = await fetch("/api/visitas/vendedores", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }),
+    const data = await withLoading(e.currentTarget, "Adicionando...", async () => {
+      const res = await fetch("/api/visitas/vendedores", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, phone }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível cadastrar o vendedor.");
+      return d;
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao cadastrar."; return; }
     status.style.color = "var(--success)";
     status.innerHTML = `<b>Vendedor criado!</b> Usuário: <code>${escapeHtml(data.vendedor.username)}</code> — Senha temporária: <code>${escapeHtml(data.tempPassword)}</code><br>Anote agora — a senha não fica visível de novo depois.`;
     $("#vdNome").value = "";
     $("#vdTelefone").value = "";
     loadVendedores();
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.style.color = "";
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
   }
 });
 
-$("#btnExportVisitas").addEventListener("click", async () => {
+$("#btnExportVisitas").addEventListener("click", async (e) => {
   const status = $("#exportVisitasStatus");
-  const btn = $("#btnExportVisitas");
-  status.textContent = "Exportando...";
-  btn.disabled = true;
+  status.textContent = "";
   try {
-    const res = await fetch("/api/visitas/exportar-planilha", { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao exportar."; btn.disabled = false; return; }
-    status.textContent = "Planilha criada!";
+    const data = await withLoading(e.currentTarget, "Exportando...", async () => {
+      const res = await fetch("/api/visitas/exportar-planilha", { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível exportar a planilha de visitas. Tente novamente.");
+      return d;
+    });
+    status.textContent = "Planilha criada! Abrindo no Google Sheets...";
     window.open(data.url, "_blank");
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
   }
-  btn.disabled = false;
 });
 
 $$(".tab", $("#visitasTabsOwner")).forEach((btn) => {
@@ -1319,7 +1350,7 @@ async function loadVisitasOwner() {
   try {
     const res = await fetch(`/api/visitas?tab=${visitasOwnerTab}`);
     const data = await res.json();
-    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar as visitas.")}</p>`; return; }
     const list = data.visitas || [];
     if (!list.length) {
       const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum follow-up pendente." };
@@ -1329,7 +1360,7 @@ async function loadVisitasOwner() {
     wrap.innerHTML = "";
     list.forEach((v) => wrap.appendChild(renderVisitaCardOwner(v)));
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar as visitas. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
@@ -1404,7 +1435,7 @@ function attachFollowupHandlersOwner(div, v) {
       });
       const data = await res.json();
       if (!res.ok) {
-        status.textContent = data.error || "Erro ao enviar.";
+        status.textContent = data.error || "Não foi possível enviar o follow-up. Tente novamente.";
         status.className = "status err followup-status";
         sendBtn.disabled = false;
         return;
@@ -1414,7 +1445,7 @@ function attachFollowupHandlersOwner(div, v) {
       input.value = "";
       setTimeout(() => { row.classList.add("hidden"); status.textContent = ""; }, 1500);
     } catch {
-      status.textContent = "Erro de conexão.";
+      status.textContent = "Não foi possível enviar o follow-up. Verifique sua conexão e tente novamente.";
       status.className = "status err followup-status";
     }
     sendBtn.disabled = false;
@@ -1439,7 +1470,7 @@ async function loadCalendarioView() {
       $("#googleConfigHint").textContent = data.configured ? "" : "Integração ainda não configurada pelo suporte.";
     }
   } catch {
-    $("#googleConfigHint").textContent = "Erro ao verificar a conexão.";
+    $("#googleConfigHint").textContent = "Não foi possível verificar a conexão com o Google. Recarregue a página e tente novamente.";
   }
 }
 
@@ -1449,7 +1480,7 @@ async function loadEventos() {
   try {
     const res = await fetch("/api/calendario/eventos");
     const data = await res.json();
-    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
+    if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar os compromissos.")}</p>`; return; }
     const eventos = data.eventos || [];
     if (!eventos.length) { wrap.innerHTML = "<p class='hint'>Nenhum compromisso agendado.</p>"; return; }
     wrap.innerHTML = "";
@@ -1466,35 +1497,37 @@ async function loadEventos() {
       wrap.appendChild(div);
     });
   } catch {
-    wrap.innerHTML = "<p class='hint'>Erro de conexão.</p>";
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar os compromissos. Verifique sua conexão e tente novamente.</p>";
   }
 }
 
-$("#btnDisconnectGoogle").addEventListener("click", async () => {
-  if (!confirm("Desconectar sua conta Google?")) return;
-  await fetch("/api/google/disconnect", { method: "POST" });
+$("#btnDisconnectGoogle").addEventListener("click", async (e) => {
+  if (!confirm("Desconectar sua conta Google? Você para de ver e criar compromissos pelo ZapFlow até reconectar; nada é apagado da sua conta Google.")) return;
+  await withLoading(e.currentTarget, "Desconectando...", () => fetch("/api/google/disconnect", { method: "POST" }));
   loadCalendarioView();
 });
 
-$("#btnCriarEvento").addEventListener("click", async () => {
+$("#btnCriarEvento").addEventListener("click", async (e) => {
   const status = $("#eventoStatus");
   const titulo = $("#evTitulo").value.trim();
   const inicio = $("#evInicio").value;
   const fim = $("#evFim").value;
   const descricao = $("#evDescricao").value.trim();
-  if (!titulo || !inicio || !fim) { status.textContent = "Preencha título, início e fim."; return; }
+  if (!titulo || !inicio || !fim) { status.textContent = "Preencha título, início e fim para criar o compromisso."; return; }
   try {
-    const res = await fetch("/api/calendario/eventos", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ titulo, inicio: new Date(inicio).toISOString(), fim: new Date(fim).toISOString(), descricao }),
+    await withLoading(e.currentTarget, "Criando...", async () => {
+      const res = await fetch("/api/calendario/eventos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titulo, inicio: new Date(inicio).toISOString(), fim: new Date(fim).toISOString(), descricao }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível criar o compromisso. Tente novamente.");
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao criar."; return; }
     status.textContent = "Compromisso criado!";
     $("#evTitulo").value = ""; $("#evInicio").value = ""; $("#evFim").value = ""; $("#evDescricao").value = "";
     loadEventos();
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível criar o compromisso. Verifique sua conexão e tente novamente.";
   }
 });
 
@@ -1534,28 +1567,30 @@ async function loadZappyIA() {
     $("#iaCondicoes").value = p.condicoesComerciais || "";
     if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas e conversas, criar compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
   } catch {
-    $("#iaConfigHint").textContent = "Erro ao carregar.";
+    $("#iaConfigHint").textContent = "Não foi possível carregar as configurações da IA. Recarregue a página e tente novamente.";
   }
 }
 
-$("#btnSalvarPerfilIa").addEventListener("click", async () => {
+$("#btnSalvarPerfilIa").addEventListener("click", async (e) => {
   const status = $("#perfilIaStatus");
   try {
-    const res = await fetch("/api/ia/configuracao", {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        segmento: $("#iaSegmento").value.trim(), descricao: $("#iaDescricao").value.trim(),
-        produtosServicos: $("#iaProdutos").value.trim(), publicoAlvo: $("#iaPublico").value.trim(),
-        regiao: $("#iaRegiao").value.trim(), diferenciais: $("#iaDiferenciais").value.trim(),
-        tomComunicacao: $("#iaTom").value.trim(), condicoesComerciais: $("#iaCondicoes").value.trim(),
-      }),
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch("/api/ia/configuracao", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segmento: $("#iaSegmento").value.trim(), descricao: $("#iaDescricao").value.trim(),
+          produtosServicos: $("#iaProdutos").value.trim(), publicoAlvo: $("#iaPublico").value.trim(),
+          regiao: $("#iaRegiao").value.trim(), diferenciais: $("#iaDiferenciais").value.trim(),
+          tomComunicacao: $("#iaTom").value.trim(), condicoesComerciais: $("#iaCondicoes").value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível salvar o perfil. Tente novamente.");
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao salvar."; status.className = "status err"; return; }
-    status.textContent = "Perfil salvo!";
+    status.textContent = "Perfil da empresa salvo!";
     status.className = "status ok";
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível salvar o perfil. Verifique sua conexão e tente novamente.";
     status.className = "status err";
   }
 });
@@ -1609,7 +1644,7 @@ async function iaEnviarMensagem() {
     }
   } catch {
     document.getElementById("iaPensando")?.remove();
-    iaAddBubble("assistant", "Erro de conexão.");
+    iaAddBubble("assistant", "Não consegui processar sua mensagem agora. Tente novamente em alguns instantes.");
   }
 }
 $("#iaSend").addEventListener("click", iaEnviarMensagem);

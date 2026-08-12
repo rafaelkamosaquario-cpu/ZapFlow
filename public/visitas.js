@@ -6,6 +6,18 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+/** Desabilita o botão e troca o texto durante uma ação assíncrona; restaura no final (evita clique duplo). */
+async function withLoading(btn, loadingText, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = loadingText;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
 function formatDuracao(ms) {
   const totalSeg = Math.max(0, Math.floor(ms / 1000));
   const min = String(Math.floor(totalSeg / 60)).padStart(2, "0");
@@ -49,21 +61,24 @@ function abrirIniciarModal() {
 $("#btnIniciarVisita").addEventListener("click", abrirIniciarModal);
 $("#btnFecharIniciar").addEventListener("click", () => $("#iniciarModal").classList.add("hidden"));
 
-$("#btnConfirmarIniciar").addEventListener("click", async () => {
+$("#btnConfirmarIniciar").addEventListener("click", async (e) => {
   const status = $("#iniciarStatus");
   const clienteNome = $("#vfCliente").value.trim();
-  if (!clienteNome) { status.textContent = "Informe o nome do cliente."; status.className = "status err"; return; }
+  if (!clienteNome) { status.textContent = "Informe o nome do cliente para iniciar a visita."; status.className = "status err"; return; }
   try {
-    const res = await fetch("/api/visitas", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clienteNome, objetivo: $("#vfObjetivo").value.trim(), latitude: geo.lat, longitude: geo.lng }),
+    const data = await withLoading(e.currentTarget, "Iniciando...", async () => {
+      const res = await fetch("/api/visitas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clienteNome, objetivo: $("#vfObjetivo").value.trim(), latitude: geo.lat, longitude: geo.lng }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível iniciar a visita. Tente novamente.");
+      return d;
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao iniciar."; status.className = "status err"; return; }
     $("#iniciarModal").classList.add("hidden");
     abrirDuranteModal(data.visita);
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
     status.className = "status err";
   }
 });
@@ -104,24 +119,27 @@ function renderFotos(fotos) {
   wrap.innerHTML = fotos.map((f) => `<a href="${f.url}" target="_blank" rel="noopener">📎 ${escapeHtml(f.nome || "foto")}</a>`).join(" · ");
 }
 
-$("#btnSalvarDetalhes").addEventListener("click", async () => {
+$("#btnSalvarDetalhes").addEventListener("click", async (e) => {
   const status = $("#detalhesStatus");
   try {
-    const res = await fetch(`/api/visitas/${visitaAtual.id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contatoNome: $("#durContato").value.trim(),
-        contatoTelefone: $("#durTelefone").value.trim(),
-        observacao: $("#durObservacao").value.trim(),
-      }),
+    const data = await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch(`/api/visitas/${visitaAtual.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contatoNome: $("#durContato").value.trim(),
+          contatoTelefone: $("#durTelefone").value.trim(),
+          observacao: $("#durObservacao").value.trim(),
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar os detalhes da visita. Tente novamente.");
+      return d;
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao salvar."; status.className = "status err"; return; }
     visitaAtual = data.visita;
-    status.textContent = "Salvo!";
+    status.textContent = "Detalhes salvos!";
     status.className = "status ok";
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
     status.className = "status err";
   }
 });
@@ -137,66 +155,74 @@ $("#durFoto").addEventListener("change", async () => {
   try {
     const res = await fetch(`/api/visitas/${visitaAtual.id}/foto`, { method: "POST", body: form });
     const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao enviar."; status.className = "status err"; return; }
+    if (!res.ok) { status.textContent = data.error || "Não foi possível enviar a foto. Tente novamente."; status.className = "status err"; return; }
     visitaAtual = data.visita;
     renderFotos(visitaAtual.fotos);
     status.textContent = "Foto salva!";
     status.className = "status ok";
     input.value = "";
   } catch {
-    status.textContent = "Erro de conexão.";
+    status.textContent = "Não foi possível enviar a foto. Verifique sua conexão e tente novamente.";
     status.className = "status err";
   }
 });
 
-$("#btnSalvarValor").addEventListener("click", async () => {
+$("#btnSalvarValor").addEventListener("click", async (e) => {
   const status = $("#valorStatus");
   const valor = $("#durValor").value;
   try {
-    const res = await fetch(`/api/visitas/${visitaAtual.id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ valorPotencial: valor ? Number(valor) : null }),
+    const data = await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch(`/api/visitas/${visitaAtual.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valorPotencial: valor ? Number(valor) : null }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar o valor potencial. Tente novamente.");
+      return d;
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao salvar."; status.className = "status err"; return; }
     visitaAtual = data.visita;
-    status.textContent = "Salvo!";
+    status.textContent = "Valor potencial salvo!";
     status.className = "status ok";
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
     status.className = "status err";
   }
 });
 
-$("#btnAgendar").addEventListener("click", async () => {
+$("#btnAgendar").addEventListener("click", async (e) => {
   const status = $("#agendarStatus");
   const data = $("#durData").value;
   const hora = $("#durHora").value;
-  if (!data) { status.textContent = "Escolha uma data."; status.className = "status err"; return; }
+  if (!data) { status.textContent = "Escolha uma data para agendar o follow-up."; status.className = "status err"; return; }
   try {
-    const res = await fetch(`/api/visitas/${visitaAtual.id}/agendar-retorno`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, hora }),
+    const dataRes = await withLoading(e.currentTarget, "Agendando...", async () => {
+      const res = await fetch(`/api/visitas/${visitaAtual.id}/agendar-retorno`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data, hora }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível agendar o follow-up. Tente novamente.");
+      return d;
     });
-    const dataRes = await res.json();
-    if (!res.ok) { status.textContent = dataRes.error || "Erro ao agendar."; status.className = "status err"; return; }
     visitaAtual = dataRes.visita;
-    status.textContent = dataRes.calendarioCriado ? "Agendado! Já entrou na sua Google Agenda." : "Agendado (conecte o Google pra também criar na Agenda).";
+    status.textContent = dataRes.calendarioCriado ? "Follow-up agendado! Já entrou na sua Google Agenda." : "Follow-up agendado (conecte o Google pra também criar na Agenda).";
     status.className = "status ok";
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
     status.className = "status err";
   }
 });
 
-$("#btnFinalizar").addEventListener("click", async () => {
+$("#btnFinalizar").addEventListener("click", async (e) => {
   const status = $("#finalizarStatus");
   try {
-    const res = await fetch(`/api/visitas/${visitaAtual.id}/finalizar`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motivo: $("#finMotivo").value, resultado: $("#finResultado").value }),
+    await withLoading(e.currentTarget, "Finalizando...", async () => {
+      const res = await fetch(`/api/visitas/${visitaAtual.id}/finalizar`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: $("#finMotivo").value, resultado: $("#finResultado").value }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível finalizar a visita. Tente novamente.");
     });
-    const data = await res.json();
-    if (!res.ok) { status.textContent = data.error || "Erro ao finalizar."; status.className = "status err"; return; }
     status.textContent = "Visita finalizada!";
     status.className = "status ok";
     setTimeout(() => {
@@ -204,8 +230,8 @@ $("#btnFinalizar").addEventListener("click", async () => {
       loadResumo();
       loadVisitas();
     }, 700);
-  } catch {
-    status.textContent = "Erro de conexão.";
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível se conectar ao servidor. Verifique sua internet e tente novamente.";
     status.className = "status err";
   }
 });
@@ -315,7 +341,7 @@ function attachFollowupHandlers(div, v) {
       });
       const data = await res.json();
       if (!res.ok) {
-        status.textContent = data.error || "Erro ao enviar.";
+        status.textContent = data.error || "Não foi possível enviar o follow-up. Tente novamente.";
         status.className = "status err followup-status";
         sendBtn.disabled = false;
         return;
@@ -325,7 +351,7 @@ function attachFollowupHandlers(div, v) {
       input.value = "";
       setTimeout(() => { row.classList.add("hidden"); status.textContent = ""; }, 1500);
     } catch {
-      status.textContent = "Erro de conexão.";
+      status.textContent = "Não foi possível enviar o follow-up. Verifique sua conexão e tente novamente.";
       status.className = "status err followup-status";
     }
     sendBtn.disabled = false;
@@ -353,7 +379,7 @@ async function loadVisitas() {
     hint.textContent = "";
     list.forEach((v) => wrap.appendChild(renderVisitaCard(v)));
   } catch {
-    hint.textContent = "Erro de conexão.";
+    hint.textContent = "Não foi possível carregar as visitas. Verifique sua conexão e tente novamente.";
   }
 }
 
