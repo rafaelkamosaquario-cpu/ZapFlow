@@ -84,7 +84,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Cliente", "Perdido"];
@@ -152,7 +152,8 @@ checkWaStatus();
 setInterval(checkWaStatus, 60000);
 
 function loadView(view) {
-  if (view === "overview") loadOverview();
+  if (view === "overview") { loadOverview(); loadOnboarding(); }
+  else if (view === "configuracoes") loadConfiguracoesView();
   else if (view === "clients") loadClients();
   else if (view === "agenda") loadAgenda();
   else if (view === "conversas") loadConversas();
@@ -164,6 +165,54 @@ function loadView(view) {
   else if (view === "visitas") loadVisitasView();
   else if (view === "calendario") loadCalendarioView();
   else if (view === "ia") loadZappyIA();
+}
+
+// ---------------------------------------------------------------------------
+// Configuração guiada (Item 7) -- barra no Início + checklist permanente em Configurações
+// ---------------------------------------------------------------------------
+function onbStepHtml(s) {
+  const acao = !s.done && (s.view || s.href) ? `<button type="button" class="btn ghost sm onb-go" data-view="${s.view || ""}" data-href="${s.href || ""}">Resolver</button>` : "";
+  return `<div class="onb-step ${s.done ? "done" : ""}">
+    <span class="onb-check">${s.done ? "✓" : ""}</span>
+    <div class="onb-step-txt"><b>${escapeHtml(s.titulo)}</b><span>${escapeHtml(s.descricao)}</span></div>
+    ${acao}
+  </div>`;
+}
+function wireOnbSteps(container) {
+  container.querySelectorAll(".onb-go").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.href) window.location.href = b.dataset.href;
+    else if (b.dataset.view) activateView(b.dataset.view);
+  }));
+}
+async function loadOnboarding() {
+  const bar = $("#onbBar");
+  if (!bar) return;
+  try {
+    const data = await (await fetch("/api/onboarding")).json();
+    if (data.allDone) { bar.classList.add("hidden"); return; }
+    bar.classList.remove("hidden");
+    $("#onbPercent").textContent = data.percent + "%";
+    $("#onbProgressFill").style.width = data.percent + "%";
+    $("#onbSteps").innerHTML = data.steps.map(onbStepHtml).join("");
+    wireOnbSteps($("#onbSteps"));
+  } catch {
+    bar.classList.add("hidden");
+  }
+}
+async function loadConfiguracoesView() {
+  const wrap = $("#confOnbSteps");
+  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  try {
+    const data = await (await fetch("/api/onboarding")).json();
+    $("#confOnbSummary").textContent = data.allDone
+      ? "Configuração concluída! Todos os passos foram feitos."
+      : `${data.completedCount} de ${data.total} passos concluídos.`;
+    $("#confOnbProgressFill").style.width = data.percent + "%";
+    wrap.innerHTML = data.steps.map(onbStepHtml).join("");
+    wireOnbSteps(wrap);
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar a configuração.</p>";
+  }
 }
 
 // ---------------------------------------------------------------------------

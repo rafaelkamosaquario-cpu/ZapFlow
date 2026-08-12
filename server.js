@@ -2452,6 +2452,64 @@ async function processWebhook(tenant, b) {
   if (externalId) await repo.eventosRepo.markProcessed(tenant.empresa.id, externalId);
 }
 
+// Onboarding guiado (Item 7): progresso calculado a partir de dados reais, sem
+// flag "concluído" gravada por passo -- assim nunca dessincroniza do estado
+// de fato da empresa. Só o dono vê isso (vendedor nem alcança essa rota).
+app.get("/api/onboarding", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  const tenant = req.tenant;
+  try {
+    const [perfilIa, googleConexao, vendedores] = await Promise.all([
+      USE_SUPABASE ? repo.configuracoesIaRepo.get(tenant.empresa.id) : null,
+      USE_SUPABASE ? repo.googleRepo.get(tenant.empresa.id) : null,
+      USE_SUPABASE ? repo.usuariosRepo.listVendedores(tenant.empresa.id) : [],
+    ]);
+    const steps = [
+      {
+        id: "perfil", titulo: "Perfil da empresa",
+        descricao: "Conte pro Zappy o que sua empresa vende e pra quem, em ZapFlow IA.",
+        done: Boolean(perfilIa?.segmento?.trim() && perfilIa?.descricao?.trim()),
+        view: "ia",
+      },
+      {
+        id: "whatsapp", titulo: "WhatsApp conectado",
+        descricao: "Conexão configurada pela equipe ZapFlow no cadastro da sua empresa.",
+        done: Boolean(tenant.empresa?.zapiInstanceId && tenant.empresa?.zapiInstanceToken),
+        view: null,
+      },
+      {
+        id: "contatos", titulo: "Contatos na agenda",
+        descricao: "Adicione contatos manualmente, importe uma planilha ou sincronize do chip.",
+        done: tenant.agenda.length > 0,
+        view: "agenda",
+      },
+      {
+        id: "google", titulo: "Google conectado",
+        descricao: "Conecte sua conta Google pra agenda e planilhas em Calendário.",
+        done: Boolean(googleConexao),
+        view: "calendario",
+      },
+      {
+        id: "campanha", titulo: "Primeira campanha",
+        descricao: "Envie sua primeira campanha de mensagens.",
+        done: tenant.jobs.length > 0,
+        href: "/",
+      },
+      {
+        id: "equipe", titulo: "Equipe",
+        descricao: "Cadastre pelo menos um vendedor em Vendedores.",
+        done: vendedores.length > 0,
+        view: "vendedores",
+      },
+    ];
+    const completedCount = steps.filter((s) => s.done).length;
+    res.json({ steps, completedCount, total: steps.length, percent: Math.round((completedCount / steps.length) * 100), allDone: completedCount === steps.length });
+  } catch (err) {
+    console.error("[onboarding] status:", err.message);
+    res.status(500).json({ error: "Não foi possível calcular o progresso da configuração." });
+  }
+});
+
 // Configurações públicas para o frontend
 app.get("/api/config", (req, res) => {
   const tenant = req.tenant;

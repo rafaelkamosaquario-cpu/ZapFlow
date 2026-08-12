@@ -43,6 +43,7 @@
 
       <span class="side-group-label">Organização</span>
       <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
+      <button class="side-tab" data-view="configuracoes"><i data-icon="settings" data-size="20"></i> <span class="side-label">Configurações</span></button>
     </nav>
     <div class="side-foot">
       <div class="side-theme">
@@ -96,6 +97,16 @@
           </span>
           <a class="btn primary ov-newcamp" href="/"><i data-icon="megaphone" data-size="18"></i> Nova campanha</a>
         </div>
+      </div>
+
+      <!-- Configuração guiada (Item 7) -- some sozinha quando os 6 passos estão concluídos -->
+      <div class="onb-bar hidden" id="onbBar">
+        <div class="onb-head">
+          <span class="onb-title">Configuração do ZapFlow — <span id="onbPercent">0%</span> concluída</span>
+          <span class="hint">Continua disponível em Configurações a qualquer momento.</span>
+        </div>
+        <div class="onb-progress"><div class="onb-progress-fill" id="onbProgressFill" style="width:0%"></div></div>
+        <div class="onb-steps" id="onbSteps"></div>
       </div>
 
       <!-- Filtro de período -->
@@ -502,6 +513,15 @@
       </div>
     </section>
 
+    <!-- Configurações (Item 7) -->
+    <section class="dash-view hidden" data-view="configuracoes">
+      <h2 class="dash-title">Configurações</h2>
+      <p class="hint" id="confOnbSummary">Carregando...</p>
+
+      <div class="onb-progress" style="margin:10px 0 16px"><div class="onb-progress-fill" id="confOnbProgressFill" style="width:0%"></div></div>
+      <div class="onb-steps" id="confOnbSteps"></div>
+    </section>
+
     <!-- ZapFlow IA (V4) -->
     <section class="dash-view hidden" data-view="ia">
       <h2 class="dash-title">✨ ZapFlow IA</h2>
@@ -710,6 +730,7 @@
       <button class="msheet-item" data-view="vendedores"><i data-icon="user" data-size="22"></i><span>Vendedores</span></button>
       <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas</span></button>
       <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>
+      <button class="msheet-item" data-view="configuracoes"><i data-icon="settings" data-size="22"></i><span>Configurações</span></button>
       <button class="msheet-item" data-view="ia"><i data-icon="sparkles" data-size="22"></i><span>ZapFlow IA</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
     </div>
