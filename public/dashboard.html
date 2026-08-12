@@ -78,15 +78,46 @@
         </div>
       </div>
 
-      <!-- Resumo do dia (Visitas + conversas + Calendário, V2.1) -->
-      <div id="ovResumoStrip" style="display:flex; gap:10px; flex-wrap:wrap; margin:0 0 18px;"></div>
-
       <!-- Filtro de período -->
       <div class="period-pills" role="tablist" aria-label="Período">
         <button class="period-pill active" data-period="hoje">Hoje</button>
         <button class="period-pill" data-period="7d">7 dias</button>
         <button class="period-pill" data-period="30d">30 dias</button>
         <button class="period-pill" data-period="mes">Este mês</button>
+      </div>
+
+      <!-- Indicadores operacionais do dia (independem de já ter disparado campanha) -->
+      <div class="kpi-grid" id="kpiGrid">
+        <button class="kpi" type="button" data-go="followup">
+          <span class="kpi-ico ico-blue" data-icon="refresh" data-size="20"></span>
+          <span class="kpi-label">Follow-ups</span>
+          <span class="kpi-num" id="kpiFollowups">0</span>
+          <span class="kpi-sub">aguardando retorno</span>
+        </button>
+        <button class="kpi" type="button" data-go="conversas">
+          <span class="kpi-ico ico-amber" data-icon="messages" data-size="20"></span>
+          <span class="kpi-label">Conversas</span>
+          <span class="kpi-num" id="kpiConversasHoje">0</span>
+          <span class="kpi-sub">aguardando resposta</span>
+        </button>
+        <button class="kpi" type="button" data-go="visitas">
+          <span class="kpi-ico ico-blue" data-icon="store" data-size="20"></span>
+          <span class="kpi-label">Visitas</span>
+          <span class="kpi-num" id="kpiVisitasHoje">0</span>
+          <span class="kpi-sub">previstas para hoje</span>
+        </button>
+        <button class="kpi" type="button" data-go="visitas">
+          <span class="kpi-ico ico-green" data-icon="chart" data-size="20"></span>
+          <span class="kpi-label">Oportunidades</span>
+          <span class="kpi-num" id="kpiOportunidades">R$0</span>
+          <span class="kpi-sub">em negociação</span>
+        </button>
+        <button class="kpi" type="button" data-go="calendario">
+          <span class="kpi-ico ico-blue" data-icon="calendarclock" data-size="20"></span>
+          <span class="kpi-label">Agenda</span>
+          <span class="kpi-num" id="kpiAgenda">0</span>
+          <span class="kpi-sub">compromissos hoje</span>
+        </button>
       </div>
 
       <!-- Skeleton de carregamento -->
@@ -124,34 +155,6 @@
       </div>
 
       <div id="ovBody">
-        <!-- Indicadores principais -->
-        <div class="kpi-grid" id="kpiGrid">
-          <button class="kpi" type="button" data-go="responses">
-            <span class="kpi-ico ico-green" data-icon="messages" data-size="20"></span>
-            <span class="kpi-label">Respostas recebidas</span>
-            <span class="kpi-num" id="kpiRespostas">0</span>
-            <span class="kpi-sub" id="kpiRespostasSub">no período</span>
-          </button>
-          <button class="kpi" type="button" data-go="conversas">
-            <span class="kpi-ico ico-amber" data-icon="messages" data-size="20"></span>
-            <span class="kpi-label">Conversas no período</span>
-            <span class="kpi-num" id="kpiConversas">0</span>
-            <span class="kpi-sub" id="kpiConversasSub"></span>
-          </button>
-          <button class="kpi" type="button" data-go="followup">
-            <span class="kpi-ico ico-blue" data-icon="refresh" data-size="20"></span>
-            <span class="kpi-label">Follow-ups pendentes</span>
-            <span class="kpi-num" id="kpiFollow">0</span>
-            <span class="kpi-sub">aguardando resposta</span>
-          </button>
-          <button class="kpi" type="button" data-go="clients">
-            <span class="kpi-ico ico-blue" data-icon="users" data-size="20"></span>
-            <span class="kpi-label">Clientes identificados</span>
-            <span class="kpi-num" id="kpiClientes">0</span>
-            <span class="kpi-sub" id="kpiClientesSub">pessoas encontradas nas conversas</span>
-          </button>
-        </div>
-
         <!-- Próximas ações -->
         <section class="ov-block">
           <div class="ov-block-head">
@@ -161,9 +164,22 @@
           <div id="ovActions" class="next-actions"></div>
         </section>
 
+        <!-- Equipe hoje (resumo compacto; detalhe fica na tela Visitas em Campo) -->
+        <section class="ov-block" id="ovEquipeBlock" hidden>
+          <div class="ov-block-head"><h3>Equipe hoje</h3></div>
+          <div class="action-item tone-blue">
+            <span class="action-ico" data-icon="users" data-size="20"></span>
+            <div class="action-txt"><b id="ovEquipeResumo">—</b></div>
+            <button class="btn secondary action-btn" type="button" data-go="visitas">Ver equipe</button>
+          </div>
+        </section>
+
         <!-- Desempenho -->
         <section class="ov-block">
-          <div class="ov-block-head"><h3>Desempenho</h3></div>
+          <div class="ov-block-head">
+            <h3>Desempenho</h3>
+            <span id="ovDesempSub"></span>
+          </div>
           <div class="chart-row">
             <div class="chart-card">
               <h4>Mensagens e respostas <span class="hint" style="margin:0;font-weight:400">· últimos 30 dias</span></h4>

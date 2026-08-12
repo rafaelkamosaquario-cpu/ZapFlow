@@ -613,16 +613,19 @@ export const visitasRepo = {
   /** Números da tela "Hoje". vendedorId nulo = soma a empresa inteira (visão do dono). */
   async resumoDia(empresaId, vendedorId) {
     requireEmpresaId(empresaId, "visitas.resumoDia");
-    let q = supabase.from("visitas").select("resultado,valor_potencial,proxima_visita_data").eq("empresa_id", empresaId);
+    let q = supabase.from("visitas").select("resultado,valor_potencial,proxima_visita_data,data_hora").eq("empresa_id", empresaId);
     if (vendedorId) q = q.eq("vendedor_id", vendedorId);
     const { data, error } = await q;
     assertOk(error, "visitas.resumoDia");
     const rows = data || [];
     const hojeStr = new Date().toISOString().slice(0, 10);
+    const abertas = rows.filter((r) => r.valor_potencial != null && ["Interessado", "Negociação"].includes(r.resultado));
     return {
       retornos: rows.filter((r) => r.resultado === "Retornar").length,
       visitasHoje: rows.filter((r) => r.proxima_visita_data === hojeStr).length,
-      oportunidades: rows.filter((r) => r.valor_potencial != null && ["Interessado", "Negociação"].includes(r.resultado)).length,
+      visitasRealizadasHoje: rows.filter((r) => String(r.data_hora || "").startsWith(hojeStr)).length,
+      oportunidades: abertas.length,
+      oportunidadesValor: abertas.reduce((a, r) => a + (Number(r.valor_potencial) || 0), 0),
     };
   },
 };

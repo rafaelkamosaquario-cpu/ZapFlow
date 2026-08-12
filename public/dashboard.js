@@ -16,6 +16,11 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 const fmtDate = (ts) => new Date(ts).toLocaleString("pt-BR");
+const fmtMoney = (v) => {
+  v = Number(v) || 0;
+  if (v >= 1000) return "R$" + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k";
+  return "R$" + v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+};
 
 const STATUS = {
   pendente: { txt: "Pendente", cls: "pend" },
@@ -221,20 +226,26 @@ function renderActions(data, jobs, waConnected) {
   }));
 }
 
+/** Indicadores operacionais do dia (Follow-ups, Conversas, Visitas, Oportunidades, Agenda) + Equipe hoje. */
 async function loadResumoOwner() {
-  const wrap = $("#ovResumoStrip");
-  if (!wrap) return;
   try {
     const res = await fetch("/api/visitas/resumo");
     const r = await res.json();
-    if (!res.ok) { wrap.innerHTML = ""; return; }
-    const pill = (label, valor) => `<span class="badge" style="font-size:13px; padding:6px 12px;">${valor} ${label}</span>`;
-    wrap.innerHTML = pill("retornos pendentes", r.retornos) + pill("visitas hoje", r.visitasHoje)
-      + pill("oportunidades quentes", r.oportunidades) + pill("conversas aguardando", r.conversasAguardando)
-      + (r.compromissosHoje ? pill("compromissos hoje", r.compromissosHoje) : "");
-  } catch {
-    wrap.innerHTML = "";
-  }
+    if (!res.ok) return;
+    countUp($("#kpiFollowups"), r.retornos || 0);
+    countUp($("#kpiVisitasHoje"), r.visitasHoje || 0);
+    countUp($("#kpiAgenda"), r.compromissosHoje || 0);
+    $("#kpiConversasHoje").textContent = r.conversasAguardando || 0;
+    $("#kpiOportunidades").textContent = fmtMoney(r.oportunidadesValor);
+
+    const equipeBlock = $("#ovEquipeBlock");
+    if (equipeBlock && typeof r.vendedoresAtivos === "number") {
+      equipeBlock.hidden = false;
+      const vend = r.vendedoresAtivos === 1 ? "1 vendedor" : `${r.vendedoresAtivos} vendedores`;
+      const vis = r.visitasRealizadasHoje === 1 ? "1 visita" : `${r.visitasRealizadasHoje || 0} visitas`;
+      $("#ovEquipeResumo").textContent = `${vend} · ${vis} · ${fmtMoney(r.oportunidadesValor)} em potencial`;
+    }
+  } catch { /* indicadores do dia são um extra; falha aqui não deve travar o resto do painel */ }
 }
 
 async function loadOverview() {
@@ -258,15 +269,10 @@ async function loadOverview() {
     $("#ovBody").classList.toggle("hidden", semDados);
     if (semDados) { checkWaStatus(); return; }
 
-    // Indicadores
-    countUp($("#kpiRespostas"), data.donut.responderam);
-    countUp($("#kpiConversas"), k.conversas.total);
-    $("#kpiConversasSub").textContent = `${k.conversas.campanha} de campanha · ${k.conversas.diaadia} dia a dia`;
-    countUp($("#kpiFollow"), data.donut.semResposta);
-    countUp($("#kpiClientes"), k.clientes);
-    $("#kpiClientesSub").textContent = k.clientesNovos > 0 ? `+${k.clientesNovos} no período` : "pessoas encontradas nas conversas";
-
-    // Desempenho
+    // Desempenho (métricas históricas do período selecionado)
+    const novosTxt = k.clientesNovos > 0 ? ` (+${k.clientesNovos} no período)` : "";
+    $("#ovDesempSub").textContent =
+      `${data.donut.responderam} respostas recebidas · ${k.clientes} clientes identificados${novosTxt}`;
     drawLine($("#lineChart"), data.serie30);
     // Taxa de resposta só faz sentido com envios de campanha no período.
     // Sem base válida, evita números contraditórios (ex.: 1 resposta e 0%).
@@ -301,6 +307,7 @@ async function loadOverview() {
 // Cliques dos indicadores / estado vazio / repetir (uma vez)
 $$("#kpiGrid .kpi").forEach((b) => b.addEventListener("click", () => b.dataset.go && activateView(b.dataset.go)));
 $$("#ovEmpty [data-go]").forEach((b) => b.addEventListener("click", () => activateView(b.dataset.go)));
+$$("#ovEquipeBlock [data-go]").forEach((b) => b.addEventListener("click", () => activateView(b.dataset.go)));
 $("#ovRetry")?.addEventListener("click", loadOverview);
 
 function renderWeekBars(week) {

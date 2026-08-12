@@ -665,7 +665,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
   .side-theme-label { color: var(--muted); font-size: 13px; font-weight: 600; }
   .side-logout { color: var(--error); }
   .dash-sidebar ~ .container { max-width: none; margin-left: 264px; margin-right: 24px; padding-bottom: 40px; }
-  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(5, 1fr); }
   .chart-row { grid-template-columns: 1fr 1fr; }
   .rank-row { grid-template-columns: 2fr 1fr; }
 

@@ -1818,7 +1818,10 @@ app.get("/api/visitas/resumo", async (req, res) => {
   const tenant = req.tenant;
   try {
     if (req.session.role === "owner") {
-      const resumo = await repo.visitasRepo.resumoDia(tenant.empresa.id, null);
+      const [resumo, vendedoresAtivos] = await Promise.all([
+        repo.visitasRepo.resumoDia(tenant.empresa.id, null),
+        repo.usuariosRepo.countVendedores(tenant.empresa.id),
+      ]);
       const conversasAguardando = tenant.conversas.reduce((set, m) => {
         // última mensagem por contato é "in" (recebida) => aguardando resposta
         const atual = set.get(m.key);
@@ -1835,7 +1838,7 @@ app.get("/api/visitas/resumo", async (req, res) => {
           compromissosHoje = eventos.filter((e) => String(e.inicio || "").startsWith(hojeStr)).length;
         } catch { /* Calendar fora do ar não deve quebrar o resumo */ }
       }
-      return res.json({ ...resumo, conversasAguardando: aguardando, compromissosHoje });
+      return res.json({ ...resumo, conversasAguardando: aguardando, compromissosHoje, vendedoresAtivos });
     }
     const resumo = await repo.visitasRepo.resumoDia(tenant.empresa.id, req.session.uid);
     res.json(resumo);
