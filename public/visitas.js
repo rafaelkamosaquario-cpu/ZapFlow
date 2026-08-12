@@ -232,7 +232,7 @@ async function loadResumo() {
     const r = await res.json();
     if (!res.ok) { wrap.innerHTML = ""; return; }
     const pill = (label, valor) => `<span class="badge" style="font-size:13px; padding:6px 12px;">${valor} ${label}</span>`;
-    wrap.innerHTML = pill("retornos pendentes", r.retornos) + pill("visitas hoje", r.visitasHoje) + pill("oportunidades quentes", r.oportunidades);
+    wrap.innerHTML = pill("follow-ups pendentes", r.retornos) + pill("visitas hoje", r.visitasHoje) + pill("oportunidades quentes", r.oportunidades);
   } catch {
     wrap.innerHTML = "";
   }
@@ -346,7 +346,7 @@ async function loadVisitas() {
     }
     const list = data.visitas || [];
     if (!list.length) {
-      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum retorno pendente." };
+      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum follow-up pendente." };
       hint.textContent = vazio[activeTab] || "Nenhuma visita registrada.";
       return;
     }

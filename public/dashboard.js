@@ -205,7 +205,7 @@ function renderActions(data, jobs, waConnected) {
   if (falhas > 0)
     acts.push({ pri: 3, icon: "x", tone: "warn", title: `${falhas} mensagem(ns) com falha`, info: "Confira as campanhas para reenviar.", btn: "Ver campanhas", go: "campaigns" });
   if (follow > 0)
-    acts.push({ pri: 4, icon: "refresh", tone: "blue", title: `${follow} contato(s) para follow-up`, info: "Reengaje quem recebeu e não respondeu.", btn: "Criar acompanhamento", go: "followup" });
+    acts.push({ pri: 4, icon: "refresh", tone: "blue", title: `${follow} contato(s) para follow-up`, info: "Reengaje quem recebeu e não respondeu.", btn: "Criar follow-up", go: "followup" });
   pend.forEach((j) => acts.push({ pri: 5, icon: "calendarclock", tone: "blue", title: "Campanha agendada", info: `Para ${fmtDate(j.scheduledAt)}.`, btn: "Ver campanha", go: "campaigns" }));
   if (novos > 0)
     acts.push({ pri: 6, icon: "users", tone: "green", title: `${novos} novo(s) contato(s) no período`, info: "Sua base de clientes cresceu.", btn: "Ver clientes", go: "clients" });
@@ -425,7 +425,7 @@ async function loadClients() {
     crmList = data.clients || [];
     $("#crmShown").textContent = `${data.shown} de ${data.total} cliente(s)`;
     if (!crmList.length) {
-      wrap.innerHTML = "<p class='hint'>Nenhum cliente nesse filtro. A base se preenche conforme você dispara.</p>";
+      wrap.innerHTML = "<p class='hint'>Nenhum cliente nesse filtro. A base se preenche conforme você envia campanhas.</p>";
       return;
     }
     wrap.innerHTML = "";
@@ -1059,7 +1059,7 @@ $("#btnPrepareFollowup").addEventListener("click", () => {
     return;
   }
   sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "follow-up", contacts: naoResponderam }));
-  alert(`${naoResponderam.length} contato(s) que não responderam foram preparados.\nVocê será levado à Nova campanha para montar o acompanhamento.`);
+  alert(`${naoResponderam.length} contato(s) que não responderam foram preparados.\nVocê será levado à Nova campanha para montar o follow-up.`);
   window.location.href = "/";
 });
 
@@ -1128,7 +1128,7 @@ async function loadFollowup() {
           <span>${job.result.success} enviadas · ${job.repliedCount} responderam</span>
           <span class="sched-msg">"${escapeHtml(preview)}"</span>
         </div>
-        <button class="btn primary fu-btn" ${naoResp ? "" : "disabled"}>Criar acompanhamento (${naoResp})</button>`;
+        <button class="btn primary fu-btn" ${naoResp ? "" : "disabled"}>Criar follow-up (${naoResp})</button>`;
       div.querySelector(".fu-btn").addEventListener("click", () => openCampaign(job.id));
       wrap.appendChild(div);
     });
@@ -1199,7 +1199,7 @@ $("#btnSaveBot").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/chatbot", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error();
-    status.textContent = "Automação salva!";
+    status.textContent = "Respostas automáticas salvas!";
     status.className = "status ok";
   } catch {
     status.textContent = "Erro ao salvar";
@@ -1322,7 +1322,7 @@ async function loadVisitasOwner() {
     if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Erro ao carregar.")}</p>`; return; }
     const list = data.visitas || [];
     if (!list.length) {
-      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum retorno pendente." };
+      const vazio = { hoje: "Nenhuma visita hoje ainda.", followup: "Nenhum follow-up pendente." };
       wrap.innerHTML = `<p class="hint">${vazio[visitasOwnerTab] || "Nenhuma visita encontrada."}</p>`;
       return;
     }
