@@ -1976,7 +1976,7 @@ async function loadZappyIA() {
     $("#iaSite").value = p.site || "";
     $("#iaInstagram").value = p.instagram || "";
     $("#iaObservacoes").value = p.observacoesIa || "";
-    if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas e conversas, criar compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
+    if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas, conversas e o desempenho da equipe, propor compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
   } catch {
     $("#iaConfigHint").textContent = "Não foi possível carregar as configurações da IA. Recarregue a página e tente novamente.";
   }

@@ -2067,36 +2067,40 @@ app.get("/api/visitas/resumo", async (req, res) => {
 });
 
 // Desempenho da equipe por período, agrupado por vendedor (Item 5.10 — só o dono).
-app.get("/api/visitas/equipe", async (req, res) => {
-  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
-  const tenant = req.tenant;
-  const period = String(req.query.period || "hoje");
+/** Agregação de desempenho por vendedor -- compartilhada entre a tela de Visitas (owner) e a tool da IA. */
+async function agregarDesempenhoEquipe(tenant, period) {
   const now = new Date();
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let desde = dayStart;
   if (period === "7d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 6); }
   else if (period === "30d") { desde = new Date(dayStart); desde.setDate(desde.getDate() - 29); }
   else if (period === "mes") desde = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [rows, vendedores] = await Promise.all([
+    repo.visitasRepo.listarParaResumoEquipe(tenant.empresa.id, { desde: desde.toISOString() }),
+    repo.usuariosRepo.listVendedores(tenant.empresa.id),
+  ]);
+  const porVendedor = new Map();
+  for (const v of vendedores) {
+    porVendedor.set(v.id, { vendedorId: v.id, vendedorNome: v.name || v.username, visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 });
+  }
+  const total = { visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 };
+  const abertos = ["Interessado", "Proposta solicitada", "Em negociação"];
+  for (const r of rows) {
+    let alvo = porVendedor.get(r.vendedor_id);
+    if (!alvo) { alvo = { vendedorId: r.vendedor_id, vendedorNome: "Ex-vendedor", visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 }; porVendedor.set(r.vendedor_id, alvo); }
+    alvo.visitas++; total.visitas++;
+    if (r.finished_at) { alvo.concluidas++; total.concluidas++; } else { alvo.pendentes++; total.pendentes++; }
+    if (r.valor_potencial != null && abertos.includes(r.resultado)) { alvo.potencial += Number(r.valor_potencial) || 0; total.potencial += Number(r.valor_potencial) || 0; }
+    if (r.resultado === "Retornar depois") { alvo.followups++; total.followups++; }
+  }
+  return { period, total, vendedores: [...porVendedor.values()].sort((a, b) => b.visitas - a.visitas) };
+}
+
+app.get("/api/visitas/equipe", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
   try {
-    const [rows, vendedores] = await Promise.all([
-      repo.visitasRepo.listarParaResumoEquipe(tenant.empresa.id, { desde: desde.toISOString() }),
-      repo.usuariosRepo.listVendedores(tenant.empresa.id),
-    ]);
-    const porVendedor = new Map();
-    for (const v of vendedores) {
-      porVendedor.set(v.id, { vendedorId: v.id, vendedorNome: v.name || v.username, visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 });
-    }
-    const total = { visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 };
-    const abertos = ["Interessado", "Proposta solicitada", "Em negociação"];
-    for (const r of rows) {
-      let alvo = porVendedor.get(r.vendedor_id);
-      if (!alvo) { alvo = { vendedorId: r.vendedor_id, vendedorNome: "Ex-vendedor", visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 }; porVendedor.set(r.vendedor_id, alvo); }
-      alvo.visitas++; total.visitas++;
-      if (r.finished_at) { alvo.concluidas++; total.concluidas++; } else { alvo.pendentes++; total.pendentes++; }
-      if (r.valor_potencial != null && abertos.includes(r.resultado)) { alvo.potencial += Number(r.valor_potencial) || 0; total.potencial += Number(r.valor_potencial) || 0; }
-      if (r.resultado === "Retornar depois") { alvo.followups++; total.followups++; }
-    }
-    res.json({ period, total, vendedores: [...porVendedor.values()].sort((a, b) => b.visitas - a.visitas) });
+    res.json(await agregarDesempenhoEquipe(req.tenant, String(req.query.period || "hoje")));
   } catch (err) {
     console.error("[visitas] equipe:", err.message);
     res.status(500).json({ error: "Não foi possível carregar o desempenho da equipe." });
@@ -2510,7 +2514,7 @@ app.post("/api/ia/perguntar", async (req, res) => {
   try {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem });
-    const executores = criarExecutores(tenant);
+    const executores = criarExecutores(tenant, { agregarDesempenhoEquipe });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
     });
