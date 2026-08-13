@@ -1787,7 +1787,7 @@ function renderVisitaCardOwner(v) {
 
 /** Bloco de "enviar follow-up" — só aparece se a visita tiver telefone de contato. */
 function followupBlockOwner(v) {
-  if (!v.contatoTelefone) return "";
+  if (!v.contatoTelefone || !v.finishedAt || v.resultado !== "Retornar depois") return "";
   return `
     <div class="followup-block" style="margin-top:10px;">
       <button class="btn secondary sm btn-followup" type="button">Enviar follow-up</button>
