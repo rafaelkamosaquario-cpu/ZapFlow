@@ -162,6 +162,33 @@ $("#btnSalvarDetalhes").addEventListener("click", async (e) => {
   }
 });
 
+$("#btnResumirIa").addEventListener("click", async (e) => {
+  const status = $("#detalhesStatus");
+  const out = $("#iaResumoResultado");
+  const observacao = $("#durObservacao").value.trim();
+  if (!observacao) { status.textContent = "Escreva alguma observação antes de pedir o resumo."; status.className = "status err"; return; }
+  out.classList.add("hidden");
+  try {
+    const data = await withLoading(e.currentTarget, "Pensando...", async () => {
+      const res = await fetch(`/api/visitas/${visitaAtual.id}/ia-resumo`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ observacao }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível gerar o resumo agora.");
+      return d;
+    });
+    out.classList.remove("hidden");
+    out.innerHTML = `<b>Resumo:</b> ${escapeHtml(data.resumo)}` +
+      (data.resultado ? `<br><button type="button" class="btn ghost sm" id="btnAplicarResultado" style="margin-top:6px;">Aplicar resultado sugerido: ${escapeHtml(data.resultado)}</button>` : "") +
+      (data.proximaAcao ? `<br><button type="button" class="btn ghost sm" id="btnAplicarProximaAcao" style="margin-top:6px;">Aplicar próxima ação: ${escapeHtml(data.proximaAcao)}</button>` : "");
+    $("#btnAplicarResultado")?.addEventListener("click", () => { $("#finResultado").value = data.resultado; });
+    $("#btnAplicarProximaAcao")?.addEventListener("click", () => { $("#durProximaAcao").value = data.proximaAcao; });
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível gerar o resumo agora.";
+    status.className = "status err";
+  }
+});
+
 $("#durFoto").addEventListener("change", async () => {
   const input = $("#durFoto");
   const status = $("#fotoStatus");
@@ -370,6 +397,7 @@ function followupBlock(v) {
     <div class="followup-block" style="margin-top:10px;">
       <div class="manual-row followup-row hidden">
         <input type="text" class="followup-input" placeholder="Mensagem de follow-up..." />
+        <button class="btn ghost sm btn-followup-ia" type="button">✨</button>
         <button class="btn primary sm btn-followup-send" type="button">Enviar</button>
       </div>
       <span class="status followup-status"></span>
@@ -380,9 +408,25 @@ function attachFollowupHandlers(div, v) {
   if (!toggleBtn) return;
   const row = div.querySelector(".followup-row");
   const input = div.querySelector(".followup-input");
+  const iaBtn = div.querySelector(".btn-followup-ia");
   const sendBtn = div.querySelector(".btn-followup-send");
   const status = div.querySelector(".followup-status");
   toggleBtn.addEventListener("click", (e) => { e.stopPropagation(); row.classList.toggle("hidden"); });
+  iaBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    try {
+      const data = await withLoading(iaBtn, "...", async () => {
+        const res = await fetch(`/api/visitas/${v.id}/preparar-followup`, { method: "POST" });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || "Não foi possível preparar a mensagem agora.");
+        return d;
+      });
+      input.value = data.mensagem;
+    } catch (err) {
+      status.textContent = err.message || "Não foi possível preparar a mensagem agora.";
+      status.className = "status err followup-status";
+    }
+  });
   sendBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     const message = input.value.trim();

@@ -82,8 +82,12 @@
           <input type="tel" id="durTelefone" placeholder="Telefone do contato" />
         </div>
         <textarea id="durObservacao" rows="2" placeholder="📝 Observações da visita" style="margin-top:8px;"></textarea>
-        <button class="btn secondary sm" id="btnSalvarDetalhes" type="button" style="margin-top:6px;">Salvar</button>
+        <div class="manual-row" style="margin-top:6px;">
+          <button class="btn secondary sm" id="btnSalvarDetalhes" type="button">Salvar</button>
+          <button class="btn ghost sm" id="btnResumirIa" type="button">✨ Resumir com IA</button>
+        </div>
         <span class="status" id="detalhesStatus"></span>
+        <div id="iaResumoResultado" class="hint hidden" style="margin-top:8px;"></div>
       </div>
 
       <div class="manual-add">

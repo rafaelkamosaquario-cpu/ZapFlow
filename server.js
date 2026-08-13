@@ -1753,6 +1753,37 @@ app.get("/api/conversas/:key", (req, res) => {
   });
 });
 
+// Sugestão de resposta (V1 IA item 4): usa o histórico da conversa + perfil da
+// empresa pra propor o próximo texto -- a IA nunca envia, só sugere; o
+// vendedor/dono revisa e decide no botão "Enviar" já existente do chat.
+app.post("/api/conversas/:key/sugerir-resposta", async (req, res) => {
+  if (!openaiClient.openaiConfigured) {
+    return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
+  }
+  const tenant = req.tenant;
+  const key = req.params.key;
+  const messages = tenant.conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts).slice(-20);
+  if (!messages.length) return res.status(400).json({ error: "Não há histórico de conversa pra sugerir uma resposta." });
+  const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  try {
+    const linhas = messages.map((m) => `[${m.dir === "out" ? "nós" : "cliente"}] ${m.text}`).join("\n");
+    const contexto = `Conversa de WhatsApp com o cliente (mais antiga primeiro):\n${linhas}` +
+      (c?.stage ? `\n\nEtapa do funil: ${c.stage}` : "");
+    const instrucao = `${contexto}\n\nSugira a próxima mensagem que devemos enviar pra esse cliente pelo WhatsApp, dando continuidade à conversa. Responda APENAS com o texto da mensagem sugerida, sem aspas, sem explicações antes ou depois.`;
+    const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
+    await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
+      modelo: openaiClient.MODELOS.padrao, acao: "sugerir_resposta",
+      tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+    });
+    res.json({ sugestao: textoFinal.trim() });
+  } catch (err) {
+    console.error("[conversas] sugerir-resposta:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível gerar uma sugestão agora." });
+  }
+});
+
 app.post("/api/conversas/:key/reply", async (req, res) => {
   const tenant = req.tenant;
   const creds = resolveCredentials(tenant, req.body);
@@ -1939,6 +1970,47 @@ app.post("/api/visitas/:id/foto", upload.single("file"), async (req, res) => {
   }
 });
 
+// Resumo com IA (V1 IA item 5): transforma a observação livre do vendedor em
+// resultado/próxima ação sugeridos -- a IA só sugere, o vendedor decide e
+// aplica manualmente nos campos de "Finalizar visita" (controle humano).
+app.post("/api/visitas/:id/ia-resumo", async (req, res) => {
+  if (!openaiClient.openaiConfigured) {
+    return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
+  }
+  const tenant = req.tenant;
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    const observacao = String(req.body?.observacao ?? visita.observacao ?? "").trim();
+    if (!observacao) return res.status(400).json({ error: "Escreva alguma observação da visita antes de pedir o resumo." });
+    const contexto = `Observações registradas pelo vendedor durante uma visita comercial ao cliente "${visita.clienteNome}":\n"${observacao}"` +
+      (visita.valorPotencial != null ? `\nValor potencial já informado: R$ ${visita.valorPotencial}` : "");
+    const instrucao = `${contexto}\n\nResponda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), no formato exato:\n{"resumo": "resumo comercial curto em 1-2 frases", "resultado": "um destes valores exatos -- Sem contato, Interessado, Proposta solicitada, Em negociação, Venda fechada, Retornar depois, Sem interesse", "proximaAcao": "sugestão curta do que fazer a seguir, ou string vazia se não houver nada a sugerir"}`;
+    const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
+    await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
+      modelo: openaiClient.MODELOS.padrao, acao: "resumir_visita",
+      tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+    });
+    let sugestao;
+    try {
+      sugestao = JSON.parse(textoFinal.trim().replace(/^```json\s*|\s*```$/g, ""));
+    } catch {
+      return res.json({ resumo: textoFinal.trim(), resultado: null, proximaAcao: null });
+    }
+    const resultado = VISITA_RESULTADOS.includes(sugestao.resultado) ? sugestao.resultado : null;
+    res.json({
+      resumo: String(sugestao.resumo || "").slice(0, 500),
+      resultado,
+      proximaAcao: String(sugestao.proximaAcao || "").slice(0, 200) || null,
+    });
+  } catch (err) {
+    console.error("[visitas] ia-resumo:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível gerar o resumo agora." });
+  }
+});
+
 app.post("/api/visitas/:id/finalizar", async (req, res) => {
   const motivo = String(req.body?.motivo || "");
   const resultado = String(req.body?.resultado || "");
@@ -2053,6 +2125,36 @@ app.get("/api/visitas", async (req, res) => {
 
 // Envia uma mensagem de WhatsApp avulsa pro contato de UMA visita específica
 // (não é campanha em massa — por isso fica liberado pro papel vendedor).
+// Preparar mensagem de follow-up com IA (V1 IA item 6) -- só sugere o texto,
+// quem envia é sempre o botão "Enviar" já existente (fluxo humano intacto).
+app.post("/api/visitas/:id/preparar-followup", async (req, res) => {
+  if (!openaiClient.openaiConfigured) {
+    return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
+  }
+  const tenant = req.tenant;
+  try {
+    const visita = await carregarVisitaComPermissao(req, res);
+    if (!visita) return;
+    const contexto = `Visita comercial ao cliente "${visita.clienteNome}".` +
+      (visita.motivo ? `\nMotivo da visita: ${visita.motivo}.` : "") +
+      (visita.resultado ? `\nResultado: ${visita.resultado}.` : "") +
+      (visita.observacao ? `\nObservações do vendedor: ${visita.observacao}` : "") +
+      (visita.proximaAcao ? `\nPróxima ação combinada: ${visita.proximaAcao}` : "");
+    const instrucao = `${contexto}\n\nEscreva uma mensagem curta de WhatsApp pra retomar contato com esse cliente, dando continuidade à visita. Responda APENAS com o texto da mensagem, sem aspas, sem explicações antes ou depois.`;
+    const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
+    await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
+      modelo: openaiClient.MODELOS.padrao, acao: "preparar_followup",
+      tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+    });
+    res.json({ mensagem: textoFinal.trim() });
+  } catch (err) {
+    console.error("[visitas] preparar-followup:", err.response?.data?.error || err.message);
+    res.status(500).json({ error: "Não foi possível preparar a mensagem agora." });
+  }
+});
+
 app.post("/api/visitas/:id/followup", async (req, res) => {
   const tenant = req.tenant;
   const message = String(req.body?.message || "").trim();

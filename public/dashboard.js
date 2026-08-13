@@ -1003,6 +1003,25 @@ async function sendReply() {
 $("#chatSend").addEventListener("click", sendReply);
 $("#chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendReply(); });
 
+$("#btnSugerirResposta").addEventListener("click", async (e) => {
+  if (!chatKey) return;
+  const status = $("#chatStatus");
+  status.textContent = "";
+  try {
+    const data = await withLoading(e.currentTarget, "Pensando...", async () => {
+      const res = await fetch(`/api/conversas/${chatKey}/sugerir-resposta`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível gerar uma sugestão agora.");
+      return d;
+    });
+    $("#chatInput").value = data.sugestao;
+    $("#chatInput").focus();
+  } catch (err) {
+    status.textContent = err.message || "Não foi possível gerar uma sugestão agora.";
+    status.className = "status err";
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Agenda de contatos
 // ---------------------------------------------------------------------------
@@ -1774,6 +1793,7 @@ function followupBlockOwner(v) {
       <button class="btn secondary sm btn-followup" type="button">Enviar follow-up</button>
       <div class="manual-row followup-row hidden" style="margin-top:8px;">
         <input type="text" class="followup-input" placeholder="Mensagem de follow-up..." />
+        <button class="btn ghost sm btn-followup-ia" type="button">✨</button>
         <button class="btn primary sm btn-followup-send" type="button">Enviar</button>
       </div>
       <span class="status followup-status"></span>
@@ -1784,9 +1804,24 @@ function attachFollowupHandlersOwner(div, v) {
   if (!toggleBtn) return;
   const row = div.querySelector(".followup-row");
   const input = div.querySelector(".followup-input");
+  const iaBtn = div.querySelector(".btn-followup-ia");
   const sendBtn = div.querySelector(".btn-followup-send");
   const status = div.querySelector(".followup-status");
   toggleBtn.addEventListener("click", () => row.classList.toggle("hidden"));
+  iaBtn.addEventListener("click", async () => {
+    try {
+      const data = await withLoading(iaBtn, "...", async () => {
+        const res = await fetch(`/api/visitas/${v.id}/preparar-followup`, { method: "POST" });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || "Não foi possível preparar a mensagem agora.");
+        return d;
+      });
+      input.value = data.mensagem;
+    } catch (err) {
+      status.textContent = err.message || "Não foi possível preparar a mensagem agora.";
+      status.className = "status err followup-status";
+    }
+  });
   sendBtn.addEventListener("click", async () => {
     const message = input.value.trim();
     if (!message) {
