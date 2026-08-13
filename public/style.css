@@ -273,6 +273,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .visita-next span { font-size: 12.5px; color: var(--muted); }
 .visita-next.atrasado span { color: var(--error); font-weight: 600; }
 .visita-secondary { font-size: 12px; color: var(--muted); }
+.visita-potencial { display: block; font-size: 12.5px; font-weight: 700; color: var(--success); margin-top: 3px; }
 .visita-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .visita-actions .btn, .visita-actions a.btn { flex: 1 1 auto; text-align: center; text-decoration: none; }
 

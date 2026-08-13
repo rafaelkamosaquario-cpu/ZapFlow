@@ -49,7 +49,7 @@ let geo = { lat: null, lng: null };
 function iniciarGeolocalizacao() {
   const status = $("#geoStatus");
   geo = { lat: null, lng: null };
-  status.textContent = "📍 Obtendo localização...";
+  status.textContent = "📍 Vamos usar sua localização pra marcar onde essa visita aconteceu (aparece no mapa pro dono depois). Obtendo localização...";
   if (!navigator.geolocation) {
     status.textContent = "Localização não suportada neste navegador — a visita será salva sem coordenadas.";
     return;
@@ -375,6 +375,7 @@ function renderVisitaCard(v) {
     </div>
     <div class="dash-card-body">
       <span class="visita-secondary">${secundario}</span>
+      ${v.valorPotencial != null ? `<span class="visita-potencial">💰 ${fmtMoneyFull(v.valorPotencial)}</span>` : ""}
     </div>
     ${proximaHtml}
     <div class="visita-actions">${actions.join("")}</div>

@@ -84,7 +84,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-up", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-ups", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
@@ -258,7 +258,8 @@ function melhorDiaFromSerie(serie) {
     const d = new Date(today.getTime() - (n - 1 - i) * 864e5);
     buckets[d.getDay()] += serie.respostas[i] || 0;
   }
-  if (!buckets.reduce((a, b) => a + b, 0)) return null;
+  const total = buckets.reduce((a, b) => a + b, 0);
+  if (total < 5) return null; // amostra mínima -- com poucas respostas, "melhor dia" é ruído, não sinal.
   let mi = 0; for (let i = 1; i < 7; i++) if (buckets[i] > buckets[mi]) mi = i;
   return dias[mi];
 }

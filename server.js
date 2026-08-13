@@ -63,6 +63,8 @@ const AGENDA_FILE = path.join(DATA_DIR, "agenda.json");
 const CONVERSAS_FILE = path.join(DATA_DIR, "conversas.json");
 const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
 const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
+// Abaixo disso, "melhor horário/dia" é ruído estatístico, não conclusão confiável.
+const AMOSTRA_MINIMA_MELHOR_HORARIO = 5;
 const MAX_TEMPLATES = 10;
 const CONV_MAX = 5000;
 const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
@@ -1321,6 +1323,8 @@ app.get("/api/dashboard", (req, res) => {
   responses.forEach((r) => { const h = new Date(r.ts).getHours(); hours[h] = (hours[h] || 0) + 1; });
   let melhorHora = null, mx = 0;
   for (const h in hours) { if (hours[h] > mx) { mx = hours[h]; melhorHora = Number(h); } }
+  // Amostra mínima: com poucas respostas, "melhor horário" é ruído, não sinal.
+  if (responses.length < AMOSTRA_MINIMA_MELHOR_HORARIO) melhorHora = null;
 
   // Funil do CRM (contagem por etapa)
   const funilStages = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado"];
@@ -1835,7 +1839,7 @@ app.put("/api/chatbot", async (req, res) => {
 // Sem Geocoding/Places/Maps JS nesta versão: só lat/long brutas (Geolocation
 // do navegador, grátis) + link "abrir no Google Maps" no frontend.
 // ---------------------------------------------------------------------------
-const VISITA_MOTIVOS = ["Prospecção", "Apresentação", "Negociação", "Pós-venda", "Cobrança", "Outro"];
+const VISITA_MOTIVOS = ["Prospecção", "Apresentação", "Negociação", "Pós-venda", "Cobrança", "Suporte", "Outro"];
 const VISITA_RESULTADOS = ["Sem contato", "Interessado", "Proposta solicitada", "Em negociação", "Venda fechada", "Retornar depois", "Sem interesse"];
 // Categoria visual do resultado (badge) -- poucas cores, não uma por valor.
 const RESULTADO_CATEGORIA = {
