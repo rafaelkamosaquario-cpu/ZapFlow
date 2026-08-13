@@ -481,11 +481,12 @@ export const configuracoesIaRepo = {
 // ia_consumo (V4 — log de tokens por chamada; só registro, sem bloqueio)
 // ----------------------------------------------------------------------------
 export const iaConsumoRepo = {
-  async registrar(empresaId, usuarioId, { modelo, acao, tokensEntrada, tokensSaida }) {
+  async registrar(empresaId, usuarioId, { modelo, acao, tokensEntrada, tokensSaida, estimatedCost }) {
     requireEmpresaId(empresaId, "iaConsumo.registrar");
     const { error } = await supabase.from("ia_consumo").insert({
       empresa_id: empresaId, usuario_id: usuarioId, modelo, acao,
       tokens_entrada: tokensEntrada || 0, tokens_saida: tokensSaida || 0,
+      estimated_cost: estimatedCost || 0,
     });
     if (error) console.error("[Supabase] ia_consumo:", error.message); // log auxiliar, nunca derruba a resposta da IA
   },

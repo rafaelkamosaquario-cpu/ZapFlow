@@ -1560,6 +1560,7 @@ app.post("/api/clients/:id/ia", async (req, res) => {
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: `cliente_${tipo}`,
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+      estimatedCost: openaiClient.calcularCustoEstimado(openaiClient.MODELOS.padrao, usage.tokensEntrada, usage.tokensSaida),
     });
     res.json({ resposta: textoFinal });
   } catch (err) {
@@ -1843,6 +1844,7 @@ app.post("/api/conversas/:key/sugerir-resposta", async (req, res) => {
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: "sugerir_resposta",
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+      estimatedCost: openaiClient.calcularCustoEstimado(openaiClient.MODELOS.padrao, usage.tokensEntrada, usage.tokensSaida),
     });
     res.json({ sugestao: textoFinal.trim() });
   } catch (err) {
@@ -2055,10 +2057,12 @@ app.post("/api/visitas/:id/ia-resumo", async (req, res) => {
     const instrucao = `${contexto}\n\nResponda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), no formato exato:\n{"resumo": "resumo comercial curto em 1-2 frases", "resultado": "um destes valores exatos -- Sem contato, Interessado, Proposta solicitada, Em negociação, Venda fechada, Retornar depois, Sem interesse", "proximaAcao": "sugestão curta do que fazer a seguir, ou string vazia se não houver nada a sugerir"}`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
-    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
+    // Extração estruturada (texto -> JSON) é tarefa "simples" no roteador -- usa Luna.
+    const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.simples, input, tools: [], executores: {} });
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
-      modelo: openaiClient.MODELOS.padrao, acao: "resumir_visita",
+      modelo: openaiClient.MODELOS.simples, acao: "resumir_visita",
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+      estimatedCost: openaiClient.calcularCustoEstimado(openaiClient.MODELOS.simples, usage.tokensEntrada, usage.tokensSaida),
     });
     let sugestao;
     try {
@@ -2242,6 +2246,7 @@ app.post("/api/visitas/:id/preparar-followup", async (req, res) => {
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: "preparar_followup",
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+      estimatedCost: openaiClient.calcularCustoEstimado(openaiClient.MODELOS.padrao, usage.tokensEntrada, usage.tokensSaida),
     });
     res.json({ mensagem: textoFinal.trim() });
   } catch (err) {
@@ -2609,6 +2614,7 @@ app.post("/api/ia/perguntar", async (req, res) => {
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: "chat",
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
+      estimatedCost: openaiClient.calcularCustoEstimado(openaiClient.MODELOS.padrao, usage.tokensEntrada, usage.tokensSaida),
     });
     const { texto: textoSemCampanha, rascunho: rascunhoCampanha } = extrairRascunhoCampanha(textoFinal);
     const { texto, rascunho: rascunhoEvento } = extrairRascunhoEvento(textoSemCampanha);
