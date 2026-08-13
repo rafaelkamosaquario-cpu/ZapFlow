@@ -640,6 +640,15 @@
       <div class="visita-next hidden" id="c360ProximaAcao">
         <div><b id="c360ProximaAcaoTexto"></b><br><span id="c360ProximaAcaoData"></span></div>
       </div>
+      <div class="c360-section hidden" id="c360SemProximaAcao">
+        <button class="btn ghost sm" id="btnCriarFollowupCliente" type="button">+ Criar follow-up</button>
+        <div class="manual-row hidden" id="c360FollowupForm" style="margin-top:8px;">
+          <input type="text" id="c360FollowupTexto" placeholder="O que fazer? (ex.: Enviar proposta)" />
+          <input type="date" id="c360FollowupData" />
+          <button class="btn primary sm" id="btnSalvarFollowupCliente" type="button">Salvar</button>
+        </div>
+        <span class="status" id="c360FollowupStatus"></span>
+      </div>
 
       <div class="c360-section">
         <h4>Responsável</h4>
@@ -677,6 +686,7 @@
           <button type="button" data-tipo="campanha">Campanhas</button>
           <button type="button" data-tipo="visita">Visitas</button>
           <button type="button" data-tipo="nota">Notas</button>
+          <button type="button" data-tipo="etapa">Etapa</button>
         </div>
         <div class="timeline" id="clientTimeline"></div>
       </div>

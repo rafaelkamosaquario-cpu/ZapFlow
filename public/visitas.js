@@ -481,8 +481,23 @@ function abrirDetalheVisita(v) {
     <p class="hint"><b>Observações:</b> ${escapeHtml(v.observacao || "—")}</p>
     <p class="hint"><b>Próxima ação:</b> ${escapeHtml(v.proximaAcao || "—")}${v.proximaVisitaData ? ` (${fmtDataCurta(v.proximaVisitaData)})` : ""}</p>
     ${fotos ? `<p class="hint"><b>Fotos:</b> ${fotos}</p>` : ""}
+    <div id="detOutrasVisitas"></div>
   `;
   $("#detalheModal").classList.remove("hidden");
+  if (v.contatoTelefone) carregarOutrasVisitas(v);
+}
+
+async function carregarOutrasVisitas(v) {
+  const box = $("#detOutrasVisitas");
+  if (!box) return;
+  try {
+    const params = new URLSearchParams({ telefone: v.contatoTelefone, excluir: v.id });
+    const data = await (await fetch(`/api/visitas/relacionadas?${params}`)).json();
+    const outras = data.visitas || [];
+    if (!outras.length) return;
+    box.innerHTML = `<h5 class="dash-subtitle" style="margin-top:14px;font-size:13px;">Outras visitas a este cliente</h5>` +
+      outras.map((o) => `<p class="hint">${new Date(o.dataHora).toLocaleDateString("pt-BR")} · ${escapeHtml(o.motivo || "—")} · ${escapeHtml(o.resultado || "em andamento")}</p>`).join("");
+  } catch { /* histórico relacionado é complementar -- silencioso se falhar */ }
 }
 $("#btnFecharDetalhe").addEventListener("click", () => $("#detalheModal").classList.add("hidden"));
 

@@ -821,6 +821,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .timeline-item.tipo-campanha::before { background: var(--warn); }
 .timeline-item.tipo-visita::before { background: var(--accent); }
 .timeline-item.tipo-nota::before { background: var(--success); }
+.timeline-item.tipo-etapa::before { background: var(--muted); }
 .timeline-item .timeline-body { flex: 1; min-width: 0; }
 .timeline-item .timeline-when { font-size: 11px; color: var(--muted); }
 .timeline-item .timeline-text { font-size: 13px; color: var(--text); word-break: break-word; }

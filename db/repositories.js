@@ -151,6 +151,8 @@ function clienteFromRow(r) {
     lastSentAt: r.last_sent_at || undefined, lastReplyAt: r.last_reply_at || undefined,
     lastCampaignName: r.last_campaign_name || undefined,
     vendedorResponsavelId: r.vendedor_responsavel_id || null,
+    origem: r.origem || "manual",
+    proximaAcaoTexto: r.proxima_acao_texto || "", proximaAcaoData: r.proxima_acao_data || null,
     createdAt: ms(r.created_at), updatedAt: ms(r.updated_at),
   };
 }
@@ -175,7 +177,7 @@ export const clientesRepo = {
       stage: c.stage || "Novo", stage_manual: !!c.stageManual,
       tags: c.tags || [], notes: c.notes || "",
       last_sent_at: c.lastSentAt || null, last_reply_at: c.lastReplyAt || null,
-      last_campaign_name: c.lastCampaignName || null,
+      last_campaign_name: c.lastCampaignName || null, origem: c.origem || "manual",
       vendedor_responsavel_id: c.vendedorResponsavelId ?? undefined, created_at: iso(c.createdAt),
     }, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertOne");
@@ -187,7 +189,7 @@ export const clientesRepo = {
       id: c.id, empresa_id: empresaId, phone_key: c.key, phone: c.phone, name: c.name || "", wa_name: c.waName || null,
       stage: c.stage || "Novo", stage_manual: !!c.stageManual, tags: c.tags || [], notes: c.notes || "",
       last_sent_at: c.lastSentAt || null, last_reply_at: c.lastReplyAt || null,
-      last_campaign_name: c.lastCampaignName || null, created_at: iso(c.createdAt),
+      last_campaign_name: c.lastCampaignName || null, origem: c.origem || "manual", created_at: iso(c.createdAt),
     }));
     const { error } = await supabase.from("clientes").upsert(rows, { onConflict: "empresa_id,phone_key" });
     assertOk(error, "clientes.upsertMany");
@@ -203,6 +205,14 @@ export const clientesRepo = {
     requireEmpresaId(empresaId, "clientes.deleteById");
     const { error } = await supabase.from("clientes").delete().eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "clientes.deleteById");
+  },
+  /** Próxima ação definida direto no cliente, sem depender de visita. */
+  async definirProximaAcao(empresaId, id, { texto, data }) {
+    requireEmpresaId(empresaId, "clientes.definirProximaAcao");
+    const { error } = await supabase.from("clientes")
+      .update({ proxima_acao_texto: texto || "", proxima_acao_data: data || null })
+      .eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "clientes.definirProximaAcao");
   },
 };
 
@@ -485,10 +495,11 @@ export const iaConsumoRepo = {
 // auditoria (Item 8.12 — log simples de quem fez o quê; só leitura pro dono)
 // ----------------------------------------------------------------------------
 export const auditoriaRepo = {
-  async registrar(empresaId, { atorNome, atorPapel, acao }) {
+  async registrar(empresaId, { atorNome, atorPapel, acao, clienteId }) {
     requireEmpresaId(empresaId, "auditoria.registrar");
     const { error } = await supabase.from("auditoria").insert({
       empresa_id: empresaId, ator_nome: atorNome || "Alguém", ator_papel: atorPapel || "owner", acao,
+      cliente_id: clienteId || null,
     });
     if (error) console.error("[Supabase] auditoria:", error.message); // log auxiliar, nunca derruba a ação principal
   },
@@ -498,6 +509,13 @@ export const auditoriaRepo = {
       .eq("empresa_id", empresaId).order("created_at", { ascending: false }).limit(limite);
     assertOk(error, "auditoria.listar");
     return (data || []).map((r) => ({ atorNome: r.ator_nome, atorPapel: r.ator_papel, acao: r.acao, criadoEm: r.created_at }));
+  },
+  async listarPorCliente(empresaId, clienteId) {
+    requireEmpresaId(empresaId, "auditoria.listarPorCliente");
+    const { data, error } = await supabase.from("auditoria").select("ator_nome,acao,created_at")
+      .eq("empresa_id", empresaId).eq("cliente_id", clienteId).order("created_at", { ascending: false }).limit(50);
+    assertOk(error, "auditoria.listarPorCliente");
+    return (data || []).map((r) => ({ atorNome: r.ator_nome, acao: r.acao, criadoEm: r.created_at }));
   },
 };
 

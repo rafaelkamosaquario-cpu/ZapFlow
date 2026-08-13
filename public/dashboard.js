@@ -86,7 +86,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-ups", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
-const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha" };
+const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha", conversa: "Conversa" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
 
 function activateView(view) {
@@ -673,7 +673,7 @@ let c360Filtro = "";
 function openClient(c) {
   crmCurrent = c;
   $("#clientTitle").textContent = displayNameOf(c) === "Contato não identificado" ? "Contato não identificado" : (c.displayName || c.name);
-  $("#clientPhone").textContent = fmtPhone(c.phone) + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.nameSource] ? `  · origem: ${SOURCE_LABEL[c.nameSource]}` : "");
+  $("#clientPhone").textContent = fmtPhone(c.phone) + (c.inAgenda ? "  · na agenda" : "") + (SOURCE_LABEL[c.origem] ? `  · cliente veio de: ${SOURCE_LABEL[c.origem]}` : "");
   $("#clientName").value = c.name || "";
   $("#clientTags").value = (c.tags || []).join(", ");
   $("#clientMeta").textContent =
@@ -721,10 +721,14 @@ async function loadClienteDetalhe(c) {
     $("#c360UltimaConversa").textContent = r.ultimaConversaEm ? fmtDate(r.ultimaConversaEm) : "—";
     $("#c360UltimaVisita").textContent = r.ultimaVisitaEm ? fmtDate(r.ultimaVisitaEm) : "—";
     $("#c360Campanhas").textContent = r.campanhasCount;
+    $("#c360ProximaAcao").classList.toggle("hidden", !r.proximaAcao);
+    $("#c360SemProximaAcao").classList.toggle("hidden", !!r.proximaAcao);
     if (r.proximaAcao) {
-      $("#c360ProximaAcao").classList.remove("hidden");
       $("#c360ProximaAcaoTexto").textContent = r.proximaAcao.texto;
       $("#c360ProximaAcaoData").textContent = "📅 " + fmtDataCurta(r.proximaAcao.data);
+    } else {
+      $("#c360FollowupForm").classList.add("hidden");
+      $("#c360FollowupTexto").value = ""; $("#c360FollowupData").value = ""; $("#c360FollowupStatus").textContent = "";
     }
 
     // Vendedor responsável
@@ -749,7 +753,7 @@ async function loadClienteDetalhe(c) {
   }
 }
 
-const TIMELINE_ICONE = { conversa: "💬", campanha: "📣", visita: "📍", nota: "📝" };
+const TIMELINE_ICONE = { conversa: "💬", campanha: "📣", visita: "📍", nota: "📝", etapa: "🔀" };
 function renderTimeline() {
   const wrap = $("#clientTimeline");
   const lista = c360Filtro ? c360Timeline.filter((e) => e.tipo === c360Filtro) : c360Timeline;
@@ -758,7 +762,7 @@ function renderTimeline() {
     <div class="timeline-item tipo-${e.tipo}">
       <div class="timeline-body">
         <div class="timeline-when">${TIMELINE_ICONE[e.tipo] || ""} ${fmtDate(e.ts)}</div>
-        <div class="timeline-text">${escapeHtml(e.texto || "")}${e.tipo === "campanha" ? (e.respondida ? " · respondida" : e.entregue ? " · entregue" : " · falhou") : ""}${e.tipo === "nota" && e.autor ? ` — <i>${escapeHtml(e.autor)}</i>` : ""}</div>
+        <div class="timeline-text">${escapeHtml(e.texto || "")}${e.tipo === "campanha" ? (e.respondida ? " · respondida" : e.entregue ? " · entregue" : " · falhou") : ""}${(e.tipo === "nota" || e.tipo === "etapa") && e.autor ? ` — <i>${escapeHtml(e.autor)}</i>` : ""}</div>
       </div>
     </div>`).join("");
 }
@@ -798,6 +802,30 @@ $("#btnAddNota").addEventListener("click", async (e) => {
     loadClienteDetalhe(crmCurrent); // recarrega a lista de notas (mais simples que atualizar as duas em memória)
   } catch (err) {
     alert(err.message || "Não foi possível salvar a nota.");
+  }
+});
+
+$("#btnCriarFollowupCliente").addEventListener("click", () => {
+  $("#c360FollowupForm").classList.toggle("hidden");
+});
+$("#btnSalvarFollowupCliente").addEventListener("click", async (e) => {
+  if (!crmCurrent) return;
+  const status = $("#c360FollowupStatus");
+  const texto = $("#c360FollowupTexto").value.trim();
+  const data = $("#c360FollowupData").value;
+  if (!texto || !data) { status.textContent = "Preencha o que fazer e a data."; status.className = "status err"; return; }
+  try {
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const res = await fetch(`/api/clients/${crmCurrent.id}/proxima-acao`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto, data }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar o follow-up. Tente novamente.");
+    });
+    loadClienteDetalhe(crmCurrent);
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = "status err";
   }
 });
 
@@ -972,7 +1000,7 @@ async function openChat(key, nome, thread) {
         await withLoading(toClientBtn, "Adicionando...", async () => {
           const res = await fetch("/api/clients/stage", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone: data.phone, stage: "Novo" }),
+            body: JSON.stringify({ phone: data.phone, stage: "Novo", origem: "conversa" }),
           });
           if (!res.ok) throw new Error();
         });
@@ -1079,7 +1107,7 @@ function agendaCard(c) {
       await withLoading(e.currentTarget, "Adicionando...", async () => {
         const res = await fetch("/api/clients/stage", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: c.phone, stage: "Novo" }),
+          body: JSON.stringify({ phone: c.phone, stage: "Novo", origem: "agenda" }),
         });
         if (!res.ok) throw new Error();
       });

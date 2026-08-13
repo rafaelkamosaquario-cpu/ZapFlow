@@ -752,14 +752,14 @@ function findClient(tenant, phone) {
   const k = phoneKey(phone);
   return k ? tenant.clients.find((c) => clientKey(c) === k) : null;
 }
-function upsertClient(tenant, phone, name) {
+function upsertClient(tenant, phone, name, origem) {
   const k = phoneKey(phone);
   if (!k) return null;
   const display = canonPhone(phone);
   const now = Date.now();
   let c = findClient(tenant, phone);
   if (!c) {
-    c = { id: crypto.randomUUID(), phone: display, key: k, name: name || "", tags: [], stage: "Novo", notes: "", createdAt: now, updatedAt: now };
+    c = { id: crypto.randomUUID(), phone: display, key: k, name: name || "", tags: [], stage: "Novo", notes: "", origem: origem || "manual", createdAt: now, updatedAt: now };
     tenant.clients.push(c);
   } else {
     if (name && !c.name) c.name = name;
@@ -808,7 +808,7 @@ async function recordClientsSent(tenant, list, campaignName) {
   const now = Date.now();
   const touched = [];
   list.forEach((ct) => {
-    const c = upsertClient(tenant, ct.phone, ct.name);
+    const c = upsertClient(tenant, ct.phone, ct.name, "campanha");
     if (c) {
       c.lastSentAt = now;
       c.updatedAt = now;
@@ -822,7 +822,7 @@ async function recordClientsSent(tenant, list, campaignName) {
 }
 /** Registra que um cliente respondeu (avança a etapa). */
 async function recordClientReply(tenant, phone) {
-  const c = upsertClient(tenant, phone);
+  const c = upsertClient(tenant, phone, undefined, "conversa");
   if (!c) return;
   c.lastReplyAt = Date.now();
   c.updatedAt = Date.now();
@@ -1467,6 +1467,7 @@ async function agregarClienteDetalhe(tenant, c) {
     .sort((a, b) => b.dataHora - a.dataHora);
 
   const notas = USE_SUPABASE ? await repo.clienteNotasRepo.listar(tenant.empresa.id, c.id) : [];
+  const mudancasEtapa = USE_SUPABASE ? await repo.auditoriaRepo.listarPorCliente(tenant.empresa.id, c.id) : [];
 
   let vendedorResponsavelNome = null;
   if (c.vendedorResponsavelId && USE_SUPABASE) {
@@ -1479,11 +1480,13 @@ async function agregarClienteDetalhe(tenant, c) {
     ...campanhas.map((cm) => ({ tipo: "campanha", ts: cm.enviadaEm, texto: cm.nome, entregue: cm.entregue, respondida: cm.respondida })),
     ...visitas.map((v) => ({ tipo: "visita", ts: v.dataHora, texto: `Visita — ${v.resultado || "em andamento"}`, visitaId: v.id })),
     ...notas.map((n) => ({ tipo: "nota", ts: new Date(n.criadoEm).getTime(), texto: n.texto, autor: n.autorNome })),
+    ...mudancasEtapa.map((e) => ({ tipo: "etapa", ts: new Date(e.criadoEm).getTime(), texto: e.acao, autor: e.atorNome })),
   ].filter((e) => e.ts).sort((a, b) => b.ts - a.ts);
 
   const ultimaVisita = visitas[0] || null;
   const oportunidade = visitas.find((v) => v.valorPotencial != null && ["Interessado", "Proposta solicitada", "Em negociação"].includes(v.resultado));
   const proximaAcaoVisita = visitas.find((v) => v.proximaVisitaData && v.resultado === "Retornar depois");
+  const proximaAcaoManual = c.proximaAcaoTexto && c.proximaAcaoData ? { texto: c.proximaAcaoTexto, data: c.proximaAcaoData } : null;
   const identidade = bestName(tenant, c.phone, c.lastCampaignName || "");
 
   return {
@@ -1494,7 +1497,7 @@ async function agregarClienteDetalhe(tenant, c) {
       ultimaConversaEm: mensagens[0]?.ts || null,
       ultimaVisitaEm: ultimaVisita?.dataHora || null,
       campanhasCount: campanhas.length,
-      proximaAcao: proximaAcaoVisita ? { texto: proximaAcaoVisita.proximaAcao || "Retornar", data: proximaAcaoVisita.proximaVisitaData } : null,
+      proximaAcao: proximaAcaoVisita ? { texto: proximaAcaoVisita.proximaAcao || "Retornar", data: proximaAcaoVisita.proximaVisitaData } : proximaAcaoManual,
     },
     notas,
     timeline: timeline.slice(0, 200),
@@ -1583,6 +1586,27 @@ app.patch("/api/clients/:id", async (req, res) => {
   res.json({ ok: true, client: c });
 });
 
+// Próxima ação definida direto no cliente (Cliente 360°), pra quando não há
+// visita em aberto gerando uma automaticamente -- dono cria o follow-up na mão.
+app.post("/api/clients/:id/proxima-acao", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  const texto = String(req.body?.texto || "").trim().slice(0, 200);
+  const data = String(req.body?.data || "").trim();
+  if (!texto || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: "Preencha o que fazer e a data." });
+  try {
+    c.proximaAcaoTexto = texto;
+    c.proximaAcaoData = data;
+    await repo.clientesRepo.definirProximaAcao(tenant.empresa.id, c.id, { texto, data });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[clients] proxima-acao:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar o follow-up. Tente novamente." });
+  }
+});
+
 app.delete("/api/clients/:id", async (req, res) => {
   const tenant = req.tenant;
   const before = tenant.clients.length;
@@ -1599,7 +1623,12 @@ app.post("/api/clients/stage", async (req, res) => {
   const { phone, stage } = req.body || {};
   if (!phoneKey(phone)) return res.status(400).json({ error: "Telefone inválido." });
   if (!CRM_STAGES.includes(stage)) return res.status(400).json({ error: "Etapa inválida." });
-  const c = upsertClient(tenant, phone);
+  let origem = String(req.body?.origem || "manual");
+  if (origem === "agenda") {
+    const ag = tenant.agenda.find((a) => phoneKey(a.phone) === phoneKey(phone));
+    if (ag?.origem === "planilha") origem = "planilha";
+  }
+  const c = upsertClient(tenant, phone, undefined, origem);
   if (!c) return res.status(400).json({ error: "Não foi possível registrar o cliente." });
   const etapaAnterior = c.stage;
   c.stage = stage;
@@ -1610,6 +1639,7 @@ app.post("/api/clients/stage", async (req, res) => {
     repo.auditoriaRepo.registrar(tenant.empresa.id, {
       atorNome: req.session.name, atorPapel: req.session.role,
       acao: `Moveu ${bestName(tenant, c.phone, c.name).name} de ${etapaAnterior} para ${stage}`,
+      clienteId: c.id,
     }).catch(() => {});
   }
   res.json({ ok: true, client: { ...c, displayName: bestName(tenant, c.phone, c.name).name, inAgenda: inAgenda(tenant, c.phone) } });
@@ -2125,6 +2155,30 @@ app.get("/api/visitas/equipe", async (req, res) => {
 
 // Escopo (mine|todas) decidido pelo servidor a partir do papel — nunca por
 // parâmetro do cliente, senão um vendedor poderia pedir os dados da equipe.
+// Outras visitas ao mesmo cliente (histórico relacionado, achado da auditoria
+// -- Item 5.E). Escopo mine/todas segue a mesma regra do resto de /api/visitas.
+app.get("/api/visitas/relacionadas", async (req, res) => {
+  const tenant = req.tenant;
+  const telefone = String(req.query.telefone || "");
+  const excluir = String(req.query.excluir || "");
+  const key = phoneKey(telefone);
+  if (!key) return res.json({ visitas: [] });
+  try {
+    const todas = req.session.role === "owner"
+      ? await repo.visitasRepo.listForEmpresa(tenant.empresa.id, "historico")
+      : await repo.visitasRepo.listForVendedor(tenant.empresa.id, req.session.uid, "historico");
+    const relacionadas = todas
+      .filter((v) => v.id !== excluir && v.contatoTelefone && phoneKey(v.contatoTelefone) === key)
+      .sort((a, b) => b.dataHora - a.dataHora)
+      .slice(0, 5)
+      .map((v) => ({ id: v.id, dataHora: v.dataHora, resultado: v.resultado, motivo: v.motivo }));
+    res.json({ visitas: relacionadas });
+  } catch (err) {
+    console.error("[visitas] relacionadas:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar o histórico." });
+  }
+});
+
 app.get("/api/visitas", async (req, res) => {
   const tenant = req.tenant;
   const tab = ["hoje", "followup"].includes(req.query.tab) ? req.query.tab : "historico";
