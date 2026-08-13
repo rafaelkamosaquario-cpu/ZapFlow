@@ -440,6 +440,9 @@ function perfilIaFromRow(r) {
     segmento: r.segmento || "", descricao: r.descricao || "", produtosServicos: r.produtos_servicos || "",
     publicoAlvo: r.publico_alvo || "", regiao: r.regiao || "", diferenciais: r.diferenciais || "",
     tomComunicacao: r.tom_comunicacao || "", condicoesComerciais: r.condicoes_comerciais || "",
+    clienteIdeal: r.cliente_ideal || "", prazo: r.prazo || "", garantias: r.garantias || "",
+    politicas: r.politicas || "", palavrasEvitar: r.palavras_evitar || "",
+    site: r.site || "", instagram: r.instagram || "", observacoesIa: r.observacoes_ia || "",
   };
 }
 export const configuracoesIaRepo = {
@@ -456,6 +459,9 @@ export const configuracoesIaRepo = {
       produtos_servicos: p.produtosServicos || "", publico_alvo: p.publicoAlvo || "",
       regiao: p.regiao || "", diferenciais: p.diferenciais || "",
       tom_comunicacao: p.tomComunicacao || "", condicoes_comerciais: p.condicoesComerciais || "",
+      cliente_ideal: p.clienteIdeal || "", prazo: p.prazo || "", garantias: p.garantias || "",
+      politicas: p.politicas || "", palavras_evitar: p.palavrasEvitar || "",
+      site: p.site || "", instagram: p.instagram || "", observacoes_ia: p.observacoesIa || "",
     }, { onConflict: "empresa_id" });
     assertOk(error, "configuracoesIa.save");
   },

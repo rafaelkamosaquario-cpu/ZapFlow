@@ -2453,6 +2453,14 @@ app.put("/api/ia/configuracao", async (req, res) => {
       diferenciais: String(b.diferenciais || "").slice(0, 1000),
       tomComunicacao: String(b.tomComunicacao || "").slice(0, 500),
       condicoesComerciais: String(b.condicoesComerciais || "").slice(0, 2000),
+      clienteIdeal: String(b.clienteIdeal || "").slice(0, 500),
+      prazo: String(b.prazo || "").slice(0, 300),
+      garantias: String(b.garantias || "").slice(0, 1000),
+      politicas: String(b.politicas || "").slice(0, 2000),
+      palavrasEvitar: String(b.palavrasEvitar || "").slice(0, 500),
+      site: String(b.site || "").slice(0, 200),
+      instagram: String(b.instagram || "").slice(0, 100),
+      observacoesIa: String(b.observacoesIa || "").slice(0, 1000),
     });
     res.json({ ok: true });
   } catch (err) {

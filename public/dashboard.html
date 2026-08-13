@@ -542,6 +542,9 @@
         <label class="inline" style="flex:1;">Público-alvo <input type="text" id="iaPublico" /></label>
         <label class="inline" style="flex:1;">Região <input type="text" id="iaRegiao" /></label>
       </div>
+      <label>Cliente ideal
+        <textarea id="iaClienteIdeal" rows="2" placeholder="Quem é o cliente perfeito pra esse negócio?"></textarea>
+      </label>
       <label>Diferenciais
         <textarea id="iaDiferenciais" rows="2"></textarea>
       </label>
@@ -550,6 +553,23 @@
       </label>
       <label>Condições comerciais
         <textarea id="iaCondicoes" rows="2"></textarea>
+      </label>
+      <div class="manual-row">
+        <label class="inline" style="flex:1;">Prazo de entrega/execução <input type="text" id="iaPrazo" /></label>
+        <label class="inline" style="flex:1;">Garantias <input type="text" id="iaGarantias" /></label>
+      </div>
+      <label>Políticas (trocas, cancelamento, etc.)
+        <textarea id="iaPoliticas" rows="2"></textarea>
+      </label>
+      <label>Palavras/termos a evitar
+        <input type="text" id="iaPalavrasEvitar" placeholder="Separe por vírgula" />
+      </label>
+      <div class="manual-row">
+        <label class="inline" style="flex:1;">Site <input type="text" id="iaSite" placeholder="https://..." /></label>
+        <label class="inline" style="flex:1;">Instagram <input type="text" id="iaInstagram" placeholder="@usuario" /></label>
+      </div>
+      <label>Observações adicionais pra IA
+        <textarea id="iaObservacoes" rows="2" placeholder="Alguma regra que a IA sempre deve considerar?"></textarea>
       </label>
       <button class="btn secondary" id="btnSalvarPerfilIa" type="button">Salvar perfil</button>
       <span class="status" id="perfilIaStatus"></span>

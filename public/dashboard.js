@@ -1965,9 +1965,17 @@ async function loadZappyIA() {
     $("#iaProdutos").value = p.produtosServicos || "";
     $("#iaPublico").value = p.publicoAlvo || "";
     $("#iaRegiao").value = p.regiao || "";
+    $("#iaClienteIdeal").value = p.clienteIdeal || "";
     $("#iaDiferenciais").value = p.diferenciais || "";
     $("#iaTom").value = p.tomComunicacao || "";
     $("#iaCondicoes").value = p.condicoesComerciais || "";
+    $("#iaPrazo").value = p.prazo || "";
+    $("#iaGarantias").value = p.garantias || "";
+    $("#iaPoliticas").value = p.politicas || "";
+    $("#iaPalavrasEvitar").value = p.palavrasEvitar || "";
+    $("#iaSite").value = p.site || "";
+    $("#iaInstagram").value = p.instagram || "";
+    $("#iaObservacoes").value = p.observacoesIa || "";
     if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas e conversas, criar compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
   } catch {
     $("#iaConfigHint").textContent = "Não foi possível carregar as configurações da IA. Recarregue a página e tente novamente.";
@@ -1983,8 +1991,13 @@ $("#btnSalvarPerfilIa").addEventListener("click", async (e) => {
         body: JSON.stringify({
           segmento: $("#iaSegmento").value.trim(), descricao: $("#iaDescricao").value.trim(),
           produtosServicos: $("#iaProdutos").value.trim(), publicoAlvo: $("#iaPublico").value.trim(),
+          clienteIdeal: $("#iaClienteIdeal").value.trim(),
           regiao: $("#iaRegiao").value.trim(), diferenciais: $("#iaDiferenciais").value.trim(),
           tomComunicacao: $("#iaTom").value.trim(), condicoesComerciais: $("#iaCondicoes").value.trim(),
+          prazo: $("#iaPrazo").value.trim(), garantias: $("#iaGarantias").value.trim(),
+          politicas: $("#iaPoliticas").value.trim(), palavrasEvitar: $("#iaPalavrasEvitar").value.trim(),
+          site: $("#iaSite").value.trim(), instagram: $("#iaInstagram").value.trim(),
+          observacoesIa: $("#iaObservacoes").value.trim(),
         }),
       });
       const data = await res.json();
