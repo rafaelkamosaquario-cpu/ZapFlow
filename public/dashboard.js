@@ -2048,6 +2048,35 @@ async function iaEnviarMensagem() {
         window.location.href = "/";
       });
     }
+    if (data.rascunhoEvento) {
+      const ev = data.rascunhoEvento;
+      const box = $("#iaRascunho");
+      box.classList.remove("hidden");
+      box.innerHTML = `
+        <p><b>Proposta de compromisso</b></p>
+        <p class="campaign-msg">${escapeHtml(ev.titulo)}<br><span class="hint">${fmtDate(new Date(ev.inicio).getTime())} — ${fmtDate(new Date(ev.fim).getTime())}</span>${ev.descricao ? `<br>${escapeHtml(ev.descricao)}` : ""}</p>
+        <button class="btn primary sm" id="btnConfirmarEventoIa" type="button">Criar compromisso</button>
+        <span class="status" id="iaEventoStatus"></span>`;
+      $("#btnConfirmarEventoIa").addEventListener("click", async (e) => {
+        const status = $("#iaEventoStatus");
+        try {
+          await withLoading(e.currentTarget, "Criando...", async () => {
+            const res = await fetch("/api/calendario/eventos", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ titulo: ev.titulo, inicio: ev.inicio, fim: ev.fim, descricao: ev.descricao, origem: "ia" }),
+            });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || "Não foi possível criar o compromisso. Tente novamente.");
+          });
+          status.textContent = "Compromisso criado!";
+          status.className = "status ok";
+          $("#btnConfirmarEventoIa").disabled = true;
+        } catch (err) {
+          status.textContent = err.message;
+          status.className = "status err";
+        }
+      });
+    }
   } catch {
     document.getElementById("iaPensando")?.remove();
     iaAddBubble("assistant", "Não consegui processar sua mensagem agora. Tente novamente em alguns instantes.");

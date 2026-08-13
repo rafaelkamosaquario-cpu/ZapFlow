@@ -2346,12 +2346,18 @@ app.get("/api/calendario/eventos", async (req, res) => {
 });
 
 app.post("/api/calendario/eventos", async (req, res) => {
-  const { titulo, inicio, fim, descricao } = req.body || {};
+  const { titulo, inicio, fim, descricao, origem } = req.body || {};
   if (!titulo || !inicio || !fim) return res.status(400).json({ error: "Preencha título, início e fim." });
   try {
     const accessToken = await obterConexaoGoogle(req.tenant.empresa.id);
     if (!accessToken) return res.status(400).json({ error: "Conecte sua conta Google primeiro." });
     const evento = await googleClient.criarEvento(accessToken, { titulo, inicio, fim, descricao });
+    if (origem === "ia" && USE_SUPABASE) {
+      repo.auditoriaRepo.registrar(req.tenant.empresa.id, {
+        atorNome: req.session.name, atorPapel: req.session.role,
+        acao: `Zappy IA criou o compromisso "${titulo}" na Google Agenda (confirmado por ${req.session.name || "usuário"})`,
+      }).catch(() => {});
+    }
     res.json({ ok: true, evento });
   } catch (err) {
     console.error("[google] criar evento:", err.response?.data?.error || err.message);
@@ -2470,6 +2476,21 @@ function extrairRascunhoCampanha(textoFinal) {
   }
 }
 
+/** Extrai o bloco [RASCUNHO_EVENTO]{...} do texto final, se existir. Devolve { texto, rascunho }. */
+function extrairRascunhoEvento(textoFinal) {
+  const marca = "[RASCUNHO_EVENTO]";
+  const idx = textoFinal.indexOf(marca);
+  if (idx === -1) return { texto: textoFinal, rascunho: null };
+  const texto = textoFinal.slice(0, idx).trim();
+  try {
+    const rascunho = JSON.parse(textoFinal.slice(idx + marca.length).trim());
+    if (!rascunho.titulo || !rascunho.inicio || !rascunho.fim) return { texto, rascunho: null };
+    return { texto, rascunho };
+  } catch {
+    return { texto, rascunho: null };
+  }
+}
+
 app.post("/api/ia/perguntar", async (req, res) => {
   if (!openaiClient.openaiConfigured) {
     return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
@@ -2481,7 +2502,7 @@ app.post("/api/ia/perguntar", async (req, res) => {
   try {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem });
-    const executores = criarExecutores(tenant, { obterConexaoGoogle });
+    const executores = criarExecutores(tenant);
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
     });
@@ -2489,8 +2510,9 @@ app.post("/api/ia/perguntar", async (req, res) => {
       modelo: openaiClient.MODELOS.padrao, acao: "chat",
       tokensEntrada: usage.tokensEntrada, tokensSaida: usage.tokensSaida,
     });
-    const { texto, rascunho } = extrairRascunhoCampanha(textoFinal);
-    res.json({ resposta: texto, rascunhoCampanha: rascunho });
+    const { texto: textoSemCampanha, rascunho: rascunhoCampanha } = extrairRascunhoCampanha(textoFinal);
+    const { texto, rascunho: rascunhoEvento } = extrairRascunhoEvento(textoSemCampanha);
+    res.json({ resposta: texto, rascunhoCampanha, rascunhoEvento });
   } catch (err) {
     console.error("[ia] perguntar:", err.response?.data?.error || err.message);
     res.status(500).json({ error: "Não foi possível falar com a IA agora." });
