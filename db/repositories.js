@@ -478,6 +478,38 @@ export const configuracoesIaRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// company_knowledge (base de conhecimento por empresa, injetada no prompt
+// por relevância -- ver montarInput em lib/ai/systemPrompt.js)
+// ----------------------------------------------------------------------------
+export const companyKnowledgeRepo = {
+  async listar(empresaId) {
+    requireEmpresaId(empresaId, "companyKnowledge.listar");
+    const { data, error } = await supabase.from("company_knowledge").select("*")
+      .eq("empresa_id", empresaId).order("created_at", { ascending: false });
+    assertOk(error, "companyKnowledge.listar");
+    return (data || []).map((r) => ({ id: r.id, categoria: r.categoria, titulo: r.titulo, conteudo: r.conteudo, criadoEm: r.created_at }));
+  },
+  async criar(empresaId, { categoria, titulo, conteudo }) {
+    requireEmpresaId(empresaId, "companyKnowledge.criar");
+    const { data, error } = await supabase.from("company_knowledge")
+      .insert({ empresa_id: empresaId, categoria, titulo, conteudo: conteudo || "" }).select().single();
+    assertOk(error, "companyKnowledge.criar");
+    return { id: data.id, categoria: data.categoria, titulo: data.titulo, conteudo: data.conteudo, criadoEm: data.created_at };
+  },
+  async atualizar(empresaId, id, { categoria, titulo, conteudo }) {
+    requireEmpresaId(empresaId, "companyKnowledge.atualizar");
+    const { error } = await supabase.from("company_knowledge")
+      .update({ categoria, titulo, conteudo: conteudo || "" }).eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "companyKnowledge.atualizar");
+  },
+  async excluir(empresaId, id) {
+    requireEmpresaId(empresaId, "companyKnowledge.excluir");
+    const { error } = await supabase.from("company_knowledge").delete().eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "companyKnowledge.excluir");
+  },
+};
+
+// ----------------------------------------------------------------------------
 // ia_consumo (V4 — log de tokens por chamada; só registro, sem bloqueio)
 // ----------------------------------------------------------------------------
 export const iaConsumoRepo = {

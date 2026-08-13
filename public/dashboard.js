@@ -2083,7 +2083,82 @@ async function loadZappyIA() {
   } catch {
     $("#iaConfigHint").textContent = "Não foi possível carregar as configurações da IA. Recarregue a página e tente novamente.";
   }
+  loadConhecimento();
 }
+
+let conhecimentoEditando = null;
+async function loadConhecimento() {
+  const wrap = $("#conhecimentoList");
+  wrap.innerHTML = skeletonHtml(2);
+  try {
+    const data = await (await fetch("/api/ia/conhecimento")).json();
+    const sel = $("#conhCategoria");
+    sel.innerHTML = (data.categorias || []).map((c) => `<option>${escapeHtml(c)}</option>`).join("");
+    const itens = data.itens || [];
+    if (!itens.length) { wrap.innerHTML = "<p class='hint'>Nenhum item ainda. Adicione FAQ, políticas ou informações que a IA deva saber.</p>"; return; }
+    wrap.innerHTML = "";
+    itens.forEach((item) => {
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">${escapeHtml(item.titulo)}</span>
+          <span class="badge manual">${escapeHtml(item.categoria)}</span>
+        </div>
+        <div class="dash-card-body">
+          <span>${escapeHtml((item.conteudo || "").slice(0, 140))}${(item.conteudo || "").length > 140 ? "…" : ""}</span>
+          <div class="row" style="gap:6px;margin-top:6px;">
+            <button class="btn ghost sm conh-editar" type="button">Editar</button>
+            <button class="btn-cancel conh-excluir" type="button">Excluir</button>
+          </div>
+        </div>`;
+      div.querySelector(".conh-editar").addEventListener("click", () => abrirFormConhecimento(item));
+      div.querySelector(".conh-excluir").addEventListener("click", async (e) => {
+        if (!(await confirmModal("Excluir item?", `Excluir "${item.titulo}" da base de conhecimento?`))) return;
+        await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/ia/conhecimento/" + item.id, { method: "DELETE" }));
+        loadConhecimento();
+      });
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar a base de conhecimento. Verifique sua conexão e tente novamente.</p>";
+  }
+}
+function abrirFormConhecimento(item) {
+  conhecimentoEditando = item || null;
+  $("#conhCategoria").value = item?.categoria || $("#conhCategoria").options[0]?.value || "";
+  $("#conhTitulo").value = item?.titulo || "";
+  $("#conhConteudo").value = item?.conteudo || "";
+  $("#conhStatus").textContent = "";
+  $("#conhecimentoForm").classList.remove("hidden");
+}
+$("#btnNovoConhecimento").addEventListener("click", () => abrirFormConhecimento(null));
+$("#btnCancelarConhecimento").addEventListener("click", () => $("#conhecimentoForm").classList.add("hidden"));
+$("#btnSalvarConhecimento").addEventListener("click", async (e) => {
+  const status = $("#conhStatus");
+  const body = {
+    categoria: $("#conhCategoria").value,
+    titulo: $("#conhTitulo").value.trim(),
+    conteudo: $("#conhConteudo").value.trim(),
+  };
+  if (!body.titulo) { status.textContent = "Dê um título pra esse item."; status.className = "status err"; return; }
+  try {
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const url = conhecimentoEditando ? `/api/ia/conhecimento/${conhecimentoEditando.id}` : "/api/ia/conhecimento";
+      const res = await fetch(url, {
+        method: conhecimentoEditando ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar. Tente novamente.");
+    });
+    $("#conhecimentoForm").classList.add("hidden");
+    loadConhecimento();
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = "status err";
+  }
+});
 
 $("#btnSalvarPerfilIa").addEventListener("click", async (e) => {
   const status = $("#perfilIaStatus");

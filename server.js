@@ -1555,7 +1555,8 @@ app.post("/api/clients/:id/ia", async (req, res) => {
       ? `${contexto}\n\nCom base nesse histórico, sugira em até 3 frases qual deve ser a próxima ação comercial com esse cliente. Seja específico e prático.`
       : `${contexto}\n\nResuma em até 4 frases o histórico desse cliente para o vendedor entender rapidamente onde essa relação está.`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao, baseConhecimento });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: `cliente_${tipo}`,
@@ -1839,7 +1840,8 @@ app.post("/api/conversas/:key/sugerir-resposta", async (req, res) => {
       (c?.stage ? `\n\nEtapa do funil: ${c.stage}` : "");
     const instrucao = `${contexto}\n\nSugira a próxima mensagem que devemos enviar pra esse cliente pelo WhatsApp, dando continuidade à conversa. Responda APENAS com o texto da mensagem sugerida, sem aspas, sem explicações antes ou depois.`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao, baseConhecimento });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: "sugerir_resposta",
@@ -2056,7 +2058,8 @@ app.post("/api/visitas/:id/ia-resumo", async (req, res) => {
       (visita.valorPotencial != null ? `\nValor potencial já informado: R$ ${visita.valorPotencial}` : "");
     const instrucao = `${contexto}\n\nResponda APENAS com um JSON válido (sem markdown, sem texto antes ou depois), no formato exato:\n{"resumo": "resumo comercial curto em 1-2 frases", "resultado": "um destes valores exatos -- Sem contato, Interessado, Proposta solicitada, Em negociação, Venda fechada, Retornar depois, Sem interesse", "proximaAcao": "sugestão curta do que fazer a seguir, ou string vazia se não houver nada a sugerir"}`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao, baseConhecimento });
     // Extração estruturada (texto -> JSON) é tarefa "simples" no roteador -- usa Luna.
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.simples, input, tools: [], executores: {} });
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
@@ -2241,7 +2244,8 @@ app.post("/api/visitas/:id/preparar-followup", async (req, res) => {
       (visita.proximaAcao ? `\nPróxima ação combinada: ${visita.proximaAcao}` : "");
     const instrucao = `${contexto}\n\nEscreva uma mensagem curta de WhatsApp pra retomar contato com esse cliente, dando continuidade à visita. Responda APENAS com o texto da mensagem, sem aspas, sem explicações antes ou depois.`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao });
+    const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico: [], mensagemUsuario: instrucao, baseConhecimento });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({ model: openaiClient.MODELOS.padrao, input, tools: [], executores: {} });
     await repo.iaConsumoRepo.registrar(tenant.empresa.id, req.session.uid, {
       modelo: openaiClient.MODELOS.padrao, acao: "preparar_followup",
@@ -2566,6 +2570,66 @@ app.put("/api/ia/configuracao", async (req, res) => {
   }
 });
 
+// Base de conhecimento por empresa (achado da auditoria -- ver comentário em
+// montarInput/formatarBaseConhecimento sobre como isso é injetado no prompt).
+const CONHECIMENTO_CATEGORIAS = ["Sobre a empresa", "Produtos", "Serviços", "Diferenciais", "Perguntas frequentes", "Políticas", "Garantias", "Condições comerciais", "Catálogos", "Materiais comerciais", "Documentos"];
+
+app.get("/api/ia/conhecimento", async (req, res) => {
+  if (!USE_SUPABASE) return res.json({ itens: [], categorias: CONHECIMENTO_CATEGORIAS });
+  try {
+    const itens = await repo.companyKnowledgeRepo.listar(req.tenant.empresa.id);
+    res.json({ itens, categorias: CONHECIMENTO_CATEGORIAS });
+  } catch (err) {
+    console.error("[ia] conhecimento get:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar a base de conhecimento." });
+  }
+});
+
+app.post("/api/ia/conhecimento", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const b = req.body || {};
+  const titulo = String(b.titulo || "").trim().slice(0, 150);
+  const categoria = CONHECIMENTO_CATEGORIAS.includes(b.categoria) ? b.categoria : CONHECIMENTO_CATEGORIAS[0];
+  if (!titulo) return res.status(400).json({ error: "Dê um título pra esse item." });
+  try {
+    const item = await repo.companyKnowledgeRepo.criar(req.tenant.empresa.id, {
+      categoria, titulo, conteudo: String(b.conteudo || "").slice(0, 8000),
+    });
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error("[ia] conhecimento post:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar. Tente novamente." });
+  }
+});
+
+app.put("/api/ia/conhecimento/:id", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const b = req.body || {};
+  const titulo = String(b.titulo || "").trim().slice(0, 150);
+  const categoria = CONHECIMENTO_CATEGORIAS.includes(b.categoria) ? b.categoria : CONHECIMENTO_CATEGORIAS[0];
+  if (!titulo) return res.status(400).json({ error: "Dê um título pra esse item." });
+  try {
+    await repo.companyKnowledgeRepo.atualizar(req.tenant.empresa.id, req.params.id, {
+      categoria, titulo, conteudo: String(b.conteudo || "").slice(0, 8000),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[ia] conhecimento put:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar. Tente novamente." });
+  }
+});
+
+app.delete("/api/ia/conhecimento/:id", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  try {
+    await repo.companyKnowledgeRepo.excluir(req.tenant.empresa.id, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[ia] conhecimento delete:", err.message);
+    res.status(500).json({ error: "Não foi possível excluir. Tente novamente." });
+  }
+});
+
 /** Extrai o bloco [RASCUNHO_CAMPANHA]{...} do texto final, se existir. Devolve { texto, rascunho }. */
 function extrairRascunhoCampanha(textoFinal) {
   const marca = "[RASCUNHO_CAMPANHA]";
@@ -2606,7 +2670,8 @@ app.post("/api/ia/perguntar", async (req, res) => {
   if (!mensagem) return res.status(400).json({ error: "Escreva uma mensagem." });
   try {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem });
+    const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem, baseConhecimento });
     const executores = criarExecutores(tenant, { agregarDesempenhoEquipe, agregarClienteDetalhe, phoneKey });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,

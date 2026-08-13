@@ -577,6 +577,27 @@
       <button class="btn secondary" id="btnSalvarPerfilIa" type="button">Salvar perfil</button>
       <span class="status" id="perfilIaStatus"></span>
 
+      <h3 class="dash-subtitle" style="margin-top:24px;">Base de conhecimento</h3>
+      <p class="hint">Cole FAQ, políticas, catálogo ou qualquer texto que a IA deva consultar quando fizer sentido pra pergunta.</p>
+      <div id="conhecimentoList" class="dash-list"></div>
+      <button class="btn ghost sm" id="btnNovoConhecimento" type="button" style="margin-top:8px;">+ Adicionar item</button>
+      <div class="manual-add hidden" id="conhecimentoForm" style="margin-top:10px;">
+        <label>Categoria
+          <select id="conhCategoria"></select>
+        </label>
+        <label>Título
+          <input type="text" id="conhTitulo" placeholder="Ex.: Política de troca" />
+        </label>
+        <label>Conteúdo
+          <textarea id="conhConteudo" rows="4"></textarea>
+        </label>
+        <div class="row">
+          <button class="btn primary sm" id="btnSalvarConhecimento" type="button">Salvar</button>
+          <button class="btn ghost sm" id="btnCancelarConhecimento" type="button">Cancelar</button>
+          <span class="status" id="conhStatus"></span>
+        </div>
+      </div>
+
       <h3 class="dash-subtitle">Assistente</h3>
       <div id="iaMessages" class="chat-messages" style="min-height:220px;"></div>
       <div id="iaRascunho" class="campaign-summary hidden" style="margin-top:10px;"></div>
