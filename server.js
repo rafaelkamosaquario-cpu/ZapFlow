@@ -2602,7 +2602,7 @@ app.post("/api/ia/perguntar", async (req, res) => {
   try {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem });
-    const executores = criarExecutores(tenant, { agregarDesempenhoEquipe });
+    const executores = criarExecutores(tenant, { agregarDesempenhoEquipe, agregarClienteDetalhe, phoneKey });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
     });
