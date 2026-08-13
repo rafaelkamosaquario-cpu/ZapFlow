@@ -201,7 +201,7 @@ async function loadOnboarding() {
 }
 async function loadConfiguracoesView() {
   const wrap = $("#confOnbSteps");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const data = await (await fetch("/api/onboarding")).json();
     $("#confOnbSummary").textContent = data.allDone
@@ -513,6 +513,11 @@ let crmMeta = { stages: [], tags: [] };
 let crmList = [];
 let crmCurrent = null;
 
+/** Skeleton de carregamento reutilizável (mesmo padrão visual do Início). */
+function skeletonHtml(n = 4) {
+  return `<div aria-hidden="true">${'<div class="skel skel-row"></div>'.repeat(n)}</div>`;
+}
+
 function renderCarregarMais(wrap, onClick) {
   wrap.querySelector(".btn-carregar-mais")?.remove();
   const btn = document.createElement("button");
@@ -527,7 +532,7 @@ function renderCarregarMais(wrap, onClick) {
 async function loadClients(offset = 0) {
   await loadCrmMeta();
   const wrap = $("#clientsList");
-  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = skeletonHtml();
   const params = new URLSearchParams({
     search: $("#crmSearch").value.trim(),
     stage: $("#crmStage").value,
@@ -873,7 +878,8 @@ $("#btnSaveClient").addEventListener("click", async (e) => {
 });
 
 $("#btnDeleteClient").addEventListener("click", async (e) => {
-  if (!crmCurrent || !confirm(`Excluir ${displayNameOf(crmCurrent)} da base de clientes? O histórico de conversas é mantido, mas o cadastro no CRM é apagado.`)) return;
+  if (!crmCurrent) return;
+  if (!(await confirmModal("Excluir cliente?", `Excluir ${displayNameOf(crmCurrent)} da base de clientes? O histórico de conversas é mantido, mas o cadastro no CRM é apagado.`))) return;
   await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/clients/" + crmCurrent.id, { method: "DELETE" }));
   closeModal("clientModal");
   loadClients();
@@ -926,6 +932,7 @@ function conversaCard(t) {
     : `<span class="conv-badge daily">Dia a dia</span>`;
   const tags = (t.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
   const agenda = t.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
+  const resolvida = t.resolvida ? `<span class="badge ok">Resolvida</span>` : "";
   const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
   div.innerHTML = `
     <div class="dash-card-head">
@@ -935,7 +942,7 @@ function conversaCard(t) {
     <div class="dash-card-body">
       <span class="resp-sub">${escapeHtml(fmtPhone(t.phone))}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
       <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
-      <span>${badge}${sourceBadge(t.nameSource)}${agenda}${tags}</span>
+      <span>${badge}${sourceBadge(t.nameSource)}${agenda}${resolvida}${tags}</span>
     </div>`;
   div.addEventListener("click", () => openChat(t.key, nome, t));
   return div;
@@ -943,9 +950,10 @@ function conversaCard(t) {
 
 async function loadConversas(offset = 0) {
   const wrap = $("#conversasList");
-  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = skeletonHtml();
   try {
     const params = new URLSearchParams({ filter: convFilter, search: $("#convSearch").value.trim(), offset: String(offset) });
+    if ($("#convSoPendentes")?.checked) params.set("pendentes", "1");
     const data = await (await fetch("/api/conversas?" + params)).json();
     const threads = data.threads || [];
     if (!offset && !threads.length) {
@@ -969,6 +977,7 @@ $$(".conv-fbtn").forEach((b) => b.addEventListener("click", () => {
 }));
 let convTimer = null;
 $("#convSearch").addEventListener("input", () => { clearTimeout(convTimer); convTimer = setTimeout(loadConversas, 350); });
+$("#convSoPendentes")?.addEventListener("change", () => loadConversas());
 
 let chatPhone = null;
 async function openChat(key, nome, thread) {
@@ -1011,6 +1020,26 @@ async function openChat(key, nome, thread) {
     };
     // Ação rápida "Mover para" (atualiza etapa e funil imediatamente)
     renderStageMover($("#chatStageMover"), data.phone, data.stage, () => { loadConversas(); });
+    // Marcar como resolvida / reabrir
+    let resolvidaAtual = !!data.resolvida;
+    const resolverBtn = $("#btnChatResolver");
+    resolverBtn.textContent = resolvidaAtual ? "Reabrir conversa" : "Marcar como resolvida";
+    resolverBtn.onclick = async () => {
+      try {
+        await withLoading(resolverBtn, "Salvando...", async () => {
+          const res = await fetch(`/api/conversas/${key}/resolver`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resolvida: !resolvidaAtual }),
+          });
+          if (!res.ok) throw new Error();
+        });
+        resolvidaAtual = !resolvidaAtual;
+        resolverBtn.textContent = resolvidaAtual ? "Reabrir conversa" : "Marcar como resolvida";
+        loadConversas();
+      } catch {
+        alert("Não foi possível atualizar o status da conversa. Tente novamente.");
+      }
+    };
     const box = $("#chatMessages");
     box.innerHTML = (data.messages || []).map((m) =>
       `<div class="bubble ${m.dir === "out" ? "out" : "in"}">
@@ -1096,7 +1125,7 @@ function agendaCard(c) {
     toggleCart(c, e.currentTarget);
   });
   div.querySelector(".ag-del").addEventListener("click", async (e) => {
-    if (!confirm(`Remover ${c.name || c.phone} da agenda? Isso não afeta o cadastro dele em Clientes, se existir.`)) return;
+    if (!(await confirmModal("Remover da agenda?", `Remover ${c.name || c.phone} da agenda? Isso não afeta o cadastro dele em Clientes, se existir.`))) return;
     await withLoading(e.currentTarget, "Removendo...", () => fetch("/api/agenda/" + c.id, { method: "DELETE" }));
     agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
     updateAgCart();
@@ -1121,7 +1150,7 @@ function agendaCard(c) {
 
 async function loadAgenda(offset = 0) {
   const wrap = $("#agendaList");
-  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = skeletonHtml();
   try {
     const params = new URLSearchParams({ search: $("#agSearch").value.trim(), offset: String(offset) });
     const data = await (await fetch("/api/agenda?" + params)).json();
@@ -1214,7 +1243,7 @@ $("#agFile").addEventListener("change", async (e) => {
 // Sincronizar do chip
 $("#btnAgSync").addEventListener("click", async (e) => {
   const status = $("#agStatus");
-  if (!confirm("Importar os contatos salvos no aparelho conectado?")) return;
+  if (!(await confirmModal("Sincronizar contatos?", "Importar os contatos salvos no aparelho conectado?"))) return;
   status.textContent = ""; status.className = "status";
   try {
     const data = await withLoading(e.currentTarget, "Sincronizando...", async () => {
@@ -1241,7 +1270,7 @@ let allJobs = [];
 async function loadCampaigns() {
   loadDrafts();
   const wrap = $("#campaignsList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/schedules");
     allJobs = (await res.json()).jobs || [];
@@ -1296,7 +1325,7 @@ function draftUrls(t) {
 async function loadDrafts() {
   const wrap = $("#draftsList");
   if (!wrap) return;
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const data = await (await fetch("/api/templates")).json();
     const list = data.templates || [];
@@ -1326,7 +1355,7 @@ async function loadDrafts() {
         window.location.href = "/";
       });
       div.querySelector(".draft-del").addEventListener("click", async (e) => {
-        if (!confirm(`Excluir o modelo "${t.name || "sem nome"}"? Essa ação não pode ser desfeita.`)) return;
+        if (!(await confirmModal("Excluir modelo?", `Excluir o modelo "${t.name || "sem nome"}"? Essa ação não pode ser desfeita.`))) return;
         await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/templates/" + t.id, { method: "DELETE" }));
         loadDrafts();
       });
@@ -1453,7 +1482,7 @@ function responseCard(r) {
 
 async function loadResponses(offset = 0) {
   const wrap = $("#responsesList");
-  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/responses?offset=" + offset);
     const data = await res.json();
@@ -1476,7 +1505,7 @@ async function loadResponses(offset = 0) {
 // ---------------------------------------------------------------------------
 async function loadFollowup() {
   const wrap = $("#followupList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/schedules");
     const jobs = ((await res.json()).jobs || []).filter((j) => j.result && j.result.success > 0);
@@ -1594,7 +1623,7 @@ async function loadVendedoresView() {
 async function loadAuditoria() {
   const wrap = $("#auditoriaList");
   if (!wrap) return;
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/auditoria");
     const data = await res.json();
@@ -1676,7 +1705,7 @@ $("#visitasSearch")?.addEventListener("input", () => { clearTimeout(visitasSearc
 
 async function loadVendedores() {
   const wrap = $("#vendedoresList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/visitas/vendedores");
     const data = await res.json();
@@ -1715,7 +1744,7 @@ async function loadVendedores() {
 }
 
 async function desativarVendedor(id, nome, btn) {
-  if (!confirm(`Desativar ${nome}? Ele não vai mais conseguir acessar o ZapFlow, mas o histórico de visitas dele é mantido.`)) return;
+  if (!(await confirmModal("Desativar vendedor?", `Desativar ${nome}? Ele não vai mais conseguir acessar o ZapFlow, mas o histórico de visitas dele é mantido.`))) return;
   await withLoading(btn, "Desativando...", () => fetch(`/api/visitas/vendedores/${id}`, { method: "DELETE" }));
   loadVendedores();
 }
@@ -1777,7 +1806,7 @@ $$(".tab", $("#visitasTabsOwner")).forEach((btn) => {
 
 async function loadVisitasOwner() {
   const wrap = $("#visitasOwnerList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch(`/api/visitas?tab=${visitasOwnerTab}`);
     const data = await res.json();
@@ -1953,7 +1982,7 @@ async function loadCalendarioView() {
 
 async function loadEventos() {
   const wrap = $("#eventosList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  wrap.innerHTML = skeletonHtml();
   try {
     const res = await fetch("/api/calendario/eventos");
     const data = await res.json();
@@ -1979,7 +2008,7 @@ async function loadEventos() {
 }
 
 $("#btnDisconnectGoogle").addEventListener("click", async (e) => {
-  if (!confirm("Desconectar sua conta Google? Você para de ver e criar compromissos pelo ZapFlow até reconectar; nada é apagado da sua conta Google.")) return;
+  if (!(await confirmModal("Desconectar Google?", "Desconectar sua conta Google? Você para de ver e criar compromissos pelo ZapFlow até reconectar; nada é apagado da sua conta Google."))) return;
   await withLoading(e.currentTarget, "Desconectando...", () => fetch("/api/google/disconnect", { method: "POST" }));
   loadCalendarioView();
 });
@@ -2181,6 +2210,19 @@ $("#iaInput").addEventListener("keydown", (e) => { if (e.key === "Enter") iaEnvi
 // ---------------------------------------------------------------------------
 function openModal(id) { $("#" + id).classList.remove("hidden"); }
 function closeModal(id) { $("#" + id).classList.add("hidden"); }
+
+/** Substitui confirm() nativo por um modal consistente com o resto do produto. */
+function confirmModal(title, body) {
+  return new Promise((resolve) => {
+    $("#confirmTitle").textContent = title;
+    $("#confirmBody").textContent = body;
+    openModal("confirmModal");
+    const ok = $("#confirmOk"), cancel = $("#confirmCancel");
+    const done = (val) => { closeModal("confirmModal"); ok.onclick = null; cancel.onclick = null; resolve(val); };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+  });
+}
 $$(".modal-close").forEach((b) => b.addEventListener("click", () => closeModal(b.dataset.close)));
 $$(".modal").forEach((m) => m.addEventListener("click", (e) => { if (e.target === m) m.classList.add("hidden"); }));
 

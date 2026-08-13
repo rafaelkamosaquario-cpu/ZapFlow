@@ -520,6 +520,26 @@ export const auditoriaRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// conversa_status (resolvida/pendente por conversa)
+// ----------------------------------------------------------------------------
+export const conversaStatusRepo = {
+  /** Mapa key -> resolvida (bool), pra enriquecer a lista de conversas sem 1 query por thread. */
+  async mapaResolvidas(empresaId) {
+    requireEmpresaId(empresaId, "conversaStatus.mapaResolvidas");
+    const { data, error } = await supabase.from("conversa_status").select("key,resolvida")
+      .eq("empresa_id", empresaId).eq("resolvida", true);
+    assertOk(error, "conversaStatus.mapaResolvidas");
+    return new Set((data || []).map((r) => r.key));
+  },
+  async definir(empresaId, key, resolvida) {
+    requireEmpresaId(empresaId, "conversaStatus.definir");
+    const { error } = await supabase.from("conversa_status")
+      .upsert({ empresa_id: empresaId, key, resolvida, updated_at: new Date().toISOString() }, { onConflict: "empresa_id,key" });
+    assertOk(error, "conversaStatus.definir");
+  },
+};
+
+// ----------------------------------------------------------------------------
 // respostas (metrics.responses)
 // ----------------------------------------------------------------------------
 export const respostasRepo = {

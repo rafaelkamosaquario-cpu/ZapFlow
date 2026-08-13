@@ -340,8 +340,8 @@ $("#btnClearFile")?.addEventListener("click", () => {
 });
 
 // Limpar os contatos adicionados manualmente / sincronizados
-$("#btnClearManual")?.addEventListener("click", () => {
-  if (!confirm("Limpar todos os contatos adicionados manualmente?")) return;
+$("#btnClearManual")?.addEventListener("click", async () => {
+  if (!(await confirmModal("Limpar contatos?", "Limpar todos os contatos adicionados manualmente?"))) return;
   manualContacts = [];
   rebuildContacts();
 });
@@ -824,7 +824,7 @@ async function handleSend(block) {
 
 async function sendNowBlock(block, message, images) {
   const num = $(".msg-num", block).textContent;
-  if (!confirm(`Enviar a Mensagem ${num} para ${contacts.length} contato(s) agora?`)) return;
+  if (!(await confirmModal("Confirmar envio?", `Enviar a Mensagem ${num} para ${contacts.length} contato(s) agora?`))) return;
 
   const btn = $(".m-send", block);
   block._sending = true;
@@ -888,7 +888,7 @@ async function scheduleBlock(block, message, images) {
   }
 
   const quando = new Date(scheduledAt).toLocaleString("pt-BR");
-  if (!confirm(`Agendar a Mensagem ${num} para ${contacts.length} contato(s) em ${quando}?`)) return;
+  if (!(await confirmModal("Confirmar agendamento?", `Agendar a Mensagem ${num} para ${contacts.length} contato(s) em ${quando}?`))) return;
 
   const btn = $(".m-send", block);
   block._sending = true;
@@ -1031,7 +1031,7 @@ function renderSchedules(list) {
   wrap.querySelectorAll(".btn-cancel").forEach((b) => {
     b.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (!confirm("Cancelar esta campanha agendada? Ela não será enviada.")) return;
+      if (!(await confirmModal("Cancelar campanha?", "Cancelar esta campanha agendada? Ela não será enviada."))) return;
       await withLoading(b, "Cancelando...", () => fetch("/api/schedules/" + b.dataset.id, { method: "DELETE" }));
       loadSchedules();
     });
@@ -1074,7 +1074,7 @@ async function toggleDetail(link) {
 
 // Limpar histórico (mantém pendentes/em andamento)
 $("#btnClearHistory").addEventListener("click", async (e) => {
-  if (!confirm("Limpar o histórico de envios concluídos?\n(Os agendamentos pendentes serão mantidos.)")) return;
+  if (!(await confirmModal("Limpar histórico?", "Limpar o histórico de envios concluídos? Os agendamentos pendentes serão mantidos."))) return;
   await withLoading(e.currentTarget, "Limpando...", () => fetch("/api/schedules", { method: "DELETE" }));
   loadSchedules();
 });
@@ -1187,7 +1187,7 @@ function loadTemplateInto(t) {
 }
 
 async function deleteTemplate(id, name, btn) {
-  if (!confirm(`Excluir o modelo "${name || "sem nome"}"? Essa ação não pode ser desfeita.`)) return;
+  if (!(await confirmModal("Excluir modelo?", `Excluir o modelo "${name || "sem nome"}"? Essa ação não pode ser desfeita.`))) return;
   await withLoading(btn, "Excluindo...", () => fetch("/api/templates/" + id, { method: "DELETE" }));
   const res = await fetch("/api/templates");
   const data = await res.json();

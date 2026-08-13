@@ -1746,10 +1746,11 @@ app.delete("/api/agenda/:id", async (req, res) => {
 });
 
 // --- Conversas (caixa de entrada) ---
-app.get("/api/conversas", (req, res) => {
+app.get("/api/conversas", async (req, res) => {
   const tenant = req.tenant;
   const filter = String(req.query.filter || "all");
   const s = String(req.query.search || "").trim().toLowerCase();
+  const resolvidas = USE_SUPABASE ? await repo.conversaStatusRepo.mapaResolvidas(tenant.empresa.id) : new Set();
   // Agrupa por contato (última mensagem de cada)
   const byKey = new Map();
   for (const m of tenant.conversas) {
@@ -1769,10 +1770,12 @@ app.get("/api/conversas", (req, res) => {
       stage: c?.stage || "",
       origem: camp ? "campaign" : "daily",
       campaignName: camp ? campaignNameOf(tenant, t.key) : "",
+      resolvida: resolvidas.has(t.key),
     };
   });
   if (filter === "campaign") threads = threads.filter((t) => t.origem === "campaign");
   if (filter === "daily") threads = threads.filter((t) => t.origem === "daily");
+  if (req.query.pendentes === "1") threads = threads.filter((t) => !t.resolvida);
   if (s) threads = threads.filter((t) => `${t.name} ${t.phone}`.toLowerCase().includes(s));
   threads.sort((a, b) => b.lastTs - a.lastTs);
   const totalFiltrado = threads.length;
@@ -1781,7 +1784,7 @@ app.get("/api/conversas", (req, res) => {
   res.json({ threads: page, total: totalFiltrado, shown: offset + page.length, hasMore: offset + page.length < totalFiltrado });
 });
 
-app.get("/api/conversas/:key", (req, res) => {
+app.get("/api/conversas/:key", async (req, res) => {
   const tenant = req.tenant;
   const key = req.params.key;
   const messages = tenant.conversas.filter((m) => m.key === key).sort((a, b) => a.ts - b.ts);
@@ -1789,6 +1792,7 @@ app.get("/api/conversas/:key", (req, res) => {
   const camp = isCampaignOrigin(tenant, key);
   const id = bestName(tenant, phone, camp ? campaignNameOf(tenant, key) : "");
   const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
+  const resolvidas = USE_SUPABASE ? await repo.conversaStatusRepo.mapaResolvidas(tenant.empresa.id) : new Set();
   res.json({
     key, phone,
     name: id.name,
@@ -1798,8 +1802,22 @@ app.get("/api/conversas/:key", (req, res) => {
     stage: c?.stage || "",
     origem: camp ? "campaign" : "daily",
     campaignName: campaignNameOf(tenant, key),
+    resolvida: resolvidas.has(key),
     messages,
   });
+});
+
+app.post("/api/conversas/:key/resolver", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  const resolvida = req.body?.resolvida !== false;
+  try {
+    await repo.conversaStatusRepo.definir(tenant.empresa.id, req.params.key, resolvida);
+    res.json({ ok: true, resolvida });
+  } catch (err) {
+    console.error("[conversas] resolver:", err.message);
+    res.status(500).json({ error: "Não foi possível atualizar o status da conversa." });
+  }
 });
 
 // Sugestão de resposta (V1 IA item 4): usa o histórico da conversa + perfil da

@@ -296,6 +296,7 @@
         <button class="conv-fbtn" data-filter="daily">Dia a dia</button>
       </div>
       <input type="text" id="convSearch" placeholder="Buscar nome ou telefone" />
+      <label class="switch-row" style="margin-top:8px;"><input type="checkbox" id="convSoPendentes" /> Mostrar só pendentes</label>
       <div id="conversasList" class="dash-list" style="margin-top:12px"></div>
     </section>
 
@@ -597,6 +598,7 @@
       <div class="row" style="gap:8px;margin:0 0 8px">
         <button class="btn secondary" id="btnChatToAgenda" type="button">Salvar na agenda</button>
         <button class="btn secondary" id="btnChatToClientes" type="button">Adicionar aos Clientes</button>
+        <button class="btn ghost" id="btnChatResolver" type="button" style="margin-left:auto">Marcar como resolvida</button>
       </div>
       <div class="stage-mover" id="chatStageMover" aria-label="Mover para etapa"></div>
       <div id="chatMessages" class="chat-messages"></div>
@@ -720,6 +722,21 @@
         <button class="btn primary" id="btnSaveAgConfirm" type="button">Salvar</button>
         <button class="btn ghost" data-close="saveAgendaModal" type="button">Cancelar</button>
         <span id="saveAgStatus" class="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmação (substitui confirm() nativo em ações destrutivas) -->
+  <div class="modal hidden" id="confirmModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="confirmTitle">Confirmar?</h3>
+        <button class="modal-close" data-close="confirmModal" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <p id="confirmBody" class="hint"></p>
+      <div class="row" style="justify-content:flex-end;gap:8px">
+        <button class="btn ghost" id="confirmCancel" type="button">Cancelar</button>
+        <button class="btn danger" id="confirmOk" type="button">Confirmar</button>
       </div>
     </div>
   </div>

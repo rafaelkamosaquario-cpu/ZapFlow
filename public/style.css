@@ -621,6 +621,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .skel { background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; position: relative; overflow: hidden; }
 .skel::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 6%, transparent), transparent); animation: skel 1.2s infinite; }
 .skel-card { height: 118px; }
+.skel-row { height: 64px; margin-bottom: 8px; }
 .skel-line { height: 56px; }
 .skel-chart { height: 220px; }
 @keyframes skel { 100% { transform: translateX(100%); } }
