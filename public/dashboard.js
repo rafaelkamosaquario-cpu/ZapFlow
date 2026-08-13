@@ -1216,6 +1216,7 @@ function campaignCard(job) {
       <span class="dash-when">${fmtDate(job.scheduledAt)}</span>
     </div>
     <div class="dash-card-body">
+      ${job.name ? `<b>${escapeHtml(job.name)}</b>` : ""}
       <span>${job.contactsCount} contato(s)${job.hasImage ? ` · ${job.imageCount} img` : ""}${reply}</span>
       ${preview ? `<span class="sched-msg">"${escapeHtml(preview)}"</span>` : ""}
     </div>`;
@@ -1427,6 +1428,7 @@ async function loadFollowup() {
           <span class="followup-badge">${naoResp} sem resposta</span>
         </div>
         <div class="dash-card-body">
+          ${job.name ? `<b>${escapeHtml(job.name)}</b>` : ""}
           <span>${job.result.success} enviadas · ${job.repliedCount} responderam</span>
           <span class="sched-msg">"${escapeHtml(preview)}"</span>
         </div>

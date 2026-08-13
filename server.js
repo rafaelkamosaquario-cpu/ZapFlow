@@ -464,6 +464,7 @@ function countReplies(tenant, job) {
 function publicJob(tenant, job) {
   return {
     id: job.id,
+    name: job.name || job.label || null,
     status: job.status,
     immediate: Boolean(job.immediate),
     createdAt: job.createdAt,
@@ -560,7 +561,7 @@ async function runJob(tenant, job) {
 
   job.status = "concluido";
   job.finishedAt = Date.now();
-  const label = campaignLabel(job.message, job.hadImage || job.images?.length);
+  const label = job.name || campaignLabel(job.message, job.hadImage || job.images?.length);
   job.label = label;
   await recordClientsSent(tenant, job.contacts, label);
   trimFinishedJob(job);
@@ -1083,7 +1084,7 @@ app.post("/api/test-connection", async (req, res) => {
 app.post("/api/send", async (req, res) => {
   const tenant = req.tenant;
   const creds = resolveCredentials(tenant, req.body);
-  const { contacts, message, imageUrl, imageBase64 } = req.body;
+  const { contacts, message, imageUrl, imageBase64, name } = req.body;
   const images = normalizeImages(req.body.images, imageUrl, imageBase64);
   const delay = resolveDelayMs(req.body.delayMs);
 
@@ -1109,6 +1110,7 @@ app.post("/api/send", async (req, res) => {
     createdAt: Date.now(),
     scheduledAt: Date.now(),
     startedAt: Date.now(),
+    name: String(name || "").trim().slice(0, 120),
     message: message || "",
     images, // usado no envio; limpo ao concluir (trimFinishedJob)
     hadImage: images.length > 0,
@@ -1153,7 +1155,7 @@ app.post("/api/send", async (req, res) => {
   job.status = "concluido";
   job.finishedAt = Date.now();
   job.result = { success, failed, total: contacts.length };
-  const label = campaignLabel(message, images.length);
+  const label = job.name || campaignLabel(message, images.length);
   job.label = label;
   trimFinishedJob(job);
   try {
@@ -1173,7 +1175,7 @@ app.post("/api/send", async (req, res) => {
 app.post("/api/schedule", async (req, res) => {
   const tenant = req.tenant;
   const creds = resolveCredentials(tenant, req.body);
-  const { contacts, message, imageUrl, imageBase64, scheduledAt } = req.body;
+  const { contacts, message, imageUrl, imageBase64, scheduledAt, name } = req.body;
   const images = normalizeImages(req.body.images, imageUrl, imageBase64);
   const delayMs = resolveDelayMs(req.body.delayMs);
 
@@ -1200,6 +1202,7 @@ app.post("/api/schedule", async (req, res) => {
     createdAt: Date.now(),
     scheduledAt: when,
     credentials: creds,
+    name: String(name || "").trim().slice(0, 120),
     contacts,
     message: message || "",
     images,
@@ -1341,7 +1344,7 @@ app.get("/api/dashboard", (req, res) => {
     .map((j) => {
       const env = j.result?.success || 0;
       const resp = countReplies(tenant, j);
-      return { id: j.id, name: campaignLabel(j.message, j.hadImage || j.imageCount), enviadas: env, respostas: resp, taxa: env ? Math.round((resp / env) * 1000) / 10 : 0, ts: j.finishedAt || j.scheduledAt };
+      return { id: j.id, name: j.name || campaignLabel(j.message, j.hadImage || j.imageCount), enviadas: env, respostas: resp, taxa: env ? Math.round((resp / env) * 1000) / 10 : 0, ts: j.finishedAt || j.scheduledAt };
     });
 
   res.json({
@@ -1441,7 +1444,7 @@ async function agregarClienteDetalhe(tenant, c) {
     .map((j) => ({ job: j, log: (j.logs || []).find((l) => phoneKey(l.phone) === key) }))
     .filter((x) => x.log)
     .map(({ job, log }) => ({
-      id: job.id, nome: campaignLabel(job.message, job.hadImage || job.imageCount),
+      id: job.id, nome: job.name || campaignLabel(job.message, job.hadImage || job.imageCount),
       enviadaEm: job.finishedAt || job.scheduledAt || job.createdAt,
       entregue: !!log.ok,
       respondida: mensagens.some((m) => m.dir === "in" && m.ts >= (job.startedAt || job.createdAt || 0)),
