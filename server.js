@@ -65,6 +65,8 @@ const CHATBOT_FILE = path.join(DATA_DIR, "chatbot.json");
 const CRM_STAGES = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
 // Abaixo disso, "melhor horário/dia" é ruído estatístico, não conclusão confiável.
 const AMOSTRA_MINIMA_MELHOR_HORARIO = 5;
+// Tamanho de página nas listas paginadas (Clientes, Agenda, Conversas, Respostas).
+const PAGE_SIZE = 100;
 const MAX_TEMPLATES = 10;
 const CONV_MAX = 5000;
 const CAMPAIGN_WINDOW = 30 * 24 * 3600 * 1000; // 30 dias
@@ -1280,9 +1282,10 @@ app.get("/api/metrics", (req, res) => {
 // Lista as respostas recebidas (caixa de entrada do dashboard)
 app.get("/api/responses", (req, res) => {
   const tenant = req.tenant;
-  const list = [...tenant.metrics.responses]
-    .sort((a, b) => b.ts - a.ts)
-    .slice(0, 300)
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const all = [...tenant.metrics.responses].sort((a, b) => b.ts - a.ts);
+  const list = all
+    .slice(offset, offset + PAGE_SIZE)
     .map((r) => {
       const id = bestName(tenant, r.phone, "");
       const c = findClient(tenant, r.phone);
@@ -1295,7 +1298,7 @@ app.get("/api/responses", (req, res) => {
         stage: c?.stage || "",
       };
     });
-  res.json({ responses: list, total: tenant.metrics.responses.length });
+  res.json({ responses: list, total: all.length, shown: offset + list.length, hasMore: offset + list.length < all.length });
 });
 
 // Dados agregados do dashboard de Visão Geral (por período)
@@ -1415,13 +1418,16 @@ app.get("/api/clients", (req, res) => {
     if (search && !`${nome} ${c.phone}`.toLowerCase().includes(search)) return false;
     return true;
   });
-  list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 1000);
+  list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const totalFiltrado = list.length;
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  list = list.slice(offset, offset + PAGE_SIZE);
   // Enriquece com nome resolvido (agenda → WhatsApp → campanha), origem e flag de agenda
   const enriched = list.map((c) => {
     const id = bestName(tenant, c.phone, c.name);
     return { ...c, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(tenant, c.phone) };
   });
-  res.json({ clients: enriched, total: tenant.clients.length, shown: enriched.length });
+  res.json({ clients: enriched, total: tenant.clients.length, shown: offset + enriched.length, hasMore: offset + enriched.length < totalFiltrado });
 });
 
 app.get("/api/clients/meta", (req, res) => {
@@ -1635,10 +1641,13 @@ app.get("/api/agenda", (req, res) => {
   const tenant = req.tenant;
   const s = String(req.query.search || "").trim().toLowerCase();
   let list = tenant.agenda.filter((a) => !s || `${a.name} ${a.phone}`.toLowerCase().includes(s));
-  list = list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", "pt")).slice(0, 2000);
+  list = list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", "pt"));
+  const totalFiltrado = list.length;
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  list = list.slice(offset, offset + PAGE_SIZE);
   const clientKeys = new Set(tenant.clients.map((c) => c.key || phoneKey(c.phone)));
   list = list.map((a) => ({ ...a, isClient: clientKeys.has(phoneKey(a.phone)) }));
-  res.json({ contacts: list, total: tenant.agenda.length, shown: list.length });
+  res.json({ contacts: list, total: tenant.agenda.length, shown: offset + list.length, hasMore: offset + list.length < totalFiltrado });
 });
 
 app.post("/api/agenda", async (req, res) => {
@@ -1736,7 +1745,10 @@ app.get("/api/conversas", (req, res) => {
   if (filter === "daily") threads = threads.filter((t) => t.origem === "daily");
   if (s) threads = threads.filter((t) => `${t.name} ${t.phone}`.toLowerCase().includes(s));
   threads.sort((a, b) => b.lastTs - a.lastTs);
-  res.json({ threads: threads.slice(0, 300) });
+  const totalFiltrado = threads.length;
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const page = threads.slice(offset, offset + PAGE_SIZE);
+  res.json({ threads: page, total: totalFiltrado, shown: offset + page.length, hasMore: offset + page.length < totalFiltrado });
 });
 
 app.get("/api/conversas/:key", (req, res) => {

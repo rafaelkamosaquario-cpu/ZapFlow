@@ -513,26 +513,41 @@ let crmMeta = { stages: [], tags: [] };
 let crmList = [];
 let crmCurrent = null;
 
-async function loadClients() {
+function renderCarregarMais(wrap, onClick) {
+  wrap.querySelector(".btn-carregar-mais")?.remove();
+  const btn = document.createElement("button");
+  btn.className = "btn secondary btn-carregar-mais";
+  btn.type = "button";
+  btn.style.cssText = "display:block;margin:12px auto 0;";
+  btn.textContent = "Carregar mais";
+  btn.addEventListener("click", () => withLoading(btn, "Carregando...", onClick));
+  wrap.appendChild(btn);
+}
+
+async function loadClients(offset = 0) {
   await loadCrmMeta();
   const wrap = $("#clientsList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
   const params = new URLSearchParams({
     search: $("#crmSearch").value.trim(),
     stage: $("#crmStage").value,
     tag: $("#crmTag").value,
+    offset: String(offset),
   });
   try {
     const res = await fetch("/api/clients?" + params);
     const data = await res.json();
-    crmList = data.clients || [];
+    const pagina = data.clients || [];
+    crmList = offset ? crmList.concat(pagina) : pagina;
     $("#crmShown").textContent = `${data.shown} de ${data.total} cliente(s)`;
     if (!crmList.length) {
       wrap.innerHTML = "<p class='hint'>Nenhum cliente nesse filtro. A base se preenche conforme você envia campanhas.</p>";
       return;
     }
-    wrap.innerHTML = "";
-    crmList.forEach((c) => wrap.appendChild(clientCard(c)));
+    if (!offset) wrap.innerHTML = "";
+    else wrap.querySelector(".btn-carregar-mais")?.remove();
+    pagina.forEach((c) => wrap.appendChild(clientCard(c)));
+    if (data.hasMore) renderCarregarMais(wrap, () => loadClients(data.shown));
   } catch {
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar os clientes. Verifique sua conexão e tente novamente.</p>";
   }
@@ -874,41 +889,45 @@ $("#crmTag").addEventListener("change", loadClients);
 let convFilter = "all";
 let chatKey = null;
 
-async function loadConversas() {
+function conversaCard(t) {
+  const div = document.createElement("div");
+  div.className = "dash-card conv-item";
+  const nome = displayNameOf(t);
+  const badge = t.origem === "campaign"
+    ? `<span class="conv-badge camp">${escapeHtml(t.campaignName || "Campanha")}</span>`
+    : `<span class="conv-badge daily">Dia a dia</span>`;
+  const tags = (t.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
+  const agenda = t.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
+  const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
+  div.innerHTML = `
+    <div class="dash-card-head">
+      <span class="resp-phone">${escapeHtml(nome)}</span>
+      <span class="dash-when">${fmtDate(t.lastTs)}</span>
+    </div>
+    <div class="dash-card-body">
+      <span class="resp-sub">${escapeHtml(fmtPhone(t.phone))}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
+      <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
+      <span>${badge}${sourceBadge(t.nameSource)}${agenda}${tags}</span>
+    </div>`;
+  div.addEventListener("click", () => openChat(t.key, nome, t));
+  return div;
+}
+
+async function loadConversas(offset = 0) {
   const wrap = $("#conversasList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
   try {
-    const params = new URLSearchParams({ filter: convFilter, search: $("#convSearch").value.trim() });
+    const params = new URLSearchParams({ filter: convFilter, search: $("#convSearch").value.trim(), offset: String(offset) });
     const data = await (await fetch("/api/conversas?" + params)).json();
     const threads = data.threads || [];
-    if (!threads.length) {
+    if (!offset && !threads.length) {
       wrap.innerHTML = "<p class='hint'>Nenhuma conversa ainda. Elas aparecem quando alguém te responde ou escreve.</p>";
       return;
     }
-    wrap.innerHTML = "";
-    threads.forEach((t) => {
-      const div = document.createElement("div");
-      div.className = "dash-card conv-item";
-      const nome = displayNameOf(t);
-      const badge = t.origem === "campaign"
-        ? `<span class="conv-badge camp">${escapeHtml(t.campaignName || "Campanha")}</span>`
-        : `<span class="conv-badge daily">Dia a dia</span>`;
-      const tags = (t.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
-      const agenda = t.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
-      const pre = (t.dir === "out" ? "Você: " : "") + (t.lastText || "");
-      div.innerHTML = `
-        <div class="dash-card-head">
-          <span class="resp-phone">${escapeHtml(nome)}</span>
-          <span class="dash-when">${fmtDate(t.lastTs)}</span>
-        </div>
-        <div class="dash-card-body">
-          <span class="resp-sub">${escapeHtml(fmtPhone(t.phone))}${t.stage ? ` · ${escapeHtml(t.stage)}` : ""}</span>
-          <span class="conv-last">${escapeHtml(pre.slice(0, 60))}${pre.length > 60 ? "…" : ""}</span>
-          <span>${badge}${sourceBadge(t.nameSource)}${agenda}${tags}</span>
-        </div>`;
-      div.addEventListener("click", () => openChat(t.key, nome, t));
-      wrap.appendChild(div);
-    });
+    if (!offset) wrap.innerHTML = "";
+    else wrap.querySelector(".btn-carregar-mais")?.remove();
+    threads.forEach((t) => wrap.appendChild(conversaCard(t)));
+    if (data.hasMore) renderCarregarMais(wrap, () => loadConversas(data.shown));
   } catch {
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar as conversas. Verifique sua conexão e tente novamente.</p>";
   }
@@ -1028,61 +1047,65 @@ $("#btnSugerirResposta").addEventListener("click", async (e) => {
 // ---------------------------------------------------------------------------
 const ORIGEM_LABEL = { planilha: "Planilha", manual: "Manual", chip: "Chip" };
 
-async function loadAgenda() {
+function agendaCard(c) {
+  const inCart = agendaCart.some((x) => x.phone === c.phone);
+  const div = document.createElement("div");
+  div.className = "dash-card";
+  div.style.cursor = "default";
+  div.innerHTML = `
+    <div class="dash-card-head">
+      <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
+      <div class="row" style="gap:6px;margin:0">
+        <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "Inserido" : "Inserir"}</button>
+        ${c.isClient ? `<span class="hint">Já é cliente</span>` : `<button class="btn ghost ag-to-client">Adicionar aos Clientes</button>`}
+        <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
+      </div>
+    </div>
+    <div class="dash-card-body">
+      <span>${escapeHtml(fmtPhone(c.phone))} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
+    </div>`;
+  div.querySelector(".ag-add").addEventListener("click", (e) => {
+    toggleCart(c, e.currentTarget);
+  });
+  div.querySelector(".ag-del").addEventListener("click", async (e) => {
+    if (!confirm(`Remover ${c.name || c.phone} da agenda? Isso não afeta o cadastro dele em Clientes, se existir.`)) return;
+    await withLoading(e.currentTarget, "Removendo...", () => fetch("/api/agenda/" + c.id, { method: "DELETE" }));
+    agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
+    updateAgCart();
+    loadAgenda();
+  });
+  div.querySelector(".ag-to-client")?.addEventListener("click", async (e) => {
+    try {
+      await withLoading(e.currentTarget, "Adicionando...", async () => {
+        const res = await fetch("/api/clients/stage", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: c.phone, stage: "Novo" }),
+        });
+        if (!res.ok) throw new Error();
+      });
+      e.currentTarget.outerHTML = `<span class="hint">Já é cliente</span>`;
+    } catch {
+      alert("Não foi possível adicionar aos Clientes. Tente novamente.");
+    }
+  });
+  return div;
+}
+
+async function loadAgenda(offset = 0) {
   const wrap = $("#agendaList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
   try {
-    const params = new URLSearchParams({ search: $("#agSearch").value.trim() });
+    const params = new URLSearchParams({ search: $("#agSearch").value.trim(), offset: String(offset) });
     const data = await (await fetch("/api/agenda?" + params)).json();
     $("#agCount").textContent = `${data.shown} de ${data.total} contato(s) na agenda`;
-    if (!data.contacts.length) {
+    if (!offset && !data.contacts.length) {
       wrap.innerHTML = "<p class='hint'>Nenhum contato salvo ainda. Adicione manualmente, importe uma planilha ou sincronize do chip.</p>";
       return;
     }
-    wrap.innerHTML = "";
-    data.contacts.forEach((c) => {
-      const inCart = agendaCart.some((x) => x.phone === c.phone);
-      const div = document.createElement("div");
-      div.className = "dash-card";
-      div.style.cursor = "default";
-      div.innerHTML = `
-        <div class="dash-card-head">
-          <span class="resp-phone">${escapeHtml(c.name || "(sem nome)")}</span>
-          <div class="row" style="gap:6px;margin:0">
-            <button class="btn ghost ag-add ${inCart ? "in-cart" : ""}" data-id="${c.id}">${inCart ? "Inserido" : "Inserir"}</button>
-            ${c.isClient ? `<span class="hint">Já é cliente</span>` : `<button class="btn ghost ag-to-client">Adicionar aos Clientes</button>`}
-            <button class="btn-cancel ag-del" data-id="${c.id}">Excluir</button>
-          </div>
-        </div>
-        <div class="dash-card-body">
-          <span>${escapeHtml(fmtPhone(c.phone))} · ${ORIGEM_LABEL[c.origem] || c.origem}</span>
-        </div>`;
-      div.querySelector(".ag-add").addEventListener("click", (e) => {
-        toggleCart(c, e.currentTarget);
-      });
-      div.querySelector(".ag-del").addEventListener("click", async (e) => {
-        if (!confirm(`Remover ${c.name || c.phone} da agenda? Isso não afeta o cadastro dele em Clientes, se existir.`)) return;
-        await withLoading(e.currentTarget, "Removendo...", () => fetch("/api/agenda/" + c.id, { method: "DELETE" }));
-        agendaCart = agendaCart.filter((x) => x.phone !== c.phone);
-        updateAgCart();
-        loadAgenda();
-      });
-      div.querySelector(".ag-to-client")?.addEventListener("click", async (e) => {
-        try {
-          await withLoading(e.currentTarget, "Adicionando...", async () => {
-            const res = await fetch("/api/clients/stage", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ phone: c.phone, stage: "Novo" }),
-            });
-            if (!res.ok) throw new Error();
-          });
-          e.currentTarget.outerHTML = `<span class="hint">Já é cliente</span>`;
-        } catch {
-          alert("Não foi possível adicionar aos Clientes. Tente novamente.");
-        }
-      });
-      wrap.appendChild(div);
-    });
+    if (!offset) wrap.innerHTML = "";
+    else wrap.querySelector(".btn-carregar-mais")?.remove();
+    data.contacts.forEach((c) => wrap.appendChild(agendaCard(c)));
+    if (data.hasMore) renderCarregarMais(wrap, () => loadAgenda(data.shown));
     updateAgCart();
   } catch {
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar a agenda. Verifique sua conexão e tente novamente.</p>";
@@ -1198,12 +1221,23 @@ async function loadCampaigns() {
       wrap.innerHTML = `<div class="mini-empty list-empty">${ZapIcons.svg("megaphone", 28)}<h4>Nenhuma campanha criada ainda</h4><p>Crie sua primeira campanha para começar a conversar com sua base de clientes.</p><a class="btn primary" href="/">Criar campanha</a></div>`;
       return;
     }
-    wrap.innerHTML = "";
-    allJobs.forEach((job) => wrap.appendChild(campaignCard(job)));
+    renderCampaignsList();
   } catch {
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar as campanhas. Verifique sua conexão e tente novamente.</p>";
   }
 }
+
+function renderCampaignsList() {
+  const wrap = $("#campaignsList");
+  const termo = $("#campaignsSearch").value.trim().toLowerCase();
+  const list = termo
+    ? allJobs.filter((j) => (j.name || "").toLowerCase().includes(termo) || (j.message || "").toLowerCase().includes(termo))
+    : allJobs;
+  if (!list.length) { wrap.innerHTML = "<p class='hint'>Nenhuma campanha encontrada com esse termo.</p>"; return; }
+  wrap.innerHTML = "";
+  list.forEach((job) => wrap.appendChild(campaignCard(job)));
+}
+$("#campaignsSearch")?.addEventListener("input", renderCampaignsList);
 
 function campaignCard(job) {
   const st = statusOf(job);
@@ -1367,38 +1401,43 @@ $("#btnPrepareFollowup").addEventListener("click", () => {
 // ---------------------------------------------------------------------------
 // Respostas
 // ---------------------------------------------------------------------------
-async function loadResponses() {
+function responseCard(r) {
+  const div = document.createElement("div");
+  div.className = "dash-card";
+  const nome = displayNameOf(r);
+  const tags = (r.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
+  const agenda = r.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
+  const saveBtn = r.inAgenda ? "" : `<button class="btn ghost sm resp-save" type="button">Salvar na agenda</button>`;
+  div.innerHTML = `
+    <div class="dash-card-head">
+      <span class="resp-phone">${escapeHtml(nome)}</span>
+      <span class="dash-when">${fmtDate(r.ts)}</span>
+    </div>
+    <div class="dash-card-body">
+      <span class="resp-sub">${escapeHtml(fmtPhone(r.phone))}${r.stage ? ` · ${escapeHtml(r.stage)}` : ""}</span>
+      ${r.content ? `<span class="sched-msg">"${escapeHtml(r.content)}"</span>` : ""}
+      <span>${sourceBadge(r.nameSource)}${agenda}${tags}${saveBtn}</span>
+    </div>`;
+  const sb = div.querySelector(".resp-save");
+  if (sb) sb.addEventListener("click", () => openSaveAgenda(r.phone, r.name, loadResponses));
+  return div;
+}
+
+async function loadResponses(offset = 0) {
   const wrap = $("#responsesList");
-  wrap.innerHTML = "<p class='hint'>Carregando...</p>";
+  if (!offset) wrap.innerHTML = "<p class='hint'>Carregando...</p>";
   try {
-    const res = await fetch("/api/responses");
-    const list = (await res.json()).responses || [];
-    if (!list.length) {
+    const res = await fetch("/api/responses?offset=" + offset);
+    const data = await res.json();
+    const list = data.responses || [];
+    if (!offset && !list.length) {
       wrap.innerHTML = "<p class='hint'>Nenhuma resposta recebida ainda. Verifique se o webhook da Z-API está configurado.</p>";
       return;
     }
-    wrap.innerHTML = "";
-    list.forEach((r) => {
-      const div = document.createElement("div");
-      div.className = "dash-card";
-      const nome = displayNameOf(r);
-      const tags = (r.tags || []).slice(0, 2).map((x) => `<span class="badge manual">${escapeHtml(x)}</span>`).join(" ");
-      const agenda = r.inAgenda ? '<span class="badge" title="Na sua agenda">agenda</span>' : "";
-      const saveBtn = r.inAgenda ? "" : `<button class="btn ghost sm resp-save" type="button">Salvar na agenda</button>`;
-      div.innerHTML = `
-        <div class="dash-card-head">
-          <span class="resp-phone">${escapeHtml(nome)}</span>
-          <span class="dash-when">${fmtDate(r.ts)}</span>
-        </div>
-        <div class="dash-card-body">
-          <span class="resp-sub">${escapeHtml(fmtPhone(r.phone))}${r.stage ? ` · ${escapeHtml(r.stage)}` : ""}</span>
-          ${r.content ? `<span class="sched-msg">"${escapeHtml(r.content)}"</span>` : ""}
-          <span>${sourceBadge(r.nameSource)}${agenda}${tags}${saveBtn}</span>
-        </div>`;
-      const sb = div.querySelector(".resp-save");
-      if (sb) sb.addEventListener("click", () => openSaveAgenda(r.phone, r.name, loadResponses));
-      wrap.appendChild(div);
-    });
+    if (!offset) wrap.innerHTML = "";
+    else wrap.querySelector(".btn-carregar-mais")?.remove();
+    list.forEach((r) => wrap.appendChild(responseCard(r)));
+    if (data.hasMore) renderCarregarMais(wrap, () => loadResponses(data.shown));
   } catch {
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar as respostas. Verifique sua conexão e tente novamente.</p>";
   }
@@ -1604,6 +1643,8 @@ $$(".period-pill", $("#equipePeriodPills")).forEach((p) => p.addEventListener("c
   loadEquipeResumo();
 }));
 $("#visitasFiltroVendedor").addEventListener("change", loadVisitasOwner);
+let visitasSearchTimer = null;
+$("#visitasSearch")?.addEventListener("input", () => { clearTimeout(visitasSearchTimer); visitasSearchTimer = setTimeout(loadVisitasOwner, 300); });
 
 async function loadVendedores() {
   const wrap = $("#vendedoresList");
@@ -1714,14 +1755,18 @@ async function loadVisitasOwner() {
     const data = await res.json();
     if (!res.ok) { wrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível carregar as visitas.")}</p>`; return; }
     const vendedorFiltro = $("#visitasFiltroVendedor")?.value || "";
-    const list = (data.visitas || []).filter((v) => !vendedorFiltro || v.vendedorId === vendedorFiltro);
+    const termo = $("#visitasSearch")?.value.trim().toLowerCase() || "";
+    const list = (data.visitas || []).filter((v) =>
+      (!vendedorFiltro || v.vendedorId === vendedorFiltro) &&
+      (!termo || (v.clienteNome || "").toLowerCase().includes(termo) || (v.contatoNome || "").toLowerCase().includes(termo))
+    );
     if (!list.length) {
-      const vazio = {
+      const vazio = termo ? "Nenhuma visita encontrada com esse termo." : {
         hoje: "Nenhuma visita hoje ainda.",
         followup: "Nenhum follow-up pendente. Tudo em dia com a equipe.",
         historico: "Nenhuma visita registrada ainda. Quando sua equipe iniciar visitas, elas aparecem aqui.",
-      };
-      wrap.innerHTML = `<p class="hint">${vazio[visitasOwnerTab] || "Nenhuma visita encontrada."}</p>`;
+      }[visitasOwnerTab] || "Nenhuma visita encontrada.";
+      wrap.innerHTML = `<p class="hint">${vazio}</p>`;
       return;
     }
     wrap.innerHTML = "";
