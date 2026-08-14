@@ -181,7 +181,7 @@
   /* segundo card flutuante: oportunidade (dá profundidade em camadas) */
   .oppcard{position:absolute;left:-16px;top:14px;display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:9px 13px;transform:rotate(-2deg)}
   @media(max-width:960px){.oppcard{display:none}}
-  .oppcard .oi{width:28px;height:28px;border-radius:8px;background:var(--soft-green);color:var(--green);display:grid;place-items:center;flex:0 0 auto}
+  .oppcard .oi{width:28px;height:28px;border-radius:9px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;flex:0 0 auto}
   .oppcard .oi svg{width:14px;height:14px}
   .oppcard b{font-size:12.5px;display:block;color:var(--ink)}
   .oppcard span{font-size:10.5px;color:var(--muted)}
@@ -192,8 +192,8 @@
 
   /* trust bar */
   .trustbar{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 24px;padding:20px 0;color:var(--muted);font-size:13.5px;font-weight:700;border-bottom:1px solid var(--border);border-top:1px solid var(--border)}
-  .trustbar span{display:inline-flex;align-items:center;gap:7px}
-  .trustbar svg{width:16px;height:16px;color:var(--blue)}
+  .trustbar span{display:inline-flex;align-items:center;gap:8px}
+  .trustbar svg{width:14px;height:14px;color:var(--blue);background:var(--soft-blue);border-radius:7px;padding:5px;box-sizing:content-box}
   .trustbar .sep{width:4px;height:4px;border-radius:50%;background:var(--border)}
   @media(max-width:640px){.trustbar .sep{display:none}}
 
@@ -211,7 +211,7 @@
 
   /* scattered chips (problema) */
   .scatter{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin:36px 0 22px}
-  .scatter span{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 16px;font-weight:700;font-size:13.5px;color:var(--muted);box-shadow:var(--shadow-sm);display:inline-block}
+  .scatter span{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 16px;font-weight:700;font-size:13.5px;color:var(--text);box-shadow:var(--shadow-sm);display:inline-block}
   .scatter span:nth-child(2n){transform:rotate(-2deg)}
   .scatter span:nth-child(3n){transform:rotate(2deg)}
   .scatter span:nth-child(5n){transform:rotate(-1.5deg)}
@@ -240,7 +240,7 @@
   .tabnav button:hover{background:var(--bg-2);color:var(--text)}
   .tabnav button .ic{width:32px;height:32px;border-radius:9px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;flex:0 0 auto;transition:background .2s,color .2s}
   .tabnav button .ic svg{width:16px;height:16px}
-  .tabnav button.on{background:var(--bg-2);border-color:var(--border);border-left-color:var(--blue);color:var(--ink)}
+  .tabnav button.on{background:var(--bg-2);border-color:var(--border);border-left-color:var(--blue);color:var(--ink);box-shadow:0 4px 16px -4px var(--ring)}
   .tabnav button.on .ic{background:var(--grad);color:#fff}
   @media(max-width:900px){.tabnav{flex-direction:row;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity}.tabnav button{flex:0 0 auto;scroll-snap-align:start;border-left:none;border-bottom:3px solid transparent}.tabnav button.on{border-left:none;border-bottom-color:var(--blue)}}
   .tabpanel{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px;box-shadow:var(--shadow);min-height:400px}
@@ -259,7 +259,9 @@
   .mock-row .av{width:30px;height:30px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800;flex:0 0 auto}
   .mock-row b{font-size:13px;display:block}
   .mock-row span{font-size:11.5px;color:var(--muted)}
-  .mock-row .badge{margin-left:auto;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px;background:var(--soft-green);color:var(--green);white-space:nowrap}
+  .mock-row .badge{margin-left:auto;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px;background:var(--soft-blue);color:var(--blue);white-space:nowrap}
+  .mock-row .badge.ok{background:var(--soft-green);color:var(--green)}
+  .mock-row .badge.warn{background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)}
 
   /* Cliente 360 */
   .c360-grid{display:grid;grid-template-columns:.95fr 1.05fr;gap:36px;align-items:start}
@@ -839,8 +841,8 @@
             <div class="kpi"><div class="ci" style="background:var(--soft-blue);color:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div><div class="n">7</div><div class="l">Oportunidades</div></div>
           </div>
           <div class="h" style="font-size:13px">Próximas ações</div>
-          <div class="mock-row"><div class="av">JC</div><div><b>João Comércio</b><span>Follow-up atrasado desde ontem</span></div><span class="badge">Atenção</span></div>
-          <div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>Conversa aguardando resposta</span></div><span class="badge">Pendente</span></div>
+          <div class="mock-row"><div class="av">JC</div><div><b>João Comércio</b><span>Follow-up atrasado desde ontem</span></div><span class="badge warn">Atenção</span></div>
+          <div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>Conversa aguardando resposta</span></div><span class="badge warn">Pendente</span></div>
           <div class="mock-row"><div class="av">AN</div><div><b>Ana · vendedora</b><span>2 visitas agendadas para hoje</span></div><span class="badge">Hoje</span></div>
         </div>
       </div>
@@ -1141,19 +1143,19 @@
   var tabs=[
     {id:'wa',label:'WhatsApp',ic:'chat',th:'WhatsApp organizado de verdade.',tp:'Envie campanhas, acompanhe respostas e continue as conversas pelo próprio ZapFlow.',detail:'2 conversas aguardando resposta',
       mock:browserWrap('app.zapflow.com.br/conversas',0,'Conversas','Caixa de entrada unificada',
-        '<div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>"Ainda tem em estoque?"</span></div><span class="badge">Nova</span></div><div class="mock-row"><div class="av">JS</div><div><b>João Silva</b><span>Campanha "Novidades" · respondeu</span></div><span class="badge">Respondida</span></div><div class="fc-bubble" style="margin-top:10px">Olá! Sim, temos disponível. Posso te enviar os detalhes?</div>')},
+        '<div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>"Ainda tem em estoque?"</span></div><span class="badge">Nova</span></div><div class="mock-row"><div class="av">JS</div><div><b>João Silva</b><span>Campanha "Novidades" · respondeu</span></div><span class="badge ok">Respondida</span></div><div class="fc-bubble" style="margin-top:10px">Olá! Sim, temos disponível. Posso te enviar os detalhes?</div>')},
     {id:'crm',label:'CRM',ic:'users',th:'Funil comercial, sem planilha solta.',tp:'Cada cliente organizado por etapa, com tags, oportunidade e vendedor responsável.',detail:'4 etapas · funil sempre atualizado',
       mock:browserWrap('app.zapflow.com.br/clientes',1,'Clientes','Funil comercial',
         '<div class="mini-funnel"><div class="col"><div class="lbl">Novo</div><div class="chip">Ana Reis</div></div><div class="col"><div class="lbl">Contatado</div><div class="chip">Loja Sul</div></div><div class="col"><div class="lbl">Negociando</div><div class="chip">Comércio SJ</div></div><div class="col"><div class="lbl">Fechado</div><div class="chip">Distrib. RM</div></div></div>')},
     {id:'visitas',label:'Visitas',ic:'pin',th:'A visita comercial, do início ao follow-up.',tp:'Geolocalização, foto, motivo, resultado e próxima ação — tudo no celular do vendedor.',detail:'32 min em andamento',
       mock:browserWrap('app.zapflow.com.br/visitas',2,'Visitas em campo','Hoje · em andamento',
-        '<div class="mock-row"><div class="av">AN</div><div><b>Ana · em visita</b><span>Comércio São José · 22 min</span></div><span class="badge">Ao vivo</span></div><div class="map-mini" style="margin:10px 0 0"><span class="ring"></span><span class="pin"></span></div>')},
+        '<div class="mock-row"><div class="av">AN</div><div><b>Ana · em visita</b><span>Comércio São José · 22 min</span></div><span class="badge ok">Ao vivo</span></div><div class="map-mini" style="margin:10px 0 0"><span class="ring"></span><span class="pin"></span></div>')},
     {id:'auto',label:'Automação',ic:'refresh',th:'Regras que trabalham por você.',tp:'Gatilhos de etapa, resultado de visita ou palavra-chave disparam a ação certa sozinhos.',detail:'3 regras ativas nesta empresa',
       mock:browserWrap('app.zapflow.com.br/automacoes',3,'Automações','Regras ativas',
         '<div class="wf-row" style="margin-top:8px"><div class="wf-node trigger"><span class="wf-tag">Quando</span><b>Visita = Proposta solicitada</b></div><div class="wf-connector">'+arrow+'</div><div class="wf-node action"><span class="wf-tag">Então</span><b>Criar follow-up</b></div></div>')},
     {id:'equipe',label:'Equipe',ic:'users',th:'Visão clara de quem fez o quê.',tp:'Visitas, follow-ups e oportunidades por vendedor, sem virar um painel complicado.',detail:'2 vendedores ativos hoje',
       mock:browserWrap('app.zapflow.com.br/visitas/equipe',4,'Vendedores','Desempenho · hoje',
-        '<div class="mock-row"><div class="av">AN</div><div><b>Ana</b><span>5 visitas · 2 oportunidades</span></div><span class="badge">+18%</span></div><div class="mock-row"><div class="av">CR</div><div><b>Carlos</b><span>3 visitas · 1 follow-up</span></div><span class="badge">Hoje</span></div>')},
+        '<div class="mock-row"><div class="av">AN</div><div><b>Ana</b><span>5 visitas · 2 oportunidades</span></div><span class="badge ok">+18%</span></div><div class="mock-row"><div class="av">CR</div><div><b>Carlos</b><span>3 visitas · 1 follow-up</span></div><span class="badge">Hoje</span></div>')},
     {id:'ia',label:'Zappy IA',ic:'bot',th:'A IA que conhece a sua operação.',tp:'Resume clientes, sugere respostas e prepara campanhas — você sempre confirma antes de agir.',detail:'consultando dados da empresa',
       mock:browserWrap('app.zapflow.com.br/ia',5,'ZapFlow IA','Conversa com a Zappy',
         '<div class="cmsg user" style="margin-bottom:8px"><div class="bub" style="font-size:12.5px;padding:8px 11px">Crie uma campanha para quem não respondeu.</div></div><div class="cmsg bot"><div class="bub" style="font-size:12.5px;padding:8px 11px">Rascunho pronto para 34 contatos. Revisar e enviar?</div></div>')}
