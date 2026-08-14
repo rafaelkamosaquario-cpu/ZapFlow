@@ -153,6 +153,7 @@
   .app .h{font-weight:800;font-size:15px;margin-bottom:2px}
   .app .s{color:var(--muted);font-size:11.5px;margin-bottom:12px}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  @media(max-width:480px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px}
   .kpi .n{font-weight:800;font-size:18px;color:var(--ink)}
   .kpi .l{font-size:9.5px;color:var(--muted)}
@@ -288,14 +289,14 @@
 
   /* visitas */
   .visit-grid{display:grid;grid-template-columns:1fr 1.05fr;gap:40px;align-items:center}
-  @media(max-width:900px){.visit-grid{grid-template-columns:1fr}}
+  @media(max-width:900px){.visit-grid{grid-template-columns:1fr}.visit-grid .vsteps{order:2;margin-top:22px}.visit-grid .visit-card{order:1}}
   .vsteps{display:flex;flex-direction:column}
   .vstep{display:flex;align-items:center;gap:12px;padding:8px 0}
   .vstep .vi{width:30px;height:30px;border-radius:9px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;flex:0 0 auto}
   .vstep .vi svg{width:15px;height:15px}
   .vstep b{font-size:13.5px;color:var(--ink)}
   .vline{width:2px;height:14px;background:var(--border);margin-left:14px}
-  .visit-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:var(--shadow)}
+  .visit-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:var(--shadow)}
   .visit-card .vc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
   .visit-card .vc-top b{font-size:14.5px}
   .timer-chip{font-size:11.5px;font-weight:800;color:var(--blue);background:var(--soft-blue);padding:4px 10px;border-radius:20px}
@@ -361,7 +362,9 @@
   .wf-node b{font-size:14.5px;color:var(--ink);font-weight:700;line-height:1.35}
   .wf-connector{flex:0 0 auto;width:52px;display:flex;align-items:center;justify-content:center;position:relative}
   .wf-connector::before{content:"";position:absolute;left:2px;right:2px;top:50%;height:1px;background:var(--border)}
+  .wf-connector::after{content:"";position:absolute;left:50%;top:50%;width:26px;height:26px;border-radius:50%;border:1px solid var(--blue);transform:translate(-50%,-50%) scale(1);opacity:.5;animation:wfPing 2.4s ease-out infinite}
   .wf-connector svg{position:relative;background:var(--card);border-radius:50%;padding:6px;border:1px solid var(--border);color:var(--blue);width:26px;height:26px;box-sizing:border-box}
+  @keyframes wfPing{0%{transform:translate(-50%,-50%) scale(1);opacity:.45}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
   @media(max-width:640px){.wf-row{flex-direction:column;padding:10px;gap:0}.wf-node{padding:10px 4px}.wf-connector{width:100%;height:36px}.wf-connector::before{left:50%;right:auto;top:2px;bottom:2px;width:1px;height:auto}}
 
   /* integrações — radial */
@@ -499,7 +502,7 @@
   .btn.primary:hover{transform:translateY(-2px)}
   @keyframes pulseDot{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
 
-  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}.hero-trial .dot{animation:none}.btn.primary::after{display:none}.seq-step{transition:none}.map-mini .ring{animation:none}.flow .arw svg{animation:none}.typing-dots span{animation:none}}
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}.hero-trial .dot{animation:none}.btn.primary::after{display:none}.seq-step{transition:none}.map-mini .ring{animation:none}.flow .arw svg{animation:none}.typing-dots span{animation:none}.vseq span{transition:none}.wf-connector svg{animation:none}.wf-connector::after{animation:none;display:none}}
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 </head>
@@ -783,10 +786,10 @@
         <div class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M8.3 3.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" stroke-width="1.3"/></svg></div>
         <div><b>Zappy</b><div class="st">consultando dados da sua empresa<span class="typing-dots"><span></span><span></span><span></span></span></div></div>
       </div>
-      <div class="cmsg user"><div class="bub">Como minha equipe trabalhou hoje?</div></div>
-      <div class="cmsg bot"><div class="bub">Hoje: 6 visitas concluídas, 2 follow-ups pendentes e 3 oportunidades novas. Ana fechou 1 venda em Apresentação.</div></div>
-      <div class="cmsg user"><div class="bub">Resuma este cliente e diga qual deveria ser minha próxima ação.</div></div>
-      <div class="cmsg bot"><div class="bub">Cliente negociando há 5 dias, última visita pediu proposta formal. Sugestão: enviar a proposta e agendar retorno em 2 dias.</div></div>
+      <div class="cmsg user reveal" data-d="1"><div class="bub">Como minha equipe trabalhou hoje?</div></div>
+      <div class="cmsg bot reveal" data-d="2"><div class="bub">Hoje: 6 visitas concluídas, 2 follow-ups pendentes e 3 oportunidades novas. Ana fechou 1 venda em Apresentação.</div></div>
+      <div class="cmsg user reveal" data-d="3"><div class="bub">Resuma este cliente e diga qual deveria ser minha próxima ação.</div></div>
+      <div class="cmsg bot reveal" data-d="4"><div class="bub">Cliente negociando há 5 dias, última visita pediu proposta formal. Sugestão: enviar a proposta e agendar retorno em 2 dias.</div></div>
     </div>
   </div>
   <div class="wrap grid g3 reveal" style="margin-top:34px">
@@ -1136,22 +1139,22 @@
     return '<div class="browser"><div class="bar"><i></i><i></i><i></i><span class="url">'+url+'</span></div><div class="app"><div class="side">'+side+'</div><div class="main"><div class="h">'+heading+'</div><div class="s">'+sub+'</div>'+innerHtml+'</div></div></div>';
   }
   var tabs=[
-    {id:'wa',label:'WhatsApp',ic:'chat',th:'WhatsApp organizado de verdade.',tp:'Envie campanhas, acompanhe respostas e continue as conversas pelo próprio ZapFlow.',
+    {id:'wa',label:'WhatsApp',ic:'chat',th:'WhatsApp organizado de verdade.',tp:'Envie campanhas, acompanhe respostas e continue as conversas pelo próprio ZapFlow.',detail:'2 conversas aguardando resposta',
       mock:browserWrap('app.zapflow.com.br/conversas',0,'Conversas','Caixa de entrada unificada',
         '<div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>"Ainda tem em estoque?"</span></div><span class="badge">Nova</span></div><div class="mock-row"><div class="av">JS</div><div><b>João Silva</b><span>Campanha "Novidades" · respondeu</span></div><span class="badge">Respondida</span></div><div class="fc-bubble" style="margin-top:10px">Olá! Sim, temos disponível. Posso te enviar os detalhes?</div>')},
-    {id:'crm',label:'CRM',ic:'users',th:'Funil comercial, sem planilha solta.',tp:'Cada cliente organizado por etapa, com tags, oportunidade e vendedor responsável.',
+    {id:'crm',label:'CRM',ic:'users',th:'Funil comercial, sem planilha solta.',tp:'Cada cliente organizado por etapa, com tags, oportunidade e vendedor responsável.',detail:'4 etapas · funil sempre atualizado',
       mock:browserWrap('app.zapflow.com.br/clientes',1,'Clientes','Funil comercial',
         '<div class="mini-funnel"><div class="col"><div class="lbl">Novo</div><div class="chip">Ana Reis</div></div><div class="col"><div class="lbl">Contatado</div><div class="chip">Loja Sul</div></div><div class="col"><div class="lbl">Negociando</div><div class="chip">Comércio SJ</div></div><div class="col"><div class="lbl">Fechado</div><div class="chip">Distrib. RM</div></div></div>')},
-    {id:'visitas',label:'Visitas',ic:'pin',th:'A visita comercial, do início ao follow-up.',tp:'Geolocalização, foto, motivo, resultado e próxima ação — tudo no celular do vendedor.',
+    {id:'visitas',label:'Visitas',ic:'pin',th:'A visita comercial, do início ao follow-up.',tp:'Geolocalização, foto, motivo, resultado e próxima ação — tudo no celular do vendedor.',detail:'32 min em andamento',
       mock:browserWrap('app.zapflow.com.br/visitas',2,'Visitas em campo','Hoje · em andamento',
         '<div class="mock-row"><div class="av">AN</div><div><b>Ana · em visita</b><span>Comércio São José · 22 min</span></div><span class="badge">Ao vivo</span></div><div class="map-mini" style="margin:10px 0 0"><span class="ring"></span><span class="pin"></span></div>')},
-    {id:'auto',label:'Automação',ic:'refresh',th:'Regras que trabalham por você.',tp:'Gatilhos de etapa, resultado de visita ou palavra-chave disparam a ação certa sozinhos.',
+    {id:'auto',label:'Automação',ic:'refresh',th:'Regras que trabalham por você.',tp:'Gatilhos de etapa, resultado de visita ou palavra-chave disparam a ação certa sozinhos.',detail:'3 regras ativas nesta empresa',
       mock:browserWrap('app.zapflow.com.br/automacoes',3,'Automações','Regras ativas',
         '<div class="wf-row" style="margin-top:8px"><div class="wf-node trigger"><span class="wf-tag">Quando</span><b>Visita = Proposta solicitada</b></div><div class="wf-connector">'+arrow+'</div><div class="wf-node action"><span class="wf-tag">Então</span><b>Criar follow-up</b></div></div>')},
-    {id:'equipe',label:'Equipe',ic:'users',th:'Visão clara de quem fez o quê.',tp:'Visitas, follow-ups e oportunidades por vendedor, sem virar um painel complicado.',
+    {id:'equipe',label:'Equipe',ic:'users',th:'Visão clara de quem fez o quê.',tp:'Visitas, follow-ups e oportunidades por vendedor, sem virar um painel complicado.',detail:'2 vendedores ativos hoje',
       mock:browserWrap('app.zapflow.com.br/visitas/equipe',4,'Vendedores','Desempenho · hoje',
         '<div class="mock-row"><div class="av">AN</div><div><b>Ana</b><span>5 visitas · 2 oportunidades</span></div><span class="badge">+18%</span></div><div class="mock-row"><div class="av">CR</div><div><b>Carlos</b><span>3 visitas · 1 follow-up</span></div><span class="badge">Hoje</span></div>')},
-    {id:'ia',label:'Zappy IA',ic:'bot',th:'A IA que conhece a sua operação.',tp:'Resume clientes, sugere respostas e prepara campanhas — você sempre confirma antes de agir.',
+    {id:'ia',label:'Zappy IA',ic:'bot',th:'A IA que conhece a sua operação.',tp:'Resume clientes, sugere respostas e prepara campanhas — você sempre confirma antes de agir.',detail:'consultando dados da empresa',
       mock:browserWrap('app.zapflow.com.br/ia',5,'ZapFlow IA','Conversa com a Zappy',
         '<div class="cmsg user" style="margin-bottom:8px"><div class="bub" style="font-size:12.5px;padding:8px 11px">Crie uma campanha para quem não respondeu.</div></div><div class="cmsg bot"><div class="bub" style="font-size:12.5px;padding:8px 11px">Rascunho pronto para 34 contatos. Revisar e enviar?</div></div>')}
   ];
@@ -1159,7 +1162,8 @@
   tabNav.innerHTML=tabs.map(function(t,i){return '<button type="button" data-i="'+i+'" class="'+(i===0?'on':'')+'" role="tab" aria-selected="'+(i===0?'true':'false')+'"><span class="ic">'+svg(I[t.ic])+'</span>'+t.label+'</button>';}).join('');
   function renderTab(i){
     var t=tabs[i];
-    tabPanel.innerHTML='<div class="tabmock"><h3 class="th">'+t.th+'</h3><p class="tp">'+t.tp+'</p>'+t.mock+'</div>';
+    var detail=t.detail?'<span class="timer-chip" style="display:inline-block;margin-bottom:16px">'+t.detail+'</span>':'';
+    tabPanel.innerHTML='<div class="tabmock"><h3 class="th">'+t.th+'</h3><p class="tp">'+t.tp+'</p>'+detail+t.mock+'</div>';
     requestAnimationFrame(function(){var m=tabPanel.querySelector('.tabmock');if(m)m.classList.add('on');});
   }
   renderTab(0);
@@ -1194,12 +1198,12 @@
     if(!steps.length)return;
     if(reduced){steps[steps.length-1].classList.add('on');return;}
     var i=0;
+    steps[0].classList.add('on');
     setInterval(function(){
       steps.forEach(function(s){s.classList.remove('on');});
-      steps[i].classList.add('on');
       i=(i+1)%steps.length;
+      steps[i].classList.add('on');
     },1300);
-    steps[0].classList.add('on');
   })();
 
   // ------- FAQ -------
