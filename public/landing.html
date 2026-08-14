@@ -40,9 +40,11 @@
     --shadow-sm:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
     --shadow:0 10px 30px rgba(16,24,40,.10);
     --shadow-lg:0 30px 60px rgba(16,24,40,.16);
+    --shadow-xl:0 40px 90px -20px rgba(16,24,40,.28),0 10px 30px -8px rgba(16,24,40,.16);
     --radius:16px;
     --grad:linear-gradient(135deg,#1D4ED8,#2F6DEA);
     --maxw:1120px;
+    --grid-line:rgba(29,78,216,.05);
   }
   :root[data-theme="dark"]{
     --ink:#E8EDF4; --text:#E8EDF4; --muted:#9FB0C0;
@@ -51,14 +53,18 @@
     --shadow-sm:0 1px 2px rgba(0,0,0,.4);
     --shadow:0 14px 40px rgba(0,0,0,.45);
     --shadow-lg:0 30px 70px rgba(0,0,0,.55);
+    --shadow-xl:0 50px 100px -20px rgba(0,0,0,.65),0 14px 40px -8px rgba(0,0,0,.5);
     --ring:rgba(59,130,246,.30);
+    --grid-line:rgba(59,130,246,.08);
   }
   @media (prefers-color-scheme:dark){:root:not([data-theme]){
     --ink:#E8EDF4; --text:#E8EDF4; --muted:#9FB0C0;
     --bg:#0B1220; --bg-2:#0F1826; --card:#141E2E; --border:#233043;
     --soft-blue:rgba(59,130,246,.14); --soft-green:rgba(34,197,94,.14);
     --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow:0 14px 40px rgba(0,0,0,.45); --shadow-lg:0 30px 70px rgba(0,0,0,.55);
+    --shadow-xl:0 50px 100px -20px rgba(0,0,0,.65),0 14px 40px -8px rgba(0,0,0,.5);
     --ring:rgba(59,130,246,.30);
+    --grid-line:rgba(59,130,246,.08);
   }}
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -111,6 +117,10 @@
   .hero{position:relative;padding:64px 0 36px;overflow:hidden}
   .hero::before{content:"";position:absolute;inset:-10% -20% auto -20%;height:640px;z-index:-1;
     background:radial-gradient(700px 380px at 78% 6%,var(--soft-blue),transparent 60%),radial-gradient(560px 320px at 8% 20%,var(--soft-green),transparent 55%)}
+  .hero::after{content:"";position:absolute;inset:0;z-index:-1;opacity:.6;
+    background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+    background-size:56px 56px;
+    -webkit-mask-image:radial-gradient(60% 55% at 68% 20%,#000,transparent 70%);mask-image:radial-gradient(60% 55% at 68% 20%,#000,transparent 70%)}
   .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}
   @media(max-width:960px){.hero-grid{grid-template-columns:1fr;gap:26px}}
   .hero h1{font-size:clamp(32px,5vw,52px);line-height:1.08;margin:16px 0 12px}
@@ -126,7 +136,9 @@
   .hero-trial .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulseDot 2.2s infinite}
 
   /* mockups */
-  .mocks{position:relative}
+  .mocks{position:relative;perspective:1400px}
+  .mocks .browser{transform:rotateY(-3deg) rotateX(1deg);transform-origin:right center;box-shadow:var(--shadow-xl)}
+  @media(max-width:960px){.mocks .browser{transform:none}}
   .browser{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden}
   .browser .bar{display:flex;align-items:center;gap:6px;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-2)}
   .browser .bar i{width:11px;height:11px;border-radius:50%;background:#e2564f}
@@ -164,6 +176,14 @@
   .seq-step.active .sd svg{opacity:1}
   .seq-step span{font-size:12.5px;font-weight:700;color:var(--text)}
   .seq-line{width:2px;height:10px;background:var(--border);margin-left:8px}
+
+  /* segundo card flutuante: oportunidade (dá profundidade em camadas) */
+  .oppcard{position:absolute;left:-16px;top:14px;display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:9px 13px;transform:rotate(-2deg)}
+  @media(max-width:960px){.oppcard{display:none}}
+  .oppcard .oi{width:28px;height:28px;border-radius:8px;background:var(--soft-green);color:var(--green);display:grid;place-items:center;flex:0 0 auto}
+  .oppcard .oi svg{width:14px;height:14px}
+  .oppcard b{font-size:12.5px;display:block;color:var(--ink)}
+  .oppcard span{font-size:10.5px;color:var(--muted)}
 
   /* logos strip */
   .logos{display:flex;gap:34px;flex-wrap:wrap;justify-content:center;align-items:center;opacity:.7;margin-top:10px}
@@ -207,24 +227,27 @@
   .flow .fx .ci svg{width:17px;height:17px}
   .flow .fx b{font-size:13px;color:var(--ink)}
   .flow .arw{display:grid;place-items:center;color:var(--muted)}
-  .flow .arw svg{width:16px;height:16px}
+  .flow .arw svg{width:16px;height:16px;animation:arrowPulse 2.6s ease-in-out infinite;animation-delay:var(--d,0s)}
   @media(max-width:760px){.flow .arw{transform:rotate(90deg)}}
+  @keyframes arrowPulse{0%,40%,100%{color:var(--muted);opacity:.55}20%{color:var(--blue);opacity:1}}
 
   /* tabs demo */
   .tabsdemo{display:grid;grid-template-columns:.85fr 1.15fr;gap:30px;align-items:start}
   @media(max-width:900px){.tabsdemo{grid-template-columns:1fr}}
   .tabnav{display:flex;flex-direction:column;gap:6px}
-  .tabnav button{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid transparent;background:transparent;border-radius:12px;padding:12px 13px;cursor:pointer;font-weight:700;font-size:14px;color:var(--muted);width:100%}
-  .tabnav button .ic{width:32px;height:32px;border-radius:9px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;flex:0 0 auto}
+  .tabnav button{position:relative;display:flex;align-items:center;gap:12px;text-align:left;border:1px solid transparent;border-left:3px solid transparent;background:transparent;border-radius:12px;padding:12px 13px 12px 16px;cursor:pointer;font-weight:700;font-size:14px;color:var(--muted);width:100%;transition:background .2s,border-color .2s,color .2s}
+  .tabnav button:hover{background:var(--bg-2);color:var(--text)}
+  .tabnav button .ic{width:32px;height:32px;border-radius:9px;background:var(--soft-blue);color:var(--blue);display:grid;place-items:center;flex:0 0 auto;transition:background .2s,color .2s}
   .tabnav button .ic svg{width:16px;height:16px}
-  .tabnav button.on{background:var(--bg-2);border-color:var(--border);color:var(--ink)}
+  .tabnav button.on{background:var(--bg-2);border-color:var(--border);border-left-color:var(--blue);color:var(--ink)}
   .tabnav button.on .ic{background:var(--grad);color:#fff}
-  @media(max-width:900px){.tabnav{flex-direction:row;overflow-x:auto;padding-bottom:6px}.tabnav button{flex:0 0 auto}}
-  .tabpanel{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:26px;box-shadow:var(--shadow);min-height:360px}
-  .tabpanel .th{font-size:20px;margin:0 0 6px}
-  .tabpanel .tp{color:var(--muted);font-size:14.5px;margin:0 0 18px;max-width:52ch}
-  .tabmock{opacity:0;transform:translateY(8px);transition:opacity .35s ease,transform .35s ease}
+  @media(max-width:900px){.tabnav{flex-direction:row;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity}.tabnav button{flex:0 0 auto;scroll-snap-align:start;border-left:none;border-bottom:3px solid transparent}.tabnav button.on{border-left:none;border-bottom-color:var(--blue)}}
+  .tabpanel{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px;box-shadow:var(--shadow);min-height:400px}
+  .tabpanel .th{font-size:21px;margin:0 0 6px}
+  .tabpanel .tp{color:var(--muted);font-size:14.5px;margin:0 0 20px;max-width:52ch}
+  .tabmock{opacity:0;transform:translateY(6px);transition:opacity .4s ease,transform .4s ease}
   .tabmock.on{opacity:1;transform:none}
+  .tabmock .browser{box-shadow:var(--shadow)}
 
   .mini-funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   .mini-funnel .col{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:8px}
@@ -237,8 +260,23 @@
   .mock-row span{font-size:11.5px;color:var(--muted)}
   .mock-row .badge{margin-left:auto;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px;background:var(--soft-green);color:var(--green);white-space:nowrap}
 
+  /* Cliente 360 */
+  .c360-grid{display:grid;grid-template-columns:.95fr 1.05fr;gap:36px;align-items:start}
+  @media(max-width:900px){.c360-grid{grid-template-columns:1fr}}
+  .c360-head{display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+  .c360-head .av{width:44px;height:44px;border-radius:12px;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;flex:0 0 auto}
+  .c360-head b{font-size:16px;display:block;color:var(--ink)}
+  .c360-head span{font-size:12px;color:var(--muted)}
+  .c360-stage{display:inline-flex;font-size:11px;font-weight:800;padding:4px 11px;border-radius:20px;background:var(--soft-blue);color:var(--blue);margin-left:auto}
+  .c360-tags{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
+  .c360-tags span{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;background:var(--bg-2);border:1px solid var(--border);color:var(--muted)}
+  .c360-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+  .c360-meta div{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .c360-meta .l{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:800;margin-bottom:3px}
+  .c360-meta .v{font-size:13px;font-weight:700;color:var(--ink)}
+
   /* timeline (Cliente 360) */
-  .timeline{position:relative;max-width:640px;margin:0 auto;padding-left:34px}
+  .timeline{position:relative;padding-left:34px}
   .timeline::before{content:"";position:absolute;left:11px;top:6px;bottom:6px;width:2px;background:var(--border)}
   .titem{position:relative;padding-bottom:24px}
   .titem:last-child{padding-bottom:0}
@@ -270,11 +308,21 @@
   .visit-card .vc-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .visit-card .vc-tags span{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;background:var(--bg-2);color:var(--muted);border:1px solid var(--border)}
   .visit-card .vc-tags span.on{background:var(--soft-green);color:var(--green);border-color:transparent}
+  .vseq{display:flex;gap:4px;margin:0 0 12px}
+  .vseq span{flex:1;text-align:center;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:6px 3px;border-radius:8px;background:var(--bg-2);color:var(--muted);transition:background .4s ease,color .4s ease}
+  .vseq span.on{background:var(--soft-blue);color:var(--blue)}
 
   /* vendedor x gestor */
-  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch;position:relative}
   @media(max-width:800px){.split{grid-template-columns:1fr}}
-  .vg-col{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px}
+  @media(min-width:801px){
+    .split::before{content:"";position:absolute;left:10%;right:10%;top:50%;height:1px;background:var(--border);z-index:0}
+    .vg-connector{display:flex;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:24px;padding:8px 14px;box-shadow:var(--shadow);z-index:2;color:var(--blue)}
+    .vg-connector svg{width:16px;height:16px}
+    .vg-connector .vg-line{width:20px;height:1px;background:var(--border)}
+  }
+  @media(max-width:800px){.vg-connector{display:none}}
+  .vg-col{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;position:relative;z-index:1}
   .vg-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
   .vg-head b{font-size:15.5px;color:var(--ink)}
   .vg-head span{font-size:12px;color:var(--muted);display:block}
@@ -290,6 +338,11 @@
   .chatmock .chead b{font-size:14.5px;display:block}
   .chatmock .chead .st{font-size:11.5px;color:var(--green);display:flex;align-items:center;gap:5px}
   .chatmock .chead .st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green)}
+  .typing-dots{display:inline-flex;gap:3px;margin-left:2px}
+  .typing-dots span{width:4px;height:4px;border-radius:50%;background:var(--green);animation:typingBounce 1.2s infinite ease-in-out}
+  .typing-dots span:nth-child(2){animation-delay:.15s}
+  .typing-dots span:nth-child(3){animation-delay:.3s}
+  @keyframes typingBounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}
   .cmsg{margin-bottom:12px;display:flex}
   .cmsg.user{justify-content:flex-end}
   .cmsg .bub{max-width:84%;padding:10px 13px;border-radius:14px;font-size:13.5px;line-height:1.5}
@@ -298,17 +351,40 @@
   .cmsg.bot .bub ul{margin:6px 0 0;padding-left:16px}
   .cmsg.bot .bub li{margin-bottom:2px}
 
-  /* automações quando/então */
-  .rule-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-sm)}
-  .rule-part{flex:1;min-width:0}
-  .rule-part .rk{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px}
-  .rule-part .rv{font-size:14px;font-weight:700;color:var(--ink);background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px;display:inline-block}
-  .rule-arrow{flex:0 0 auto;color:var(--blue)}
-  .rule-arrow svg{width:20px;height:20px}
-  @media(max-width:640px){.rule-card{flex-direction:column;align-items:stretch}.rule-arrow{transform:rotate(90deg);align-self:center}}
+  /* automações — workflow nodes conectados */
+  .wf-row{display:flex;align-items:stretch;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:6px;box-shadow:var(--shadow-sm);transition:border-color .2s,box-shadow .2s}
+  .wf-row:hover{border-color:color-mix(in srgb,var(--blue) 25%,var(--border));box-shadow:var(--shadow)}
+  .wf-node{flex:1;min-width:0;padding:14px 18px;display:flex;flex-direction:column;gap:7px;justify-content:center}
+  .wf-node .wf-tag{display:inline-flex;align-self:flex-start;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:20px}
+  .wf-node.trigger .wf-tag{background:var(--soft-blue);color:var(--blue)}
+  .wf-node.action .wf-tag{background:var(--soft-green);color:var(--green)}
+  .wf-node b{font-size:14.5px;color:var(--ink);font-weight:700;line-height:1.35}
+  .wf-connector{flex:0 0 auto;width:52px;display:flex;align-items:center;justify-content:center;position:relative}
+  .wf-connector::before{content:"";position:absolute;left:2px;right:2px;top:50%;height:1px;background:var(--border)}
+  .wf-connector svg{position:relative;background:var(--card);border-radius:50%;padding:6px;border:1px solid var(--border);color:var(--blue);width:26px;height:26px;box-sizing:border-box}
+  @media(max-width:640px){.wf-row{flex-direction:column;padding:10px;gap:0}.wf-node{padding:10px 4px}.wf-connector{width:100%;height:36px}.wf-connector::before{left:50%;right:auto;top:2px;bottom:2px;width:1px;height:auto}}
+
+  /* integrações — radial */
+  .orbit-wrap{display:none}
+  .integr-fallback{display:grid}
+  @media(min-width:701px){
+    .orbit-wrap{display:block}
+    .integr-fallback{display:none}
+  }
+  .orbit{position:relative;width:100%;max-width:460px;aspect-ratio:1;margin:0 auto}
+  .orbit-ring{position:absolute;inset:6%;border:1px dashed var(--border);border-radius:50%}
+  .orbit-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border-radius:50%;background:var(--grad);display:grid;place-items:center;box-shadow:var(--shadow-lg);z-index:2}
+  .orbit-center img{width:38px;height:38px;filter:brightness(0) invert(1)}
+  .orbit-line{position:absolute;left:50%;top:50%;width:42%;height:1px;background:var(--border);transform-origin:0 50%}
+  .orbit-item{position:absolute;transform:translate(-50%,-50%);width:112px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 10px;box-shadow:var(--shadow-sm);z-index:1;transition:transform .2s,box-shadow .2s,border-color .2s}
+  .orbit-item:hover{transform:translate(-50%,-50%) translateY(-3px);box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--blue) 30%,var(--border))}
+  .orbit-item .ico{margin:0 auto 6px}
+  .orbit-item b{font-size:12px;display:block;color:var(--ink)}
+  .orbit-item span{font-size:10px;color:var(--muted)}
 
   /* segurança grid */
-  .sec-item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .sec-item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;transition:border-color .2s,background .2s}
+  .sec-item:hover{border-color:color-mix(in srgb,var(--blue) 30%,var(--border));background:var(--bg-2)}
   .sec-item svg{width:18px;height:18px;color:var(--blue);flex:0 0 auto}
   .sec-item span{font-size:13.5px;font-weight:600;color:var(--text)}
 
@@ -423,7 +499,7 @@
   .btn.primary:hover{transform:translateY(-2px)}
   @keyframes pulseDot{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
 
-  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}.hero-trial .dot{animation:none}.btn.primary::after{display:none}.seq-step{transition:none}.map-mini .ring{animation:none}}
+  @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}.hero-trial .dot{animation:none}.btn.primary::after{display:none}.seq-step{transition:none}.map-mini .ring{animation:none}.flow .arw svg{animation:none}.typing-dots span{animation:none}}
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 </style>
 </head>
@@ -478,6 +554,10 @@
     </div>
 
     <div class="mocks reveal in">
+      <div class="oppcard" aria-hidden="true">
+        <div class="oi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div>
+        <div><b>Oportunidade aberta</b><span>Comércio São José</span></div>
+      </div>
       <div class="browser" aria-hidden="true">
         <div class="bar"><i></i><i></i><i></i><span class="url">app.zapflow.com.br</span></div>
         <div class="app">
@@ -530,7 +610,7 @@
   <span class="sep"></span>
   <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg> WhatsApp + CRM + Campo</span>
   <span class="sep"></span>
-  <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg> IA integrada</span>
+  <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M8.3 3.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" stroke-width="1.3"/></svg> IA integrada</span>
   <span class="sep"></span>
   <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Google conectado</span>
   <span class="sep"></span>
@@ -590,17 +670,36 @@
     <h2 class="reveal">Cada cliente com contexto completo.</h2>
     <p class="sub reveal">Contato, etapa, vendedor responsável, tags, oportunidade, conversas, campanhas, visitas e notas — tudo em uma página só: o Cliente 360°.</p>
   </div>
-  <div class="wrap reveal" style="margin-top:34px">
-    <div class="timeline">
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div><div class="tcard"><b>Mensagem recebida</b><span>"Ainda tem o produto disponível?" · WhatsApp</span></div></div>
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m3 11 18-5v12L3 14z"/></svg></div><div class="tcard"><b>Campanha enviada</b><span>"Novidades da semana" · aberta e respondida</span></div></div>
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg></div><div class="tcard"><b>Visita realizada</b><span>Motivo: Apresentação · Resultado: Proposta solicitada</span></div></div>
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div><div class="tcard"><b>Nota adicionada</b><span>"Cliente quer fechar até o fim do mês" · Rafael</span></div></div>
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div><div class="tcard"><b>Oportunidade criada</b><span>Etapa: Negociando · valor potencial registrado</span></div></div>
-      <div class="titem"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg></div><div class="tcard"><b>Follow-up agendado</b><span>Retorno em 3 dias · lembrete criado</span></div></div>
+  <div class="wrap c360-grid" style="margin-top:34px">
+    <div class="browser reveal" aria-hidden="true">
+      <div class="bar"><i></i><i></i><i></i><span class="url">app.zapflow.com.br/clientes/comercio-sao-jose</span></div>
+      <div class="app" style="grid-template-columns:1fr">
+        <div class="main">
+          <div class="c360-head">
+            <div class="av">CS</div>
+            <div><b>Comércio São José</b><span>Vendedor responsável: Ana</span></div>
+            <span class="c360-stage">Negociando</span>
+          </div>
+          <div class="c360-tags"><span>Prospecção ativa</span><span>Cliente recorrente</span><span>Alto potencial</span></div>
+          <div class="c360-meta">
+            <div><div class="l">Oportunidade</div><div class="v">Em aberto</div></div>
+            <div><div class="l">Última visita</div><div class="v">Há 2 dias</div></div>
+            <div><div class="l">Última conversa</div><div class="v">Hoje, 09:40</div></div>
+            <div><div class="l">Próxima ação</div><div class="v">Follow-up em 3 dias</div></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <p class="center" style="margin-top:26px;font-weight:700;color:var(--ink)">Todo histórico comercial em um lugar.</p>
+    <div class="timeline">
+      <div class="titem reveal" data-d="1"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div><div class="tcard"><b>Mensagem recebida</b><span>"Ainda tem o produto disponível?" · WhatsApp</span></div></div>
+      <div class="titem reveal" data-d="2"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m3 11 18-5v12L3 14z"/></svg></div><div class="tcard"><b>Campanha enviada</b><span>"Novidades da semana" · aberta e respondida</span></div></div>
+      <div class="titem reveal" data-d="3"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg></div><div class="tcard"><b>Visita realizada</b><span>Motivo: Apresentação · Resultado: Proposta solicitada</span></div></div>
+      <div class="titem reveal" data-d="4"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></div><div class="tcard"><b>Nota adicionada</b><span>"Cliente quer fechar até o fim do mês" · Rafael</span></div></div>
+      <div class="titem reveal" data-d="1"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div><div class="tcard"><b>Oportunidade criada</b><span>Etapa: Negociando · valor potencial registrado</span></div></div>
+      <div class="titem reveal" data-d="2"><div class="tdot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg></div><div class="tcard"><b>Follow-up agendado</b><span>Retorno em 3 dias · lembrete criado</span></div></div>
+    </div>
   </div>
+  <p class="center reveal" style="margin-top:26px;font-weight:700;color:var(--ink)">Todo histórico comercial em um lugar.</p>
 </section>
 
 <!-- ============ VISITAS EM CAMPO ============ -->
@@ -628,6 +727,9 @@
     </div>
     <div class="visit-card">
       <div class="vc-top"><b>Visita · Comércio São José</b><span class="timer-chip">32 min</span></div>
+      <div class="vseq" id="vseq" aria-hidden="true">
+        <span data-i="0">Iniciada</span><span data-i="1">Local</span><span data-i="2">Resultado</span><span data-i="3">Follow-up</span>
+      </div>
       <div class="map-mini" aria-hidden="true"><span class="ring"></span><span class="pin"></span></div>
       <div class="vc-tags"><span class="on">Apresentação</span><span class="on">Proposta solicitada</span><span>Retornar depois</span></div>
       <div class="fc-bubble" style="margin-bottom:0">Cliente pediu proposta formal. Follow-up agendado para quinta-feira, 10h.</div>
@@ -639,6 +741,13 @@
       <h3 style="font-size:22px;margin:0 0 6px">O vendedor registra. O gestor acompanha.</h3>
     </div>
     <div class="split">
+      <div class="vg-connector" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+        <span class="vg-line"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        <span class="vg-line"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      </div>
       <div class="vg-col">
         <div class="vg-head"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></div><div><b>Celular do vendedor</b><span>App de campo</span></div></div>
         <ul>
@@ -671,8 +780,8 @@
   <div class="wrap reveal" style="margin-top:34px">
     <div class="chatmock">
       <div class="chead">
-        <div class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><path d="M8 16h.01M16 16h.01"/></svg></div>
-        <div><b>Zappy</b><div class="st">consultando dados da sua empresa</div></div>
+        <div class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M8.3 3.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" stroke-width="1.3"/></svg></div>
+        <div><b>Zappy</b><div class="st">consultando dados da sua empresa<span class="typing-dots"><span></span><span></span><span></span></span></div></div>
       </div>
       <div class="cmsg user"><div class="bub">Como minha equipe trabalhou hoje?</div></div>
       <div class="cmsg bot"><div class="bub">Hoje: 6 visitas concluídas, 2 follow-ups pendentes e 3 oportunidades novas. Ana fechou 1 venda em Apresentação.</div></div>
@@ -693,10 +802,10 @@
     <span class="eyebrow reveal">Automação</span>
     <h2 class="reveal">Menos tarefas esquecidas. Mais processo.</h2>
   </div>
-  <div class="wrap grid g2 reveal" style="margin-top:32px;gap:14px">
-    <div class="rule-card"><div class="rule-part"><div class="rk">Quando</div><div class="rv">Cliente muda para "Negociando"</div></div><div class="rule-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="rule-part"><div class="rk">Então</div><div class="rv">Criar follow-up</div></div></div>
-    <div class="rule-card"><div class="rule-part"><div class="rk">Quando</div><div class="rv">Visita termina como "Proposta solicitada"</div></div><div class="rule-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="rule-part"><div class="rk">Então</div><div class="rv">Criar próxima ação</div></div></div>
-    <div class="rule-card" style="grid-column:1/-1;max-width:620px;margin:0 auto"><div class="rule-part"><div class="rk">Palavra recebida</div><div class="rv">"Preço"</div></div><div class="rule-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="rule-part"><div class="rk">Responder</div><div class="rv">Mensagem configurada</div></div></div>
+  <div class="wrap reveal" style="margin-top:32px;display:flex;flex-direction:column;gap:14px;max-width:760px;margin-left:auto;margin-right:auto">
+    <div class="wf-row"><div class="wf-node trigger"><span class="wf-tag">Quando</span><b>Cliente muda para "Negociando"</b></div><div class="wf-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="wf-node action"><span class="wf-tag">Então</span><b>Criar follow-up</b></div></div>
+    <div class="wf-row"><div class="wf-node trigger"><span class="wf-tag">Quando</span><b>Visita termina como "Proposta solicitada"</b></div><div class="wf-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="wf-node action"><span class="wf-tag">Então</span><b>Criar próxima ação</b></div></div>
+    <div class="wf-row"><div class="wf-node trigger"><span class="wf-tag">Palavra recebida</span><b>"Preço"</b></div><div class="wf-connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div><div class="wf-node action"><span class="wf-tag">Responder</span><b>Mensagem configurada</b></div></div>
   </div>
 </section>
 
@@ -707,16 +816,29 @@
     <h2 class="reveal">O que precisa da sua atenção aparece primeiro.</h2>
     <p class="sub reveal">Sem dezenas de métricas ao mesmo tempo — só follow-ups, conversas, visitas e oportunidades que precisam de você agora.</p>
   </div>
-  <div class="wrap reveal" style="margin-top:34px;max-width:760px">
+  <div class="wrap reveal" style="margin-top:34px;max-width:780px">
     <div class="browser" aria-hidden="true">
       <div class="bar"><i></i><i></i><i></i><span class="url">app.zapflow.com.br/inicio</span></div>
-      <div class="app" style="grid-template-columns:1fr">
+      <div class="app" style="grid-template-columns:64px 1fr">
+        <div class="side">
+          <div class="dot on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+          <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div>
+          <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/></svg></div>
+          <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+        </div>
         <div class="main">
-          <div class="h">Próximas ações</div>
-          <div class="s">Priorizadas automaticamente</div>
+          <div class="h">Início</div>
+          <div class="s">Veja o que precisa da sua atenção hoje</div>
+          <div class="kpis" style="margin-bottom:14px">
+            <div class="kpi"><div class="ci" style="background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg></div><div class="n">5</div><div class="l">Follow-ups</div></div>
+            <div class="kpi"><div class="ci" style="background:var(--soft-green);color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div><div class="n">3</div><div class="l">Conversas</div></div>
+            <div class="kpi"><div class="ci" style="background:var(--soft-blue);color:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/></svg></div><div class="n">4</div><div class="l">Visitas hoje</div></div>
+            <div class="kpi"><div class="ci" style="background:var(--soft-blue);color:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></div><div class="n">7</div><div class="l">Oportunidades</div></div>
+          </div>
+          <div class="h" style="font-size:13px">Próximas ações</div>
           <div class="mock-row"><div class="av">JC</div><div><b>João Comércio</b><span>Follow-up atrasado desde ontem</span></div><span class="badge">Atenção</span></div>
           <div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>Conversa aguardando resposta</span></div><span class="badge">Pendente</span></div>
-          <div class="mock-row"><div class="av">RD</div><div><b>Ana · vendedora</b><span>2 visitas agendadas para hoje</span></div><span class="badge">Hoje</span></div>
+          <div class="mock-row"><div class="av">AN</div><div><b>Ana · vendedora</b><span>2 visitas agendadas para hoje</span></div><span class="badge">Hoje</span></div>
         </div>
       </div>
     </div>
@@ -729,7 +851,23 @@
     <span class="eyebrow reveal">Integrações</span>
     <h2 class="reveal">Conectado às ferramentas que sua empresa já usa.</h2>
   </div>
-  <div class="wrap grid g3 reveal" style="margin-top:32px">
+  <div class="wrap reveal orbit-wrap" style="margin-top:38px">
+    <div class="orbit">
+      <div class="orbit-ring" aria-hidden="true"></div>
+      <div class="orbit-line" style="transform:rotate(-90deg)" aria-hidden="true"></div>
+      <div class="orbit-line" style="transform:rotate(-18deg)" aria-hidden="true"></div>
+      <div class="orbit-line" style="transform:rotate(54deg)" aria-hidden="true"></div>
+      <div class="orbit-line" style="transform:rotate(126deg)" aria-hidden="true"></div>
+      <div class="orbit-line" style="transform:rotate(198deg)" aria-hidden="true"></div>
+      <div class="orbit-center" aria-hidden="true"><img src="logo.svg" alt="" /></div>
+      <div class="orbit-item" style="left:50%;top:8%"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div><b>WhatsApp</b><span>Mensagens e conversas</span></div>
+      <div class="orbit-item" style="left:90%;top:37%"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><b>Google Calendar</b><span>Agenda e retornos</span></div>
+      <div class="orbit-item" style="left:75%;top:84%"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2M14 13h2M8 17h2M14 17h2"/></svg></div><b>Google Sheets</b><span>Relatórios</span></div>
+      <div class="orbit-item" style="left:25%;top:84%"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><b>Google Drive</b><span>Fotos e arquivos</span></div>
+      <div class="orbit-item" style="left:10%;top:37%"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div><b>OpenAI</b><span>Motor da Zappy</span></div>
+    </div>
+  </div>
+  <div class="wrap grid g3 reveal integr-fallback" style="margin-top:32px">
     <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/></svg></div><h3>WhatsApp</h3><p>Mensagens, campanhas e conversas.</p></div>
     <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><h3>Google Calendar</h3><p>Agenda, retornos e compromissos.</p></div>
     <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2M14 13h2M8 17h2M14 17h2"/></svg></div><h3>Google Sheets</h3><p>Relatórios e exportação.</p></div>
@@ -748,7 +886,7 @@
     <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/></svg><span>Dados separados por empresa</span></div>
     <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Dono e vendedor com permissões diferentes</span></div>
     <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Login seguro</span></div>
-    <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg><span>Controle humano sobre a IA</span></div>
+    <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M8.3 3.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" stroke-width="1.3"/></svg><span>Controle humano sobre a IA</span></div>
     <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg><span>PWA / mobile-first</span></div>
     <div class="sec-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><span>Tema claro e escuro</span></div>
   </div>
@@ -980,7 +1118,7 @@
     flow:'<rect x="3" y="3" width="8" height="8" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="2"/>',
     pin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
     target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
-    bot:'<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><path d="M8 16h.01M16 16h.01"/>',
+    bot:'<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M8.3 3.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" stroke-width="1.3"/>',
     check:'<path d="M20 6 9 17l-5-5"/>'
   };
 
@@ -988,23 +1126,34 @@
   var flowConnected=[['chat','WhatsApp'],['users','Cliente'],['flow','CRM'],['target','Oportunidade'],['pin','Visita'],['refresh','Follow-up'],['check','Venda']];
   var arrow=svg('<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>');
   document.getElementById('flowConnected').innerHTML=flowConnected.map(function(s,i){
-    return '<div class="fx"><div class="ci">'+svg(I[s[0]])+'</div><b>'+s[1]+'</b></div>'+(i<flowConnected.length-1?'<div class="arw">'+arrow+'</div>':'');
+    return '<div class="fx"><div class="ci">'+svg(I[s[0]])+'</div><b>'+s[1]+'</b></div>'+(i<flowConnected.length-1?'<div class="arw" style="--d:'+(i*.35)+'s">'+arrow+'</div>':'');
   }).join('');
 
   // ------- demo por tabs -------
+  var sideIcons=['chat','users','pin','flow','users','bot'];
+  function browserWrap(url,activeIdx,heading,sub,innerHtml){
+    var side=sideIcons.map(function(name,idx){return '<div class="dot'+(idx===activeIdx?' on':'')+'">'+svg(I[name])+'</div>';}).join('');
+    return '<div class="browser"><div class="bar"><i></i><i></i><i></i><span class="url">'+url+'</span></div><div class="app"><div class="side">'+side+'</div><div class="main"><div class="h">'+heading+'</div><div class="s">'+sub+'</div>'+innerHtml+'</div></div></div>';
+  }
   var tabs=[
     {id:'wa',label:'WhatsApp',ic:'chat',th:'WhatsApp organizado de verdade.',tp:'Envie campanhas, acompanhe respostas e continue as conversas pelo próprio ZapFlow.',
-      mock:'<div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>"Ainda tem em estoque?"</span></div><span class="badge">Nova</span></div><div class="mock-row"><div class="av">JS</div><div><b>João Silva</b><span>Campanha "Novidades" · respondeu</span></div><span class="badge">Respondida</span></div><div class="fc-bubble" style="margin-top:10px">Olá! Sim, temos disponível. Posso te enviar os detalhes?</div>'},
+      mock:browserWrap('app.zapflow.com.br/conversas',0,'Conversas','Caixa de entrada unificada',
+        '<div class="mock-row"><div class="av">MP</div><div><b>Mercado Popular</b><span>"Ainda tem em estoque?"</span></div><span class="badge">Nova</span></div><div class="mock-row"><div class="av">JS</div><div><b>João Silva</b><span>Campanha "Novidades" · respondeu</span></div><span class="badge">Respondida</span></div><div class="fc-bubble" style="margin-top:10px">Olá! Sim, temos disponível. Posso te enviar os detalhes?</div>')},
     {id:'crm',label:'CRM',ic:'users',th:'Funil comercial, sem planilha solta.',tp:'Cada cliente organizado por etapa, com tags, oportunidade e vendedor responsável.',
-      mock:'<div class="mini-funnel"><div class="col"><div class="lbl">Novo</div><div class="chip">Ana Reis</div></div><div class="col"><div class="lbl">Contatado</div><div class="chip">Loja Sul</div></div><div class="col"><div class="lbl">Negociando</div><div class="chip">Comércio SJ</div></div><div class="col"><div class="lbl">Fechado</div><div class="chip">Distrib. RM</div></div></div>'},
+      mock:browserWrap('app.zapflow.com.br/clientes',1,'Clientes','Funil comercial',
+        '<div class="mini-funnel"><div class="col"><div class="lbl">Novo</div><div class="chip">Ana Reis</div></div><div class="col"><div class="lbl">Contatado</div><div class="chip">Loja Sul</div></div><div class="col"><div class="lbl">Negociando</div><div class="chip">Comércio SJ</div></div><div class="col"><div class="lbl">Fechado</div><div class="chip">Distrib. RM</div></div></div>')},
     {id:'visitas',label:'Visitas',ic:'pin',th:'A visita comercial, do início ao follow-up.',tp:'Geolocalização, foto, motivo, resultado e próxima ação — tudo no celular do vendedor.',
-      mock:'<div class="mock-row"><div class="av">AN</div><div><b>Ana · em visita</b><span>Comércio São José · 22 min</span></div><span class="badge">Ao vivo</span></div><div class="map-mini" style="margin:10px 0 0"><span class="ring"></span><span class="pin"></span></div>'},
+      mock:browserWrap('app.zapflow.com.br/visitas',2,'Visitas em campo','Hoje · em andamento',
+        '<div class="mock-row"><div class="av">AN</div><div><b>Ana · em visita</b><span>Comércio São José · 22 min</span></div><span class="badge">Ao vivo</span></div><div class="map-mini" style="margin:10px 0 0"><span class="ring"></span><span class="pin"></span></div>')},
     {id:'auto',label:'Automação',ic:'refresh',th:'Regras que trabalham por você.',tp:'Gatilhos de etapa, resultado de visita ou palavra-chave disparam a ação certa sozinhos.',
-      mock:'<div class="rule-card" style="box-shadow:none"><div class="rule-part"><div class="rk">Quando</div><div class="rv">Visita = Proposta solicitada</div></div><div class="rule-arrow">'+arrow+'</div><div class="rule-part"><div class="rk">Então</div><div class="rv">Criar follow-up</div></div></div>'},
+      mock:browserWrap('app.zapflow.com.br/automacoes',3,'Automações','Regras ativas',
+        '<div class="wf-row" style="margin-top:8px"><div class="wf-node trigger"><span class="wf-tag">Quando</span><b>Visita = Proposta solicitada</b></div><div class="wf-connector">'+arrow+'</div><div class="wf-node action"><span class="wf-tag">Então</span><b>Criar follow-up</b></div></div>')},
     {id:'equipe',label:'Equipe',ic:'users',th:'Visão clara de quem fez o quê.',tp:'Visitas, follow-ups e oportunidades por vendedor, sem virar um painel complicado.',
-      mock:'<div class="mock-row"><div class="av">AN</div><div><b>Ana</b><span>5 visitas · 2 oportunidades</span></div><span class="badge">+18%</span></div><div class="mock-row"><div class="av">CR</div><div><b>Carlos</b><span>3 visitas · 1 follow-up</span></div><span class="badge">Hoje</span></div>'},
+      mock:browserWrap('app.zapflow.com.br/visitas/equipe',4,'Vendedores','Desempenho · hoje',
+        '<div class="mock-row"><div class="av">AN</div><div><b>Ana</b><span>5 visitas · 2 oportunidades</span></div><span class="badge">+18%</span></div><div class="mock-row"><div class="av">CR</div><div><b>Carlos</b><span>3 visitas · 1 follow-up</span></div><span class="badge">Hoje</span></div>')},
     {id:'ia',label:'Zappy IA',ic:'bot',th:'A IA que conhece a sua operação.',tp:'Resume clientes, sugere respostas e prepara campanhas — você sempre confirma antes de agir.',
-      mock:'<div class="cmsg user" style="margin-bottom:8px"><div class="bub" style="font-size:12.5px;padding:8px 11px">Crie uma campanha para quem não respondeu.</div></div><div class="cmsg bot"><div class="bub" style="font-size:12.5px;padding:8px 11px">Rascunho pronto para 34 contatos. Revisar e enviar?</div></div>'}
+      mock:browserWrap('app.zapflow.com.br/ia',5,'ZapFlow IA','Conversa com a Zappy',
+        '<div class="cmsg user" style="margin-bottom:8px"><div class="bub" style="font-size:12.5px;padding:8px 11px">Crie uma campanha para quem não respondeu.</div></div><div class="cmsg bot"><div class="bub" style="font-size:12.5px;padding:8px 11px">Rascunho pronto para 34 contatos. Revisar e enviar?</div></div>')}
   ];
   var tabNav=document.getElementById('tabNav'), tabPanel=document.getElementById('tabPanel');
   tabNav.innerHTML=tabs.map(function(t,i){return '<button type="button" data-i="'+i+'" class="'+(i===0?'on':'')+'" role="tab" aria-selected="'+(i===0?'true':'false')+'"><span class="ic">'+svg(I[t.ic])+'</span>'+t.label+'</button>';}).join('');
@@ -1031,11 +1180,26 @@
     var i=-1,dir=1;
     function tick(){
       i+=dir;
-      if(i>=steps.length){setTimeout(function(){steps.forEach(function(s){s.classList.remove('active');});i=-1;tick();},2200);return;}
+      if(i>=steps.length){setTimeout(function(){steps.forEach(function(s){s.classList.remove('active');});i=-1;tick();},2800);return;}
       steps[i].classList.add('active');
-      setTimeout(tick,950);
+      setTimeout(tick,750);
     }
-    setTimeout(tick,700);
+    setTimeout(tick,600);
+  })();
+
+  // ------- sequência de status da visita (card "Visitas em campo") -------
+  (function(){
+    var reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var steps=document.querySelectorAll('#vseq span');
+    if(!steps.length)return;
+    if(reduced){steps[steps.length-1].classList.add('on');return;}
+    var i=0;
+    setInterval(function(){
+      steps.forEach(function(s){s.classList.remove('on');});
+      steps[i].classList.add('on');
+      i=(i+1)%steps.length;
+    },1300);
+    steps[0].classList.add('on');
   })();
 
   // ------- FAQ -------
