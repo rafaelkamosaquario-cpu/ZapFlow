@@ -40,6 +40,7 @@
 
       <span class="side-group-label">Automações</span>
       <button class="side-tab" data-view="chatbot"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Respostas automáticas</span></button>
+      <button class="side-tab" data-view="automacoes"><i data-icon="workflow" data-size="20"></i> <span class="side-label">Automações</span></button>
 
       <span class="side-group-label">Organização</span>
       <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
@@ -391,6 +392,49 @@
       <div class="row" style="margin-top:14px">
         <button class="btn primary" id="btnSaveBot" type="button">Salvar respostas automáticas</button>
         <span id="botStatus" class="status"></span>
+      </div>
+    </section>
+
+    <!-- Automações (gatilho -> ação sobre eventos do CRM/Visitas) -->
+    <section class="dash-view hidden" data-view="automacoes">
+      <h2 class="dash-title">Automações</h2>
+      <p class="hint">Quando algo acontece no CRM ou nas Visitas, o ZapFlow age sozinho — sem depender de mensagem recebida (isso já é coberto por Respostas automáticas).</p>
+
+      <div id="automacoesList" class="dash-list"></div>
+      <button class="btn secondary" id="btnNovaAutomacao" type="button">+ Nova automação</button>
+
+      <div class="manual-add hidden" id="automacaoForm" style="margin-top:12px;">
+        <label>Nome
+          <input type="text" id="autoNome" placeholder="Ex.: Boas-vindas ao negociar" />
+        </label>
+        <div class="manual-row">
+          <label class="inline" style="flex:1;">Quando
+            <select id="autoGatilhoTipo"></select>
+          </label>
+          <label class="inline" style="flex:1;">Igual a
+            <select id="autoGatilhoValor"></select>
+          </label>
+        </div>
+        <div class="manual-row">
+          <label class="inline" style="flex:1;">Ação
+            <select id="autoAcaoTipo">
+              <option value="enviar_mensagem">Enviar mensagem no WhatsApp</option>
+              <option value="criar_followup">Criar follow-up</option>
+            </select>
+          </label>
+          <label class="inline hidden" id="autoDiasWrap" style="flex:0 0 140px;">Em quantos dias
+            <input type="number" id="autoDias" min="0" max="90" value="1" />
+          </label>
+        </div>
+        <label id="autoTextoLabel">Mensagem (use {{nome}})
+          <textarea id="autoTexto" rows="3"></textarea>
+        </label>
+        <label class="switch-row"><input type="checkbox" id="autoAtiva" checked /> Ativa</label>
+        <div class="row">
+          <button class="btn primary sm" id="btnSalvarAutomacao" type="button">Salvar</button>
+          <button class="btn ghost sm" id="btnCancelarAutomacao" type="button">Cancelar</button>
+          <span class="status" id="autoStatus"></span>
+        </div>
       </div>
     </section>
 
@@ -800,6 +844,7 @@
       <button class="msheet-item" data-view="followup"><i data-icon="refresh" data-size="22"></i><span>Follow-ups</span></button>
       <button class="msheet-item" data-view="responses"><i data-icon="reply" data-size="22"></i><span>Respostas</span></button>
       <button class="msheet-item" data-view="chatbot"><i data-icon="workflow" data-size="22"></i><span>Respostas automáticas</span></button>
+      <button class="msheet-item" data-view="automacoes"><i data-icon="workflow" data-size="22"></i><span>Automações</span></button>
       <button class="msheet-item" data-view="vendedores"><i data-icon="user" data-size="22"></i><span>Vendedores</span></button>
       <button class="msheet-item" data-view="visitas"><i data-icon="store" data-size="22"></i><span>Visitas</span></button>
       <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>

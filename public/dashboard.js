@@ -84,7 +84,7 @@ const statusOf = (job) =>
 // ---------------------------------------------------------------------------
 // Navegação entre as abas
 // ---------------------------------------------------------------------------
-const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-ups", responses: "Respostas", chatbot: "Respostas automáticas", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
+const VIEW_NAMES = { overview: "Início", conversas: "Conversas", clients: "Clientes", agenda: "Agenda de contatos", campaigns: "Campanhas", followup: "Follow-ups", responses: "Respostas", chatbot: "Respostas automáticas", automacoes: "Automações", vendedores: "Vendedores", visitas: "Visitas em Campo", calendario: "Calendário", ia: "ZapFlow IA", configuracoes: "Configurações" };
 // Rótulo da origem real do nome de um contato (usado em Conversas, Respostas e Clientes)
 const SOURCE_LABEL = { agenda: "Agenda", manual: "Manual", planilha: "Planilha", chip: "Chip", whatsapp: "WhatsApp", campanha: "Campanha", conversa: "Conversa" };
 const CRM_STAGES_UI = ["Novo", "Contatado", "Respondeu", "Negociando", "Fechado", "Perdido"];
@@ -161,6 +161,7 @@ function loadView(view) {
   else if (view === "responses") loadResponses();
   else if (view === "followup") loadFollowup();
   else if (view === "chatbot") loadChatbot();
+  else if (view === "automacoes") loadAutomacoes();
   else if (view === "vendedores") loadVendedoresView();
   else if (view === "visitas") loadVisitasView();
   else if (view === "calendario") loadCalendarioView();
@@ -1541,6 +1542,114 @@ async function loadFollowup() {
 // ---------------------------------------------------------------------------
 // Chatbot / Automação
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Automações (gatilho -> ação sobre eventos do CRM/Visitas)
+// ---------------------------------------------------------------------------
+let automacaoGatilhos = {};
+let automacaoEditando = null;
+
+async function loadAutomacoes() {
+  const wrap = $("#automacoesList");
+  wrap.innerHTML = skeletonHtml(2);
+  try {
+    const data = await (await fetch("/api/automacoes")).json();
+    automacaoGatilhos = data.gatilhos || {};
+    const sel = $("#autoGatilhoTipo");
+    sel.innerHTML = Object.entries(automacaoGatilhos).map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join("");
+    atualizarValoresGatilho();
+    const regras = data.regras || [];
+    if (!regras.length) { wrap.innerHTML = "<p class='hint'>Nenhuma automação criada ainda.</p>"; return; }
+    wrap.innerHTML = "";
+    regras.forEach((r) => {
+      const div = document.createElement("div");
+      div.className = "dash-card";
+      const gatilhoLabel = automacaoGatilhos[r.gatilhoTipo]?.label || r.gatilhoTipo;
+      const acaoLabel = r.acaoTipo === "enviar_mensagem" ? "Enviar mensagem" : `Criar follow-up em ${r.acaoDias ?? 1} dia(s)`;
+      div.innerHTML = `
+        <div class="dash-card-head">
+          <span class="resp-phone">${escapeHtml(r.nome)}</span>
+          <span class="badge ${r.ativa ? "ok" : ""}">${r.ativa ? "Ativa" : "Pausada"}</span>
+        </div>
+        <div class="dash-card-body">
+          <span>${escapeHtml(gatilhoLabel)}: <b>${escapeHtml(r.gatilhoValor)}</b> → ${escapeHtml(acaoLabel)}</span>
+          <div class="row" style="gap:6px;margin-top:6px;">
+            <button class="btn ghost sm auto-editar" type="button">Editar</button>
+            <button class="btn-cancel auto-excluir" type="button">Excluir</button>
+          </div>
+        </div>`;
+      div.querySelector(".auto-editar").addEventListener("click", () => abrirFormAutomacao(r));
+      div.querySelector(".auto-excluir").addEventListener("click", async (e) => {
+        if (!(await confirmModal("Excluir automação?", `Excluir "${r.nome}"?`))) return;
+        await withLoading(e.currentTarget, "Excluindo...", () => fetch("/api/automacoes/" + r.id, { method: "DELETE" }));
+        loadAutomacoes();
+      });
+      wrap.appendChild(div);
+    });
+  } catch {
+    wrap.innerHTML = "<p class='hint'>Não foi possível carregar as automações. Verifique sua conexão e tente novamente.</p>";
+  }
+}
+
+function atualizarValoresGatilho() {
+  const tipo = $("#autoGatilhoTipo").value;
+  const valores = automacaoGatilhos[tipo]?.valores || [];
+  $("#autoGatilhoValor").innerHTML = valores.map((v) => `<option>${escapeHtml(v)}</option>`).join("");
+}
+$("#autoGatilhoTipo").addEventListener("change", atualizarValoresGatilho);
+
+function atualizarCamposAcao() {
+  const criarFollowup = $("#autoAcaoTipo").value === "criar_followup";
+  $("#autoDiasWrap").classList.toggle("hidden", !criarFollowup);
+  $("#autoTextoLabel").firstChild.textContent = criarFollowup ? "O que fazer no follow-up" : "Mensagem (use {{nome}})";
+}
+$("#autoAcaoTipo").addEventListener("change", atualizarCamposAcao);
+
+function abrirFormAutomacao(regra) {
+  automacaoEditando = regra || null;
+  $("#autoNome").value = regra?.nome || "";
+  $("#autoGatilhoTipo").value = regra?.gatilhoTipo || Object.keys(automacaoGatilhos)[0] || "";
+  atualizarValoresGatilho();
+  if (regra?.gatilhoValor) $("#autoGatilhoValor").value = regra.gatilhoValor;
+  $("#autoAcaoTipo").value = regra?.acaoTipo || "enviar_mensagem";
+  $("#autoDias").value = regra?.acaoDias ?? 1;
+  $("#autoTexto").value = regra?.acaoTexto || "";
+  $("#autoAtiva").checked = regra ? !!regra.ativa : true;
+  atualizarCamposAcao();
+  $("#autoStatus").textContent = "";
+  $("#automacaoForm").classList.remove("hidden");
+}
+$("#btnNovaAutomacao").addEventListener("click", () => abrirFormAutomacao(null));
+$("#btnCancelarAutomacao").addEventListener("click", () => $("#automacaoForm").classList.add("hidden"));
+$("#btnSalvarAutomacao").addEventListener("click", async (e) => {
+  const status = $("#autoStatus");
+  const body = {
+    nome: $("#autoNome").value.trim(),
+    gatilhoTipo: $("#autoGatilhoTipo").value,
+    gatilhoValor: $("#autoGatilhoValor").value,
+    acaoTipo: $("#autoAcaoTipo").value,
+    acaoTexto: $("#autoTexto").value.trim(),
+    acaoDias: Number($("#autoDias").value) || 1,
+    ativa: $("#autoAtiva").checked,
+  };
+  if (!body.nome || !body.acaoTexto) { status.textContent = "Preencha o nome e a ação."; status.className = "status err"; return; }
+  try {
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const url = automacaoEditando ? `/api/automacoes/${automacaoEditando.id}` : "/api/automacoes";
+      const res = await fetch(url, {
+        method: automacaoEditando ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar. Tente novamente.");
+    });
+    $("#automacaoForm").classList.add("hidden");
+    loadAutomacoes();
+  } catch (err) {
+    status.textContent = err.message;
+    status.className = "status err";
+  }
+});
+
 async function loadChatbot() {
   try {
     const cfg = await (await fetch("/api/chatbot")).json();

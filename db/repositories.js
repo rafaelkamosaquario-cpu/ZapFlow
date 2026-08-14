@@ -510,6 +510,59 @@ export const companyKnowledgeRepo = {
 };
 
 // ----------------------------------------------------------------------------
+// automacoes (gatilho->ação sobre eventos do CRM/Visitas, além do chatbot)
+// ----------------------------------------------------------------------------
+function automacaoFromRow(r) {
+  return {
+    id: r.id, nome: r.nome, ativa: r.ativa,
+    gatilhoTipo: r.gatilho_tipo, gatilhoValor: r.gatilho_valor,
+    acaoTipo: r.acao_tipo, acaoTexto: r.acao_texto || "", acaoDias: r.acao_dias ?? null,
+  };
+}
+export const automacaoRegrasRepo = {
+  async listar(empresaId) {
+    requireEmpresaId(empresaId, "automacaoRegras.listar");
+    const { data, error } = await supabase.from("automacao_regras").select("*")
+      .eq("empresa_id", empresaId).order("created_at", { ascending: false });
+    assertOk(error, "automacaoRegras.listar");
+    return (data || []).map(automacaoFromRow);
+  },
+  /** Só as ativas de um gatilho específico -- usado no momento de disparar. */
+  async listarAtivasPorGatilho(empresaId, gatilhoTipo, gatilhoValor) {
+    requireEmpresaId(empresaId, "automacaoRegras.listarAtivasPorGatilho");
+    const { data, error } = await supabase.from("automacao_regras").select("*")
+      .eq("empresa_id", empresaId).eq("ativa", true)
+      .eq("gatilho_tipo", gatilhoTipo).eq("gatilho_valor", gatilhoValor);
+    assertOk(error, "automacaoRegras.listarAtivasPorGatilho");
+    return (data || []).map(automacaoFromRow);
+  },
+  async criar(empresaId, r) {
+    requireEmpresaId(empresaId, "automacaoRegras.criar");
+    const { data, error } = await supabase.from("automacao_regras").insert({
+      empresa_id: empresaId, nome: r.nome, ativa: r.ativa !== false,
+      gatilho_tipo: r.gatilhoTipo, gatilho_valor: r.gatilhoValor,
+      acao_tipo: r.acaoTipo, acao_texto: r.acaoTexto || "", acao_dias: r.acaoDias ?? null,
+    }).select().single();
+    assertOk(error, "automacaoRegras.criar");
+    return automacaoFromRow(data);
+  },
+  async atualizar(empresaId, id, r) {
+    requireEmpresaId(empresaId, "automacaoRegras.atualizar");
+    const { error } = await supabase.from("automacao_regras").update({
+      nome: r.nome, ativa: r.ativa !== false,
+      gatilho_tipo: r.gatilhoTipo, gatilho_valor: r.gatilhoValor,
+      acao_tipo: r.acaoTipo, acao_texto: r.acaoTexto || "", acao_dias: r.acaoDias ?? null,
+    }).eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "automacaoRegras.atualizar");
+  },
+  async excluir(empresaId, id) {
+    requireEmpresaId(empresaId, "automacaoRegras.excluir");
+    const { error } = await supabase.from("automacao_regras").delete().eq("id", id).eq("empresa_id", empresaId);
+    assertOk(error, "automacaoRegras.excluir");
+  },
+};
+
+// ----------------------------------------------------------------------------
 // ia_consumo (V4 — log de tokens por chamada; só registro, sem bloqueio)
 // ----------------------------------------------------------------------------
 export const iaConsumoRepo = {

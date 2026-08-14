@@ -826,8 +826,10 @@ async function recordClientReply(tenant, phone) {
   if (!c) return;
   c.lastReplyAt = Date.now();
   c.updatedAt = Date.now();
+  const etapaAnterior = c.stage;
   if (c.stage === "Novo" || c.stage === "Contatado") c.stage = "Respondeu";
   await saveClients(tenant, c);
+  if (c.stage !== etapaAnterior) dispararAutomacoes(tenant, "mudanca_etapa", c.stage, c).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,6 +1028,31 @@ function findChatbotReply(tenant, text) {
   }
   if (tenant.chatbot.fallback?.enabled && tenant.chatbot.fallback.reply) return tenant.chatbot.fallback.reply;
   return null;
+}
+
+/**
+ * Automações (gatilho->ação sobre eventos do CRM/Visitas, além do chatbot por
+ * palavra-chave). Chamado nos pontos onde o evento de fato acontece (mudança
+ * de etapa, visita finalizada) -- nunca falha a ação principal por causa
+ * disso, só loga o erro.
+ */
+async function dispararAutomacoes(tenant, gatilhoTipo, gatilhoValor, cliente) {
+  if (!USE_SUPABASE || !cliente?.phone) return;
+  try {
+    const regras = await repo.automacaoRegrasRepo.listarAtivasPorGatilho(tenant.empresa.id, gatilhoTipo, gatilhoValor);
+    for (const r of regras) {
+      if (r.acaoTipo === "enviar_mensagem") {
+        await sendAutoReply(tenant, cliente.phone, applyTemplate(r.acaoTexto, { name: cliente.name || "" }));
+      } else if (r.acaoTipo === "criar_followup") {
+        const data = new Date(Date.now() + (r.acaoDias ?? 1) * 86400000).toISOString().slice(0, 10);
+        cliente.proximaAcaoTexto = r.acaoTexto;
+        cliente.proximaAcaoData = data;
+        await repo.clientesRepo.definirProximaAcao(tenant.empresa.id, cliente.id, { texto: r.acaoTexto, data });
+      }
+    }
+  } catch (err) {
+    console.error("[automacoes] disparar:", err.message);
+  }
 }
 
 /** Envia a resposta automática (usa credenciais da empresa/.env, com anti-spam). */
@@ -1575,12 +1602,14 @@ app.patch("/api/clients/:id", async (req, res) => {
   const c = tenant.clients.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
   const { name, stage, tags, notes, vendedorResponsavelId } = req.body || {};
+  const etapaAnterior = c.stage;
   if (typeof name === "string") c.name = name.slice(0, 80);
   if (typeof stage === "string" && stage) { c.stage = stage.slice(0, 40); c.stageManual = true; }
   if (Array.isArray(tags)) c.tags = tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (typeof notes === "string") c.notes = notes.slice(0, 1000);
   c.updatedAt = Date.now();
   await saveClients(tenant, c);
+  if (c.stage !== etapaAnterior) dispararAutomacoes(tenant, "mudanca_etapa", c.stage, c).catch(() => {});
   if (vendedorResponsavelId !== undefined && USE_SUPABASE) {
     c.vendedorResponsavelId = vendedorResponsavelId || null;
     await repo.clientesRepo.definirResponsavel(tenant.empresa.id, c.id, c.vendedorResponsavelId);
@@ -1643,6 +1672,7 @@ app.post("/api/clients/stage", async (req, res) => {
       acao: `Moveu ${bestName(tenant, c.phone, c.name).name} de ${etapaAnterior} para ${stage}`,
       clienteId: c.id,
     }).catch(() => {});
+    dispararAutomacoes(tenant, "mudanca_etapa", stage, c).catch(() => {});
   }
   res.json({ ok: true, client: { ...c, displayName: bestName(tenant, c.phone, c.name).name, inAgenda: inAgenda(tenant, c.phone) } });
 });
@@ -1905,6 +1935,72 @@ app.put("/api/chatbot", async (req, res) => {
 // ---------------------------------------------------------------------------
 const VISITA_MOTIVOS = ["Prospecção", "Apresentação", "Negociação", "Pós-venda", "Cobrança", "Suporte", "Outro"];
 const VISITA_RESULTADOS = ["Sem contato", "Interessado", "Proposta solicitada", "Em negociação", "Venda fechada", "Retornar depois", "Sem interesse"];
+
+// --- Automações (gatilho->ação sobre eventos do CRM/Visitas) ---
+const AUTOMACAO_GATILHOS = {
+  mudanca_etapa: { label: "Cliente muda de etapa", valores: CRM_STAGES },
+  resultado_visita: { label: "Visita finalizada com resultado", valores: VISITA_RESULTADOS },
+};
+
+app.get("/api/automacoes", async (req, res) => {
+  if (!USE_SUPABASE) return res.json({ regras: [], gatilhos: AUTOMACAO_GATILHOS });
+  try {
+    const regras = await repo.automacaoRegrasRepo.listar(req.tenant.empresa.id);
+    res.json({ regras, gatilhos: AUTOMACAO_GATILHOS });
+  } catch (err) {
+    console.error("[automacoes] get:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar as automações." });
+  }
+});
+
+function validarAutomacaoBody(b) {
+  const nome = String(b.nome || "").trim().slice(0, 100);
+  const gatilhoTipo = Object.keys(AUTOMACAO_GATILHOS).includes(b.gatilhoTipo) ? b.gatilhoTipo : null;
+  const gatilhoValor = String(b.gatilhoValor || "");
+  const acaoTipo = ["enviar_mensagem", "criar_followup"].includes(b.acaoTipo) ? b.acaoTipo : null;
+  const acaoTexto = String(b.acaoTexto || "").trim().slice(0, 2000);
+  const acaoDias = acaoTipo === "criar_followup" ? Math.max(0, Math.min(90, Number(b.acaoDias) || 1)) : null;
+  if (!nome || !gatilhoTipo || !gatilhoTipo || !acaoTipo || !acaoTexto) return null;
+  if (!AUTOMACAO_GATILHOS[gatilhoTipo].valores.includes(gatilhoValor)) return null;
+  return { nome, gatilhoTipo, gatilhoValor, acaoTipo, acaoTexto, acaoDias, ativa: b.ativa !== false };
+}
+
+app.post("/api/automacoes", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const regra = validarAutomacaoBody(req.body || {});
+  if (!regra) return res.status(400).json({ error: "Preencha nome, gatilho e ação corretamente." });
+  try {
+    const criada = await repo.automacaoRegrasRepo.criar(req.tenant.empresa.id, regra);
+    res.json({ ok: true, regra: criada });
+  } catch (err) {
+    console.error("[automacoes] post:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar. Tente novamente." });
+  }
+});
+
+app.put("/api/automacoes/:id", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const regra = validarAutomacaoBody(req.body || {});
+  if (!regra) return res.status(400).json({ error: "Preencha nome, gatilho e ação corretamente." });
+  try {
+    await repo.automacaoRegrasRepo.atualizar(req.tenant.empresa.id, req.params.id, regra);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[automacoes] put:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar. Tente novamente." });
+  }
+});
+
+app.delete("/api/automacoes/:id", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  try {
+    await repo.automacaoRegrasRepo.excluir(req.tenant.empresa.id, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[automacoes] delete:", err.message);
+    res.status(500).json({ error: "Não foi possível excluir. Tente novamente." });
+  }
+});
 // Categoria visual do resultado (badge) -- poucas cores, não uma por valor.
 const RESULTADO_CATEGORIA = {
   "Sem contato": "neutro", "Interessado": "atencao", "Proposta solicitada": "andamento",
@@ -2095,6 +2191,11 @@ app.post("/api/visitas/:id/finalizar", async (req, res) => {
     if (!visita) return;
     if (visita.finishedAt) return res.status(400).json({ error: "Essa visita já foi finalizada." });
     const finalizada = await repo.visitasRepo.finalizar(req.tenant.empresa.id, req.params.id, { motivo, resultado });
+    // Best-effort: só dispara se a visita tiver telefone de contato ligado a um cliente do CRM.
+    if (visita.contatoTelefone) {
+      const cliente = findClient(req.tenant, visita.contatoTelefone);
+      if (cliente) dispararAutomacoes(req.tenant, "resultado_visita", resultado, cliente).catch(() => {});
+    }
     res.json({ ok: true, visita: finalizada });
   } catch (err) {
     console.error("[visitas] finalizar:", err.message);
