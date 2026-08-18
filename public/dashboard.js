@@ -273,14 +273,9 @@ function setWa(state, text) {
 }
 async function checkWaStatus() {
   setWa("checking", "Verificando conexão");
-  const creds = {
-    instanceId: localStorage.getItem("frota_instanceId") || "",
-    instanceToken: localStorage.getItem("frota_instanceToken") || "",
-    clientToken: localStorage.getItem("frota_clientToken") || "",
-  };
   try {
     const res = await fetch("/api/test-connection", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     });
     const data = await res.json();
     const st = data.status || {};
