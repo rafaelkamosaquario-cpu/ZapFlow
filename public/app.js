@@ -697,12 +697,10 @@ function showWizResult({ sent, failed, scheduled, name }) {
 // Intervalo entre envios (segundos) + aviso + localStorage
 // ---------------------------------------------------------------------------
 function getDelayMs() {
-  const s = Math.min(60, Math.max(1, Number($("#delaySeconds").value) || 3));
+  const s = Math.min(60, Math.max(8, Number($("#delaySeconds").value) || 8));
   return s * 1000;
 }
 function checkDelayWarning() {
-  const s = Number($("#delaySeconds").value);
-  $("#delayWarning").classList.toggle("hidden", !(s < 2));
   localStorage.setItem("zapflow_delay", $("#delaySeconds").value);
 }
 $("#delaySeconds").addEventListener("input", checkDelayWarning);
@@ -1338,9 +1336,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadFollowupContacts(); // carrega contatos vindos do "Preparar follow-up"
   applyLoadedTemplate();  // carrega modelo vindo da aba Campanhas
 
-  // Intervalo: restaura preferência salva ou usa o padrão do servidor
+  // Intervalo: restaura preferência salva ou usa o padrão do servidor.
+  // Valor salvo antes do piso de 8s existir é corrigido pra não mostrar número inválido.
   const savedDelay = localStorage.getItem("zapflow_delay");
-  if (savedDelay) $("#delaySeconds").value = savedDelay;
+  if (savedDelay) $("#delaySeconds").value = Math.max(8, Number(savedDelay) || 8);
 
   try {
     const res = await fetch("/api/config");

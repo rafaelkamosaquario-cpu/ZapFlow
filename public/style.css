@@ -343,7 +343,7 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 /* ---------- Intervalo (segundos) + aviso ---------- */
 .delay-field { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; }
 .delay-field span { color: var(--muted); font-size: 13px; }
-.delay-warning { display: block; margin: 12px 0 0; padding: 10px 14px; background: rgba(229,72,77,.12); border: 1px solid var(--error); border-radius: 9px; color: var(--error); font-size: 13px; font-weight: 600; }
+.delay-warning { display: block; margin: 12px 0 0; padding: 10px 14px; background: rgba(46,109,164,.12); border: 1px solid var(--primary-light); border-radius: 9px; color: var(--primary-light); font-size: 13px; font-weight: 600; }
 
 /* ---------- Agendamentos / Histórico ---------- */
 .schedules { display: flex; flex-direction: column; gap: 10px; }

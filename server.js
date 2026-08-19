@@ -341,16 +341,30 @@ function phoneKey(raw) {
 }
 
 /**
- * Resolve as credenciais da Z-API priorizando o que foi enviado no corpo da
- * requisição, depois as da própria empresa (modo Supabase), depois as
- * variáveis de ambiente (modo arquivos/legado).
+ * Resolve as credenciais da Z-API.
+ *
+ * Modo multiempresa (tenant.empresa existe): a credencial é SEMPRE a da
+ * própria empresa autenticada, nunca a enviada no corpo da requisição e
+ * nunca uma variável de ambiente global — evita que um navegador com dado
+ * salvo de outra sessão/empresa sobreponha a credencial correta, e evita
+ * que empresas sem credencial própria caiam num fallback compartilhado.
+ *
+ * Modo arquivo/legado (sem empresa, dev single-tenant): mantém o
+ * comportamento anterior, corpo da requisição > variável de ambiente.
  */
 function resolveCredentials(tenant, body = {}) {
   const empresa = tenant?.empresa;
+  if (empresa) {
+    return {
+      instanceId: (empresa.zapiInstanceId || "").trim(),
+      instanceToken: (empresa.zapiInstanceToken || "").trim(),
+      clientToken: (empresa.zapiClientToken || "").trim(),
+    };
+  }
   return {
-    instanceId: (body.instanceId || empresa?.zapiInstanceId || process.env.ZAPI_INSTANCE_ID || "").trim(),
-    instanceToken: (body.instanceToken || empresa?.zapiInstanceToken || process.env.ZAPI_INSTANCE_TOKEN || "").trim(),
-    clientToken: (body.clientToken || empresa?.zapiClientToken || process.env.ZAPI_CLIENT_TOKEN || "").trim(),
+    instanceId: (body.instanceId || process.env.ZAPI_INSTANCE_ID || "").trim(),
+    instanceToken: (body.instanceToken || process.env.ZAPI_INSTANCE_TOKEN || "").trim(),
+    clientToken: (body.clientToken || process.env.ZAPI_CLIENT_TOKEN || "").trim(),
   };
 }
 
@@ -2807,21 +2821,39 @@ function webhookExternalId(b) {
   return String(b.messageId || b.id || b.message?.id || b.messageid || "").trim() || null;
 }
 
+/** Log de diagnóstico do webhook — nunca inclui secret/token, só o motivo técnico da rejeição. */
+function logWebhookRejeitado(empresaId, motivo, detalhe) {
+  console.warn(
+    `[webhook] ${new Date().toISOString()} rejeitado — empresaId=${empresaId || "?"} motivo=${motivo}` +
+      (detalhe ? ` detalhe=${detalhe}` : "")
+  );
+}
+
 async function handleWebhook(empresaId, secret, body) {
-  if (!USE_SUPABASE) return; // modo arquivos/legado não tem empresa nenhuma configurada
+  if (!USE_SUPABASE) {
+    logWebhookRejeitado(empresaId, "modo_arquivo_sem_empresa");
+    return;
+  }
   let tenant;
   try {
     tenant = await getTenant(empresaId);
-  } catch {
+  } catch (err) {
+    logWebhookRejeitado(empresaId, "empresa_nao_encontrada", err.message);
     return;
   }
-  if (secret !== tenant.empresa.webhookSecret) return;
+  if (secret !== tenant.empresa.webhookSecret) {
+    logWebhookRejeitado(empresaId, "secret_invalido");
+    return;
+  }
   await processWebhook(tenant, body);
 }
 
 async function processWebhook(tenant, b) {
   const phone = b.phone || b.participantPhone || b.connectedPhone;
-  if (!phone) return;
+  if (!phone) {
+    logWebhookRejeitado(tenant?.empresa?.id, "payload_sem_telefone");
+    return;
+  }
   const fromMe = b.fromMe === true;
   const content = b.text?.message || b.message || b.body || b.caption || "";
   const externalId = webhookExternalId(b);
@@ -2919,7 +2951,7 @@ app.get("/api/config", (req, res) => {
         ? (tenant.empresa.zapiInstanceId && tenant.empresa.zapiInstanceToken)
         : (process.env.ZAPI_INSTANCE_ID && process.env.ZAPI_INSTANCE_TOKEN)
     ),
-    defaultDelaySeconds: Math.max(1, Math.round(DEFAULT_DELAY_MS / 1000)) || 3,
+    defaultDelaySeconds: Math.round(Math.max(DEFAULT_DELAY_MS, MIN_DELAY_MS) / 1000),
     authEnabled: USE_SUPABASE ? true : AUTH_ENABLED,
     persistence: USE_SUPABASE ? "supabase" : "arquivos",
     dbReady,
