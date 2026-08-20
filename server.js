@@ -1762,7 +1762,11 @@ app.post("/api/clients/:id/ia", async (req, res) => {
   try {
     const detalhe = await agregarClienteDetalhe(tenant, c);
     const linhasTimeline = detalhe.timeline.slice(0, 30).map((e) => `- [${e.tipo}] ${new Date(e.ts).toLocaleString("pt-BR")}: ${e.texto}`).join("\n") || "(sem histórico registrado)";
-    const contexto = `Cliente: ${detalhe.client.displayName || detalhe.client.name}\nEtapa do funil: ${c.stage}\nVendedor responsável: ${detalhe.vendedorResponsavelNome || "não definido"}\n\nHistórico recente (mais novo primeiro):\n${linhasTimeline}`;
+    const pa = detalhe.resumo.proximaAcao;
+    const proximaAcaoTxt = pa
+      ? `${pa.texto} — ${pa.data}${pa.hora ? " às " + pa.hora : ""}${pa.responsavelNome ? " (" + pa.responsavelNome + ")" : ""}${pa.atrasado ? " [ATRASADA]" : ""}`
+      : "nenhuma";
+    const contexto = `Cliente: ${detalhe.client.displayName || detalhe.client.name}\nEtapa do funil: ${c.stage}\nVendedor responsável: ${detalhe.vendedorResponsavelNome || "não definido"}\nPróxima ação: ${proximaAcaoTxt}\n\nHistórico recente (mais novo primeiro):\n${linhasTimeline}`;
     const instrucao = tipo === "sugestao"
       ? `${contexto}\n\nCom base nesse histórico, sugira em até 3 frases qual deve ser a próxima ação comercial com esse cliente. Seja específico e prático.`
       : `${contexto}\n\nResuma em até 4 frases o histórico desse cliente para o vendedor entender rapidamente onde essa relação está.`;
@@ -2123,8 +2127,14 @@ app.post("/api/conversas/:key/sugerir-resposta", async (req, res) => {
   const c = tenant.clients.find((x) => (x.key || phoneKey(x.phone)) === key);
   try {
     const linhas = messages.map((m) => `[${m.dir === "out" ? "nós" : "cliente"}] ${m.text}`).join("\n");
+    // Contexto enxuto de propósito (Fase 6): nome + etapa + próxima ação manual do
+    // cliente, nunca a timeline inteira do Cliente 360° -- a conversa em si já
+    // está toda no bloco acima, e isso evita 1 query extra de visitas só pra isso.
+    const nomeCliente = c ? resolveName(tenant, c.phone, c.name) : null;
     const contexto = `Conversa de WhatsApp com o cliente (mais antiga primeiro):\n${linhas}` +
-      (c?.stage ? `\n\nEtapa do funil: ${c.stage}` : "");
+      (nomeCliente ? `\n\nNome do cliente: ${nomeCliente}` : "") +
+      (c?.stage ? `\nEtapa do funil: ${c.stage}` : "") +
+      (c?.proximaAcaoTexto && c?.proximaAcaoData ? `\nPróxima ação já agendada: ${c.proximaAcaoTexto} (${c.proximaAcaoData})` : "");
     const instrucao = `${contexto}\n\nSugira a próxima mensagem que devemos enviar pra esse cliente pelo WhatsApp, dando continuidade à conversa. Responda APENAS com o texto da mensagem sugerida, sem aspas, sem explicações antes ou depois.`;
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
@@ -3089,7 +3099,7 @@ app.post("/api/ia/perguntar", async (req, res) => {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
     const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem, baseConhecimento });
-    const executores = criarExecutores(tenant, { agregarDesempenhoEquipe, agregarClienteDetalhe, phoneKey });
+    const executores = criarExecutores(tenant, { agregarDesempenhoEquipe, agregarClienteDetalhe, phoneKey, montarRadar });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
     });

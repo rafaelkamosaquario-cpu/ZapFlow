@@ -2443,6 +2443,25 @@ $("#btnSalvarPerfilIa").addEventListener("click", async (e) => {
   }
 });
 
+// Atalhos de pergunta (Fase 2): só preenchem o campo e reaproveitam o mesmo
+// envio de sempre -- nenhum endpoint novo, mesma infraestrutura do chat.
+const IA_ATALHOS = [
+  "Quem precisa da minha atenção hoje?",
+  "Quais clientes estão parados?",
+  "Quem está esperando resposta?",
+  "Como estão meus vendedores?",
+  "Quais negociações precisam de retorno?",
+];
+(function renderIaAtalhos() {
+  const wrap = $("#iaAtalhos");
+  if (!wrap) return;
+  wrap.innerHTML = IA_ATALHOS.map((p) => `<button class="btn ghost sm ia-atalho" type="button">${escapeHtml(p)}</button>`).join("");
+  $$(".ia-atalho", wrap).forEach((btn, i) => btn.addEventListener("click", () => {
+    $("#iaInput").value = IA_ATALHOS[i];
+    iaEnviarMensagem();
+  }));
+})();
+
 function iaAddBubble(role, texto) {
   const box = $("#iaMessages");
   const div = document.createElement("div");
