@@ -1346,6 +1346,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const cfg = await res.json();
     if (!savedDelay && cfg.defaultDelaySeconds) $("#delaySeconds").value = cfg.defaultDelaySeconds;
     if (cfg.authEnabled) $("#btnLogout").classList.remove("hidden");
+    // Modo multiempresa: a credencial Z-API é sempre a da empresa (backend
+    // ignora qualquer coisa digitada aqui, ver resolveCredentials no server).
+    // Esconde os campos que não têm mais efeito, pra não confundir quem digitar ali.
+    if (cfg.persistence === "supabase") {
+      $("#settingsCamposManuais").style.display = "none";
+      $("#settingsModoGerenciado").style.display = "";
+    }
     checkDelayWarning();
     // Verifica a conexão automaticamente e mostra o status no card
     runConnectionTest();

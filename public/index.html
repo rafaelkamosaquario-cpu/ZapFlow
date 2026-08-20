@@ -64,16 +64,19 @@
           <h3>WhatsApp · Integração</h3>
           <button class="modal-close" data-close="settingsModal" type="button" aria-label="Fechar">✕</button>
         </div>
-        <p class="hint">Configure a conexão do seu WhatsApp. Se já estiver configurada no servidor, pode deixar em branco.</p>
-        <label>ID da conexão
-          <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
-        </label>
-        <label>Token de acesso
-          <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
-        </label>
-        <label>Token de segurança
-          <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
-        </label>
+        <p class="hint" id="settingsModoGerenciado" style="display:none;">Sua conexão com o WhatsApp é configurada pela equipe do ZapFlow — não precisa (e não é possível) trocar por aqui. Se o WhatsApp aparecer desconectado, fale com o suporte.</p>
+        <div id="settingsCamposManuais">
+          <p class="hint">Configure a conexão do seu WhatsApp. Se já estiver configurada no servidor, pode deixar em branco.</p>
+          <label>ID da conexão
+            <input type="text" id="instanceId" placeholder="Ex.: 3C1A2B..." autocomplete="off" />
+          </label>
+          <label>Token de acesso
+            <input type="text" id="instanceToken" placeholder="Ex.: 9F8E7D..." autocomplete="off" />
+          </label>
+          <label>Token de segurança
+            <input type="text" id="clientToken" placeholder="Token de segurança da conta" autocomplete="off" />
+          </label>
+        </div>
         <div class="row">
           <button class="btn primary" id="btnTestModal" type="button"><i data-icon="wifi" data-size="18"></i> Testar conexão</button>
           <span id="connStatusModal" class="status"></span>
