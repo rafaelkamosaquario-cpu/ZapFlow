@@ -1413,6 +1413,143 @@ app.get("/api/dashboard", (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Radar Comercial ("Precisa da sua atenção") -- regras determinísticas sobre
+// dado que já existe, sem IA e sem inventar informação. Ver server.js dos
+// endpoints reaproveitados (montarProximaAcao, agregarClienteDetalhe) para
+// as fontes de dado originais.
+// ---------------------------------------------------------------------------
+const RADAR_NEGOCIACAO_PARADA_DIAS = 5; // ajustável -- sem uso real ainda pra calibrar um valor melhor
+
+function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const agora = Date.now();
+  const cincoDiasMs = RADAR_NEGOCIACAO_PARADA_DIAS * 86400000;
+
+  const visitasPorCliente = new Map();
+  const visitasPorTelefone = new Map();
+  for (const v of todasVisitas) {
+    if (v.clienteId) {
+      if (!visitasPorCliente.has(v.clienteId)) visitasPorCliente.set(v.clienteId, []);
+      visitasPorCliente.get(v.clienteId).push(v);
+    } else if (v.contatoTelefone) {
+      const k = phoneKey(v.contatoTelefone);
+      if (!visitasPorTelefone.has(k)) visitasPorTelefone.set(k, []);
+      visitasPorTelefone.get(k).push(v);
+    }
+  }
+  // Última mensagem recebida por contato (mesma lógica do KPI "Conversas" de /api/visitas/resumo)
+  const ultimaMsgPorKey = new Map();
+  for (const m of tenant.conversas) {
+    const atual = ultimaMsgPorKey.get(m.key);
+    if (!atual || m.ts > atual.ts) ultimaMsgPorKey.set(m.key, m);
+  }
+
+  let clientes = tenant.clients;
+  if (filtroVendedorId === "none") clientes = clientes.filter((c) => !c.vendedorResponsavelId);
+  else if (filtroVendedorId) clientes = clientes.filter((c) => c.vendedorResponsavelId === filtroVendedorId);
+
+  const itens = [];
+  for (const c of clientes) {
+    const key = c.key || phoneKey(c.phone);
+    const nome = resolveName(tenant, c.phone, c.name);
+    const clientRef = { id: c.id, name: nome, phone: c.phone, stage: c.stage, vendedorResponsavelId: c.vendedorResponsavelId, origem: c.origem, tags: c.tags, inAgenda: inAgenda(tenant, c.phone) };
+    const visitasDoCliente = (visitasPorCliente.get(c.id) || []).concat(visitasPorTelefone.get(key) || []);
+
+    // A) respondeu, sem retorno nosso
+    const ultimaMsg = ultimaMsgPorKey.get(key);
+    if (ultimaMsg && ultimaMsg.dir === "in") {
+      itens.push({
+        prioridade: "urgente", tipo: "sem_resposta", client: clientRef,
+        texto: `Respondeu ${fmtDistancia(agora - ultimaMsg.ts)} e ainda não recebeu retorno.`,
+        acao: "Abrir conversa", go: "conversa", conversaKey: key,
+      });
+    }
+
+    // B/C/F) próxima ação (atrasada = urgente, hoje = amarelo) -- reaproveita montarProximaAcao
+    const proximaAcao = montarProximaAcao(c, visitasDoCliente, vendedores);
+    if (proximaAcao) {
+      const origemTxt = proximaAcao.origem === "visita" ? "Retorno marcado pelo vendedor" : proximaAcao.texto;
+      if (proximaAcao.atrasado) {
+        const dias = Math.max(1, Math.round((agora - new Date(proximaAcao.data).getTime()) / 86400000));
+        itens.push({
+          prioridade: "urgente", tipo: "acao_atrasada", client: clientRef,
+          texto: `${origemTxt} — atrasada há ${dias} dia(s).`,
+          acao: "Abrir cliente", go: "cliente",
+        });
+      } else if (proximaAcao.data === hojeStr) {
+        itens.push({
+          prioridade: "hoje", tipo: "acao_hoje", client: clientRef,
+          texto: `${origemTxt} — hoje${proximaAcao.hora ? " às " + proximaAcao.hora : ""}.`,
+          acao: "Abrir cliente", go: "cliente",
+        });
+      }
+    }
+
+    // D) negociação sem movimento
+    if (c.stage === "Negociando") {
+      const ultimaVisitaTs = visitasDoCliente.reduce((max, v) => Math.max(max, v.dataHora || 0), 0);
+      const ultimaInteracao = Math.max(c.lastReplyAt || 0, c.lastSentAt || 0, ultimaVisitaTs);
+      if (ultimaInteracao && agora - ultimaInteracao >= cincoDiasMs) {
+        itens.push({
+          prioridade: "atencao", tipo: "negociacao_parada", client: clientRef,
+          texto: `Em negociação, sem interação há ${Math.floor((agora - ultimaInteracao) / 86400000)} dia(s).`,
+          acao: "Abrir cliente", go: "cliente",
+        });
+      }
+    }
+
+    // E) proposta solicitada sem próximo passo
+    const ultimaProposta = visitasDoCliente.filter((v) => v.resultado === "Proposta solicitada").sort((a, b) => b.dataHora - a.dataHora)[0];
+    if (ultimaProposta && !proximaAcao) {
+      itens.push({
+        prioridade: "atencao", tipo: "proposta_sem_retorno", client: clientRef,
+        texto: "Proposta solicitada na visita. Nenhum retorno programado.",
+        acao: "Criar próxima ação", go: "cliente",
+      });
+    }
+
+    // G) sem responsável, só quando há sinal comercial relevante
+    if (!c.vendedorResponsavelId && ["Respondeu", "Negociando"].includes(c.stage)) {
+      itens.push({
+        prioridade: "atencao", tipo: "sem_responsavel", client: clientRef,
+        texto: "Cliente ativo sem vendedor responsável.",
+        acao: "Atribuir responsável", go: "cliente",
+      });
+    }
+  }
+
+  const ordem = { urgente: 0, atencao: 1, hoje: 2 };
+  itens.sort((a, b) => ordem[a.prioridade] - ordem[b.prioridade]);
+  const resumo = { urgente: 0, atencao: 0, hoje: 0 };
+  itens.forEach((i) => resumo[i.prioridade]++);
+  return { itens, resumo, total: itens.length };
+}
+
+/** "há 6 horas" / "há 2 dias" -- só pra texto do Radar, sem virar helper genérico de data. */
+function fmtDistancia(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `há ${Math.max(1, min)} minuto(s)`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} hora(s)`;
+  return `há ${Math.round(h / 24)} dia(s)`;
+}
+
+app.get("/api/radar", async (req, res) => {
+  if (req.session.role !== "owner") return res.status(403).json({ error: "Acesso restrito." });
+  const tenant = req.tenant;
+  try {
+    const [vendedores, todasVisitas] = USE_SUPABASE
+      ? await Promise.all([repo.usuariosRepo.listVendedores(tenant.empresa.id), repo.visitasRepo.listForEmpresa(tenant.empresa.id)])
+      : [[], []];
+    const vendedorId = String(req.query.vendedorId || "");
+    res.json(montarRadar(tenant, vendedores, todasVisitas, vendedorId));
+  } catch (err) {
+    console.error("[radar]:", err.message);
+    res.status(500).json({ error: "Não foi possível calcular o que precisa da sua atenção agora." });
+  }
+});
+
 // --- Modelos de mensagem ---
 app.get("/api/templates", (req, res) => res.json({ templates: req.tenant.templates }));
 

@@ -349,9 +349,78 @@ async function loadResumoOwner() {
   } catch { /* indicadores do dia são um extra; falha aqui não deve travar o resto do painel */ }
 }
 
+// ---------------------------------------------------------------------------
+// Radar Comercial ("Precisa da sua atenção")
+// ---------------------------------------------------------------------------
+const RADAR_ICONE = { urgente: "🔴", atencao: "🟠", hoje: "🟡" };
+const RADAR_TONE = { urgente: "warn", atencao: "blue", hoje: "blue" };
+const RADAR_LIMITE_INICIAL = 8;
+let radarItensTodos = [];
+let radarVendedorPopulado = false;
+
+async function loadRadar() {
+  const badge = $("#radarBadge"), resumoEl = $("#radarResumo"), listWrap = $("#radarList"), btnTodos = $("#btnRadarVerTodos");
+  try {
+    if (!radarVendedorPopulado) {
+      radarVendedorPopulado = true;
+      const vres = await fetch("/api/visitas/vendedores").catch(() => null);
+      const vendedores = vres && vres.ok ? (await vres.json()).vendedores || [] : [];
+      $("#radarVendedor").insertAdjacentHTML("beforeend",
+        `<option value="none">Sem responsável</option>` +
+        vendedores.map((v) => `<option value="${v.id}">${escapeHtml(v.name || v.username)}</option>`).join(""));
+    }
+    const vendedorId = $("#radarVendedor").value;
+    const res = await fetch(`/api/radar${vendedorId ? "?vendedorId=" + encodeURIComponent(vendedorId) : ""}`);
+    const data = await res.json();
+    if (!res.ok) { listWrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível calcular o Radar agora.")}</p>`; badge.classList.add("hidden"); return; }
+
+    radarItensTodos = data.itens || [];
+    badge.textContent = data.total;
+    badge.classList.toggle("hidden", data.total === 0);
+    resumoEl.textContent = data.total
+      ? `${data.resumo.urgente} urgente(s) · ${data.resumo.atencao} atenção · ${data.resumo.hoje} hoje`
+      : "Tudo em dia por aqui.";
+    renderRadarLista(RADAR_LIMITE_INICIAL);
+    btnTodos.classList.toggle("hidden", radarItensTodos.length <= RADAR_LIMITE_INICIAL);
+  } catch {
+    listWrap.innerHTML = "<p class='hint'>Não foi possível calcular o Radar agora.</p>";
+  }
+}
+function renderRadarLista(limite) {
+  const listWrap = $("#radarList");
+  const itens = limite ? radarItensTodos.slice(0, limite) : radarItensTodos;
+  if (!itens.length) { listWrap.innerHTML = ""; return; }
+  listWrap.innerHTML = "";
+  itens.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "action-item tone-" + (RADAR_TONE[item.prioridade] || "blue");
+    div.innerHTML = `
+      <span class="action-ico">${RADAR_ICONE[item.prioridade] || ""}</span>
+      <div class="action-txt"><b>${escapeHtml(item.client.name)}</b><span>${escapeHtml(item.texto)}</span></div>
+      <button class="btn secondary action-btn">${escapeHtml(item.acao)}</button>`;
+    div.querySelector("button").addEventListener("click", () => radarAbrirItem(item));
+    listWrap.appendChild(div);
+  });
+}
+$("#btnRadarVerTodos").addEventListener("click", (e) => {
+  renderRadarLista(null);
+  e.currentTarget.classList.add("hidden");
+});
+$("#radarVendedor").addEventListener("change", loadRadar);
+function radarAbrirItem(item) {
+  if (item.go === "conversa") {
+    activateView("conversas");
+    openChat(item.conversaKey, item.client.name, { phone: item.client.phone });
+  } else {
+    activateView("clients");
+    openClient(item.client);
+  }
+}
+
 async function loadOverview() {
   $("#ovGreeting").textContent = saudacao();
   loadResumoOwner();
+  loadRadar();
   // Estado de carregamento (skeleton): esconde corpo/vazio/erro
   $("#ovError").classList.add("hidden");
   $("#ovEmpty").classList.add("hidden");
