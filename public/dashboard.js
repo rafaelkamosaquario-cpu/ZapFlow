@@ -1523,22 +1523,31 @@ async function openCampaign(id) {
   $("#campaignContacts").innerHTML = "<p class='hint'>Carregando...</p>";
   $("#campaignSummary").innerHTML = "";
   try {
-    const res = await fetch("/api/schedules/" + id);
-    const job = (await res.json()).job;
+    const data = await res.json();
+    const job = data.job;
     currentDetail = job;
     const logs = job.logs || [];
     const enviados = logs.filter((l) => l.ok).length;
     const falhas = logs.filter((l) => !l.ok).length;
     const responderam = logs.filter((l) => l.replied).length;
+    const taxa = enviados ? Math.round((responderam / enviados) * 1000) / 10 : 0;
     $("#campaignTitle").textContent = "Campanha · " + fmtDate(job.scheduledAt);
+    const crm = data.crmAposCampanha;
+    const crmHtml = crm && crm.total
+      ? `<p class="hint" style="margin:10px 0 4px;">Dos ${crm.total} contato(s) que responderam esta campanha, atualmente:</p>
+         <div class="metric-row"><span>Em negociação</span><b>${crm.porEtapa.Negociando || 0}</b></div>
+         <div class="metric-row"><span>Fechados</span><b style="color:var(--success)">${crm.porEtapa.Fechado || 0}</b></div>
+         <div class="metric-row"><span>Perdidos</span><b style="color:var(--muted)">${crm.porEtapa.Perdido || 0}</b></div>`
+      : "";
     $("#campaignSummary").innerHTML = `
       <div class="metric-row"><span>Enviadas</span><b style="color:var(--primary)">${enviados}</b></div>
       <div class="metric-row"><span>Falhas</span><b style="color:var(--danger)">${falhas}</b></div>
-      <div class="metric-row"><span>Responderam</span><b style="color:var(--primary)">${responderam}</b></div>
+      <div class="metric-row"><span>Responderam</span><b style="color:var(--primary)">${responderam} (${taxa}%)</b></div>
+      ${crmHtml}
       ${job.message ? `<div class="campaign-msg">"${escapeHtml(job.message)}"</div>` : ""}`;
     $("#campaignContacts").innerHTML = logs.map((l) => {
       const icon = l.ok ? '<span class="d-ok">OK</span>' : '<span class="d-err">falhou</span>';
-      const rep = l.replied ? ' <span class="d-replied">respondeu</span>' : "";
+      const rep = l.replied ? ` <span class="d-replied">respondeu${l.stage ? " · " + escapeHtml(l.stage) : ""}${l.vendedorResponsavelNome ? " · " + escapeHtml(l.vendedorResponsavelNome) : ""}</span>` : "";
       const name = l.name ? escapeHtml(l.name) + " — " : "";
       const err = (!l.ok && l.error) ? ` <span class="d-err">(${escapeHtml(l.error)})</span>` : "";
       return `<div class="d-line">${icon} ${name}${escapeHtml(l.phone || "")}${rep}${err}</div>`;

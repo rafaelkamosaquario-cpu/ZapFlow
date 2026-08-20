@@ -1267,7 +1267,7 @@ app.get("/api/schedules", (req, res) => {
 });
 
 // Detalhe de um agendamento (inclui o log de envios + quem respondeu)
-app.get("/api/schedules/:id", (req, res) => {
+app.get("/api/schedules/:id", async (req, res) => {
   const tenant = req.tenant;
   const job = tenant.jobs.find((j) => j.id === req.params.id);
   if (!job) return res.status(404).json({ error: "Agendamento não encontrado." });
@@ -1275,12 +1275,30 @@ app.get("/api/schedules/:id", (req, res) => {
   const repliedSet = new Set(
     tenant.metrics.responses.filter((r) => r.ts >= since).map((r) => phoneKey(r.phone))
   );
-  const logs = (job.logs || []).map((l) => ({
-    ...l,
-    name: resolveName(tenant, l.phone, l.name),
-    replied: repliedSet.has(phoneKey(l.phone)),
-  }));
-  res.json({ job: { ...publicJob(tenant, job), logs } });
+  // Etapa atual do CRM, só pra quem respondeu -- é "estado atual do contato", não
+  // "resultado causado pela campanha" (o cliente pode ter avançado por outro motivo
+  // depois). A UI precisa deixar essa distinção clara, nunca afirmar causalidade.
+  const clientesPorKey = new Map(tenant.clients.map((c) => [c.key || phoneKey(c.phone), c]));
+  const vendedores = USE_SUPABASE ? await repo.usuariosRepo.listVendedores(tenant.empresa.id) : [];
+  const nomeVendedor = (id) => vendedores.find((v) => v.id === id)?.name || null;
+  const crmAposCampanha = { Negociando: 0, Fechado: 0, Perdido: 0 };
+  const logs = (job.logs || []).map((l) => {
+    const replied = repliedSet.has(phoneKey(l.phone));
+    const cliente = replied ? clientesPorKey.get(phoneKey(l.phone)) : null;
+    if (cliente && crmAposCampanha[cliente.stage] !== undefined) crmAposCampanha[cliente.stage]++;
+    return {
+      ...l,
+      name: resolveName(tenant, l.phone, l.name),
+      replied,
+      stage: cliente?.stage || null,
+      vendedorResponsavelNome: cliente?.vendedorResponsavelId ? nomeVendedor(cliente.vendedorResponsavelId) : null,
+    };
+  });
+  const responderam = logs.filter((l) => l.replied).length;
+  res.json({
+    job: { ...publicJob(tenant, job), logs },
+    crmAposCampanha: { populacao: "responderam", total: responderam, porEtapa: crmAposCampanha },
+  });
 });
 
 // Limpa o histórico (remove os já finalizados; mantém pendentes/em andamento)
