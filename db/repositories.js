@@ -695,7 +695,8 @@ export const eventosRepo = {
 // ----------------------------------------------------------------------------
 function visitaFromRow(r) {
   return {
-    id: r.id, vendedorId: r.vendedor_id, clienteNome: r.cliente_nome, objetivo: r.objetivo || "",
+    id: r.id, vendedorId: r.vendedor_id, clienteId: r.cliente_id || null,
+    clienteNome: r.cliente_nome, objetivo: r.objetivo || "",
     contatoNome: r.contato_nome || "", contatoTelefone: r.contato_telefone || "",
     latitude: r.latitude, longitude: r.longitude,
     motivo: r.motivo, resultado: r.resultado, observacao: r.observacao || "",
@@ -728,12 +729,20 @@ function aplicarFiltroTab(query, tab) {
   return query;
 }
 export const visitasRepo = {
-  /** Iniciar visita: grava só o essencial (cliente, objetivo, localização). */
+  /**
+   * Iniciar visita: grava só o essencial (cliente, objetivo, localização).
+   * `clienteId`/`contatoTelefone`/`contatoNome` são opcionais -- preenchidos
+   * quando o vendedor seleciona um cliente já existente (em vez de digitar
+   * um contato novo). O backend em server.js já validou que `clienteId`
+   * pertence à mesma empresa antes de chegar aqui.
+   */
   async create(empresaId, vendedorId, v) {
     requireEmpresaId(empresaId, "visitas.create");
     const { data, error } = await supabase.from("visitas").insert({
       empresa_id: empresaId, vendedor_id: vendedorId,
+      cliente_id: v.clienteId || null,
       cliente_nome: v.clienteNome, objetivo: v.objetivo || "",
+      contato_nome: v.contatoNome || "", contato_telefone: v.contatoTelefone || "",
       latitude: v.latitude ?? null, longitude: v.longitude ?? null,
     }).select("*").single();
     assertOk(error, "visitas.create");

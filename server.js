@@ -1503,8 +1503,12 @@ async function agregarClienteDetalhe(tenant, c) {
     .sort((a, b) => (b.enviadaEm || 0) - (a.enviadaEm || 0));
 
   const todasVisitas = USE_SUPABASE ? await repo.visitasRepo.listForEmpresa(tenant.empresa.id) : [];
+  // Prioriza a relação explícita (visita.clienteId) sobre o telefone -- o
+  // telefone só decide para visitas antigas, criadas antes dessa relação
+  // existir (clienteId nulo). Uma visita com clienteId nunca é encontrada
+  // por telefone além disso (evita duplicar o mesmo registro na lista).
   const visitas = todasVisitas
-    .filter((v) => v.contatoTelefone && phoneKey(v.contatoTelefone) === key)
+    .filter((v) => (v.clienteId ? v.clienteId === c.id : v.contatoTelefone && phoneKey(v.contatoTelefone) === key))
     .sort((a, b) => b.dataHora - a.dataHora);
 
   const notas = USE_SUPABASE ? await repo.clienteNotasRepo.listar(tenant.empresa.id, c.id) : [];
@@ -2040,10 +2044,24 @@ app.post("/api/visitas", async (req, res) => {
   const clienteNome = String(b.clienteNome || "").trim();
   if (!clienteNome) return res.status(400).json({ error: "Informe o nome do cliente." });
   try {
+    // Se veio um cliente selecionado, confirma no backend que ele existe E
+    // pertence à MESMA empresa do vendedor logado -- nunca confia só no ID
+    // enviado pelo navegador (empresa A não pode criar visita apontando pra
+    // cliente da empresa B, mesmo enviando o ID manualmente).
+    let clienteId = null;
+    let contatoTelefone = "";
+    if (b.clienteId) {
+      const cliente = await repo.clientesRepo.getById(tenant.empresa.id, String(b.clienteId));
+      if (!cliente) return res.status(400).json({ error: "Cliente não encontrado para esta empresa." });
+      clienteId = cliente.id;
+      contatoTelefone = cliente.phone || "";
+    }
     const existente = await repo.visitasRepo.getEmAndamento(tenant.empresa.id, req.session.uid);
     if (existente) return res.status(400).json({ error: "Você já tem uma visita em andamento. Finalize-a antes de iniciar outra." });
     const visita = await repo.visitasRepo.create(tenant.empresa.id, req.session.uid, {
+      clienteId,
       clienteNome,
+      contatoTelefone,
       objetivo: String(b.objetivo || "").trim().slice(0, 200),
       latitude: typeof b.latitude === "number" ? b.latitude : null,
       longitude: typeof b.longitude === "number" ? b.longitude : null,
@@ -2053,6 +2071,24 @@ app.post("/api/visitas", async (req, res) => {
     console.error("[visitas] create:", err.message);
     res.status(500).json({ error: "Não foi possível iniciar a visita." });
   }
+});
+
+// Busca simples de cliente existente (nome ou telefone) pra selecionar ao
+// iniciar uma visita. Sob /api/visitas/* de propósito: é o único prefixo que
+// o papel "vendedor" já tem acesso -- não amplia a permissão dele pra
+// /api/clients (que continua bloqueado pro vendedor).
+app.get("/api/visitas/clientes-busca", (req, res) => {
+  const tenant = req.tenant;
+  const q = String(req.query.q || "").trim().toLowerCase();
+  if (q.length < 2) return res.json({ clientes: [] });
+  const clientes = tenant.clients
+    .filter((c) => {
+      const nome = resolveName(tenant, c.phone, c.name);
+      return `${nome} ${c.phone}`.toLowerCase().includes(q);
+    })
+    .slice(0, 20)
+    .map((c) => ({ id: c.id, name: resolveName(tenant, c.phone, c.name), phone: c.phone }));
+  res.json({ clientes });
 });
 
 app.get("/api/visitas/em-andamento", async (req, res) => {
@@ -2205,11 +2241,12 @@ app.post("/api/visitas/:id/finalizar", async (req, res) => {
     if (!visita) return;
     if (visita.finishedAt) return res.status(400).json({ error: "Essa visita já foi finalizada." });
     const finalizada = await repo.visitasRepo.finalizar(req.tenant.empresa.id, req.params.id, { motivo, resultado });
-    // Best-effort: só dispara se a visita tiver telefone de contato ligado a um cliente do CRM.
-    if (visita.contatoTelefone) {
-      const cliente = findClient(req.tenant, visita.contatoTelefone);
-      if (cliente) dispararAutomacoes(req.tenant, "resultado_visita", resultado, cliente).catch(() => {});
-    }
+    // Prioriza a relação explícita (clienteId); telefone é só fallback pra
+    // visitas antigas sem clienteId. Best-effort: só dispara se achar cliente.
+    const clienteDaVisita = visita.clienteId
+      ? req.tenant.clients.find((c) => c.id === visita.clienteId)
+      : (visita.contatoTelefone ? findClient(req.tenant, visita.contatoTelefone) : null);
+    if (clienteDaVisita) dispararAutomacoes(req.tenant, "resultado_visita", resultado, clienteDaVisita).catch(() => {});
     res.json({ ok: true, visita: finalizada });
   } catch (err) {
     console.error("[visitas] finalizar:", err.message);

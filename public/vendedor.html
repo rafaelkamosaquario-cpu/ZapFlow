@@ -55,6 +55,19 @@
         <button class="modal-close" id="btnFecharIniciar" type="button"><i data-icon="x" data-size="18"></i></button>
       </div>
       <p class="hint" id="geoStatus">📍 Obtendo localização...</p>
+
+      <div id="vfBuscaWrap">
+        <label>Buscar cliente
+          <input type="text" id="vfBusca" placeholder="Nome ou telefone (opcional)" autocomplete="off" />
+        </label>
+        <div id="vfBuscaResultados" class="dash-list hidden" style="margin-top:6px;"></div>
+      </div>
+      <div id="vfClienteSelecionadoWrap" class="hidden manual-add" style="margin-top:6px;">
+        <p class="manual-title" id="vfClienteSelecionadoNome"></p>
+        <p class="hint" id="vfClienteSelecionadoTelefone" style="margin:0;"></p>
+        <button class="btn ghost" id="btnTrocarCliente" type="button" style="margin-top:6px;">Trocar cliente</button>
+      </div>
+
       <label>Cliente
         <input type="text" id="vfCliente" placeholder="Nome do cliente/empresa" />
       </label>

@@ -68,9 +68,61 @@ function iniciarGeolocalizacao() {
 // ---------------------------------------------------------------------------
 // Modal: Iniciar visita
 // ---------------------------------------------------------------------------
+let vfClienteSelecionado = null; // { id, name, phone } quando o vendedor escolhe um cliente já existente
+
+function mostrarClienteSelecionado(cliente) {
+  vfClienteSelecionado = cliente;
+  $("#vfCliente").value = cliente.name || cliente.phone;
+  $("#vfBuscaWrap").classList.add("hidden");
+  $("#vfBuscaResultados").classList.add("hidden");
+  $("#vfBusca").value = "";
+  $("#vfClienteSelecionadoNome").textContent = cliente.name || "(sem nome)";
+  $("#vfClienteSelecionadoTelefone").textContent = cliente.phone || "";
+  $("#vfClienteSelecionadoWrap").classList.remove("hidden");
+}
+function limparClienteSelecionado() {
+  vfClienteSelecionado = null;
+  $("#vfCliente").value = "";
+  $("#vfClienteSelecionadoWrap").classList.add("hidden");
+  $("#vfBuscaWrap").classList.remove("hidden");
+}
+$("#btnTrocarCliente").addEventListener("click", limparClienteSelecionado);
+
+let vfBuscaTimer = null;
+$("#vfBusca").addEventListener("input", () => {
+  clearTimeout(vfBuscaTimer);
+  const q = $("#vfBusca").value.trim();
+  const resultados = $("#vfBuscaResultados");
+  if (q.length < 2) { resultados.classList.add("hidden"); resultados.innerHTML = ""; return; }
+  vfBuscaTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/visitas/clientes-busca?q=${encodeURIComponent(q)}`);
+      const d = await res.json();
+      const lista = d.clientes || [];
+      if (!lista.length) {
+        resultados.innerHTML = `<p class="hint" style="padding:8px 0;">Nenhum cliente encontrado — pode seguir digitando um contato novo abaixo.</p>`;
+      } else {
+        resultados.innerHTML = lista.map((c) => `
+          <div class="dash-card vf-resultado" data-id="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}" data-phone="${escapeHtml(c.phone)}" style="cursor:pointer;">
+            <b>${escapeHtml(c.name || "(sem nome)")}</b>
+            <p class="hint" style="margin:2px 0 0;">${escapeHtml(c.phone || "")}</p>
+          </div>`).join("");
+      }
+      resultados.classList.remove("hidden");
+    } catch { /* busca é auxiliar -- falha em silêncio, o vendedor ainda pode digitar manualmente */ }
+  }, 300);
+});
+$("#vfBuscaResultados").addEventListener("click", (e) => {
+  const card = e.target.closest(".vf-resultado");
+  if (!card) return;
+  mostrarClienteSelecionado({ id: card.dataset.id, name: card.dataset.name, phone: card.dataset.phone });
+});
+
 function abrirIniciarModal() {
   $("#iniciarModal").classList.remove("hidden");
-  $("#vfCliente").value = "";
+  limparClienteSelecionado();
+  $("#vfBusca").value = "";
+  $("#vfBuscaResultados").classList.add("hidden");
   $("#vfObjetivo").value = "";
   $("#iniciarStatus").textContent = "";
   iniciarGeolocalizacao();
@@ -86,7 +138,11 @@ $("#btnConfirmarIniciar").addEventListener("click", async (e) => {
     const data = await withLoading(e.currentTarget, "Iniciando...", async () => {
       const res = await fetch("/api/visitas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clienteNome, objetivo: $("#vfObjetivo").value.trim(), latitude: geo.lat, longitude: geo.lng }),
+        body: JSON.stringify({
+          clienteNome,
+          clienteId: vfClienteSelecionado?.id || undefined,
+          objetivo: $("#vfObjetivo").value.trim(), latitude: geo.lat, longitude: geo.lng,
+        }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Não foi possível iniciar a visita. Tente novamente.");
