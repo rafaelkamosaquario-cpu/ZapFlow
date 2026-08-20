@@ -153,6 +153,7 @@ function clienteFromRow(r) {
     vendedorResponsavelId: r.vendedor_responsavel_id || null,
     origem: r.origem || "manual",
     proximaAcaoTexto: r.proxima_acao_texto || "", proximaAcaoData: r.proxima_acao_data || null,
+    proximaAcaoHora: r.proxima_acao_hora || null, proximaAcaoResponsavelId: r.proxima_acao_responsavel_id || null,
     createdAt: ms(r.created_at), updatedAt: ms(r.updated_at),
   };
 }
@@ -207,10 +208,13 @@ export const clientesRepo = {
     assertOk(error, "clientes.deleteById");
   },
   /** Próxima ação definida direto no cliente, sem depender de visita. */
-  async definirProximaAcao(empresaId, id, { texto, data }) {
+  async definirProximaAcao(empresaId, id, { texto, data, hora, responsavelId }) {
     requireEmpresaId(empresaId, "clientes.definirProximaAcao");
     const { error } = await supabase.from("clientes")
-      .update({ proxima_acao_texto: texto || "", proxima_acao_data: data || null })
+      .update({
+        proxima_acao_texto: texto || "", proxima_acao_data: data || null,
+        proxima_acao_hora: hora || null, proxima_acao_responsavel_id: responsavelId || null,
+      })
       .eq("id", id).eq("empresa_id", empresaId);
     assertOk(error, "clientes.definirProximaAcao");
   },
@@ -701,6 +705,7 @@ function visitaFromRow(r) {
     latitude: r.latitude, longitude: r.longitude,
     motivo: r.motivo, resultado: r.resultado, observacao: r.observacao || "",
     proximaAcao: r.proxima_acao || "", proximaVisitaData: r.proxima_visita_data || null,
+    proximaVisitaHora: r.proxima_visita_hora || null, proximaAcaoResolvida: !!r.proxima_acao_resolvida,
     valorPotencial: r.valor_potencial ?? null,
     fotos: Array.isArray(r.fotos) ? r.fotos : [], googleEventoId: r.google_evento_id || null,
     dataHora: ms(r.data_hora), finishedAt: r.finished_at ? ms(r.finished_at) : null,
@@ -724,7 +729,7 @@ function aplicarFiltroTab(query, tab) {
       `and(data_hora.gte.${start.toISOString()},data_hora.lt.${end.toISOString()}),proxima_visita_data.lte.${hojeDate}`
     );
   }
-  if (tab === "followup") return query.eq("resultado", "Retornar depois").not("finished_at", "is", null);
+  if (tab === "followup") return query.eq("resultado", "Retornar depois").not("finished_at", "is", null).eq("proxima_acao_resolvida", false);
   if (tab === "historico") return query.not("finished_at", "is", null);
   return query;
 }
@@ -757,6 +762,8 @@ export const visitasRepo = {
     if (patch.observacao !== undefined) row.observacao = patch.observacao;
     if (patch.proximaAcao !== undefined) row.proxima_acao = patch.proximaAcao;
     if (patch.proximaVisitaData !== undefined) row.proxima_visita_data = patch.proximaVisitaData;
+    if (patch.proximaVisitaHora !== undefined) row.proxima_visita_hora = patch.proximaVisitaHora;
+    if (patch.proximaAcaoResolvida !== undefined) row.proxima_acao_resolvida = patch.proximaAcaoResolvida;
     if (patch.valorPotencial !== undefined) row.valor_potencial = patch.valorPotencial;
     if (patch.googleEventoId !== undefined) row.google_evento_id = patch.googleEventoId;
     if (patch.fotos !== undefined) row.fotos = patch.fotos;

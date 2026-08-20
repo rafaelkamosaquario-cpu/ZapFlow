@@ -1490,6 +1490,36 @@ app.get("/api/clients/meta", (req, res) => {
 // Visitas ligam por telefone (best-effort -- não há client_id na tabela de visitas
 // ainda, então uma visita sem contato_telefone preenchido nunca aparece aqui).
 // Compartilhado entre GET /detalhe e POST /ia (o botão de IA usa os mesmos dados agregados).
+/**
+ * Normaliza a "próxima ação" vigente de um cliente a partir das 2 fontes que
+ * existem hoje (visita com resultado "Retornar depois" e a ação manual
+ * gravada direto no cliente). Antes disso, a visita sempre ganhava da manual
+ * sem olhar a data -- o que escondia uma ação recente atrás de uma visita
+ * antiga nunca resolvida. Regra nova: vence quem tem a data mais próxima/
+ * futura; visitas já marcadas como resolvidas (proximaAcaoResolvida) são
+ * ignoradas, como se não existissem.
+ */
+function montarProximaAcao(c, visitas, vendedores) {
+  const visitaCandidata = visitas.find((v) => v.proximaVisitaData && v.resultado === "Retornar depois" && !v.proximaAcaoResolvida);
+  const daVisita = visitaCandidata ? {
+    texto: visitaCandidata.proximaAcao || "Retornar", data: visitaCandidata.proximaVisitaData, hora: visitaCandidata.proximaVisitaHora || null,
+    responsavelId: visitaCandidata.vendedorId || null, origem: "visita", visitaId: visitaCandidata.id,
+  } : null;
+  const daManual = c.proximaAcaoTexto && c.proximaAcaoData ? {
+    texto: c.proximaAcaoTexto, data: c.proximaAcaoData, hora: c.proximaAcaoHora || null,
+    responsavelId: c.proximaAcaoResponsavelId || c.vendedorResponsavelId || null, origem: "manual", visitaId: null,
+  } : null;
+
+  let vigente = null;
+  if (daVisita && daManual) vigente = daVisita.data >= daManual.data ? daVisita : daManual;
+  else vigente = daVisita || daManual;
+  if (!vigente) return null;
+
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const responsavelNome = vigente.responsavelId ? (vendedores.find((v) => v.id === vigente.responsavelId)?.name || null) : null;
+  return { ...vigente, responsavelNome, atrasado: vigente.data < hojeStr };
+}
+
 async function agregarClienteDetalhe(tenant, c) {
   const key = c.key || phoneKey(c.phone);
 
@@ -1518,11 +1548,9 @@ async function agregarClienteDetalhe(tenant, c) {
   const notas = USE_SUPABASE ? await repo.clienteNotasRepo.listar(tenant.empresa.id, c.id) : [];
   const mudancasEtapa = USE_SUPABASE ? await repo.auditoriaRepo.listarPorCliente(tenant.empresa.id, c.id) : [];
 
-  let vendedorResponsavelNome = null;
-  if (c.vendedorResponsavelId && USE_SUPABASE) {
-    const vendedores = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
-    vendedorResponsavelNome = vendedores.find((v) => v.id === c.vendedorResponsavelId)?.name || null;
-  }
+  const vendedores = USE_SUPABASE ? await repo.usuariosRepo.listVendedores(tenant.empresa.id) : [];
+  const vendedorResponsavelNome = c.vendedorResponsavelId
+    ? (vendedores.find((v) => v.id === c.vendedorResponsavelId)?.name || null) : null;
 
   const timeline = [
     ...mensagens.map((m) => ({ tipo: "conversa", ts: m.ts, texto: m.text, dir: m.dir })),
@@ -1534,8 +1562,6 @@ async function agregarClienteDetalhe(tenant, c) {
 
   const ultimaVisita = visitas[0] || null;
   const oportunidade = visitas.find((v) => v.valorPotencial != null && ["Interessado", "Proposta solicitada", "Em negociação"].includes(v.resultado));
-  const proximaAcaoVisita = visitas.find((v) => v.proximaVisitaData && v.resultado === "Retornar depois");
-  const proximaAcaoManual = c.proximaAcaoTexto && c.proximaAcaoData ? { texto: c.proximaAcaoTexto, data: c.proximaAcaoData } : null;
   const identidade = bestName(tenant, c.phone, c.lastCampaignName || "");
 
   return {
@@ -1546,7 +1572,7 @@ async function agregarClienteDetalhe(tenant, c) {
       ultimaConversaEm: mensagens[0]?.ts || null,
       ultimaVisitaEm: ultimaVisita?.dataHora || null,
       campanhasCount: campanhas.length,
-      proximaAcao: proximaAcaoVisita ? { texto: proximaAcaoVisita.proximaAcao || "Retornar", data: proximaAcaoVisita.proximaVisitaData } : proximaAcaoManual,
+      proximaAcao: montarProximaAcao(c, visitas, vendedores),
     },
     notas,
     timeline: timeline.slice(0, 200),
@@ -1659,15 +1685,76 @@ app.post("/api/clients/:id/proxima-acao", async (req, res) => {
   if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
   const texto = String(req.body?.texto || "").trim().slice(0, 200);
   const data = String(req.body?.data || "").trim();
+  const hora = /^\d{2}:\d{2}$/.test(req.body?.hora) ? req.body.hora : null;
+  const adicionarGoogleAgenda = !!req.body?.adicionarGoogleAgenda;
   if (!texto || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: "Preencha o que fazer e a data." });
   try {
+    // Responsável: se não veio um específico, usa o responsável geral do
+    // cliente como padrão -- em qualquer caso, só aceita vendedor da MESMA
+    // empresa (nunca confia no ID cru vindo do navegador).
+    let responsavelId = req.body?.responsavelId !== undefined ? String(req.body.responsavelId || "") : c.vendedorResponsavelId;
+    if (responsavelId) {
+      const vendedoresDaEmpresa = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
+      if (!vendedoresDaEmpresa.some((v) => v.id === responsavelId)) {
+        return res.status(400).json({ error: "Vendedor não encontrado para esta empresa." });
+      }
+    } else {
+      responsavelId = null;
+    }
+
+    let googleEventoId;
+    if (adicionarGoogleAgenda) {
+      const accessToken = await obterConexaoGoogle(tenant.empresa.id);
+      if (accessToken) {
+        const inicio = new Date(`${data}T${hora || "09:00"}:00`);
+        const fim = new Date(inicio.getTime() + 30 * 60 * 1000);
+        try {
+          const evento = await googleClient.criarEvento(accessToken, {
+            titulo: `${texto} — ${c.name || c.phone}`,
+            descricao: texto, inicio: inicio.toISOString(), fim: fim.toISOString(),
+          });
+          googleEventoId = evento.id;
+        } catch (err) {
+          console.error("[clients] proxima-acao (calendar):", err.response?.data?.error || err.message);
+          // Segue sem o evento -- o ZapFlow não pode depender do Google pra funcionar.
+        }
+      }
+    }
+
     c.proximaAcaoTexto = texto;
     c.proximaAcaoData = data;
-    await repo.clientesRepo.definirProximaAcao(tenant.empresa.id, c.id, { texto, data });
-    res.json({ ok: true });
+    await repo.clientesRepo.definirProximaAcao(tenant.empresa.id, c.id, { texto, data, hora, responsavelId });
+    res.json({ ok: true, calendarioCriado: Boolean(googleEventoId) });
   } catch (err) {
     console.error("[clients] proxima-acao:", err.message);
     res.status(500).json({ error: "Não foi possível salvar o follow-up. Tente novamente." });
+  }
+});
+
+// "Concluir" a próxima ação vigente -- independe de ela ter vindo da visita
+// ou de ter sido criada direto no cliente (a origem é resolvida no backend,
+// o frontend só chama esse endpoint sem precisar saber qual das duas era).
+app.post("/api/clients/:id/proxima-acao/concluir", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  const c = tenant.clients.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Cliente não encontrado." });
+  try {
+    const visitas = await repo.visitasRepo.listForEmpresa(tenant.empresa.id);
+    const visitasDoCliente = visitas.filter((v) => (v.clienteId ? v.clienteId === c.id : v.contatoTelefone && phoneKey(v.contatoTelefone) === phoneKey(c.phone)));
+    const vendedores = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
+    const vigente = montarProximaAcao(c, visitasDoCliente, vendedores);
+    if (!vigente) return res.json({ ok: true }); // nada pra concluir, sem erro
+    if (vigente.origem === "visita") {
+      await repo.visitasRepo.update(tenant.empresa.id, vigente.visitaId, { proximaAcaoResolvida: true });
+    } else {
+      c.proximaAcaoTexto = ""; c.proximaAcaoData = null;
+      await repo.clientesRepo.definirProximaAcao(tenant.empresa.id, c.id, { texto: "", data: null, hora: null, responsavelId: null });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[clients] proxima-acao concluir:", err.message);
+    res.status(500).json({ error: "Não foi possível concluir a próxima ação." });
   }
 });
 
@@ -2173,7 +2260,7 @@ app.post("/api/visitas/:id/agendar-retorno", async (req, res) => {
       }
     }
     const atualizada = await repo.visitasRepo.update(req.tenant.empresa.id, req.params.id, {
-      proximaVisitaData: data, proximaAcao, ...(googleEventoId ? { googleEventoId } : {}),
+      proximaVisitaData: data, proximaVisitaHora: hora, proximaAcao, ...(googleEventoId ? { googleEventoId } : {}),
     });
     res.json({ ok: true, visita: atualizada, calendarioCriado: Boolean(googleEventoId) });
   } catch (err) {

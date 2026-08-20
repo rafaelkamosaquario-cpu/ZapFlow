@@ -288,6 +288,8 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .manual-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
 .manual-row input { flex: 1 1 140px; margin-top: 0; }
 .manual-row #btnAddContact { flex: 0 0 auto; white-space: nowrap; }
+.manual-row label.inline { flex: 0 0 auto; align-items: center; }
+.manual-row label.inline input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; }
 .manual-error { color: var(--error); font-size: 12.5px; display: block; margin-top: 8px; min-height: 14px; }
 .row-remove { background: transparent; border: none; color: var(--error); cursor: pointer; font-size: 14px; font-weight: 700; padding: 2px 6px; border-radius: 6px; }
 .row-remove:hover { background: rgba(229,72,77,.12); }

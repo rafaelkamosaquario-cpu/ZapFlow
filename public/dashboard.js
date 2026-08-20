@@ -733,20 +733,27 @@ async function loadClienteDetalhe(c) {
     $("#c360UltimaVisita").textContent = r.ultimaVisitaEm ? fmtDate(r.ultimaVisitaEm) : "—";
     $("#c360Campanhas").textContent = r.campanhasCount;
     $("#c360ProximaAcao").classList.toggle("hidden", !r.proximaAcao);
-    $("#c360SemProximaAcao").classList.toggle("hidden", !!r.proximaAcao);
+    $("#c360FollowupForm").classList.add("hidden");
+    $("#c360FollowupStatus").textContent = "";
     if (r.proximaAcao) {
+      const horaTxt = r.proximaAcao.hora ? ` às ${r.proximaAcao.hora}` : "";
       $("#c360ProximaAcaoTexto").textContent = r.proximaAcao.texto;
-      $("#c360ProximaAcaoData").textContent = "📅 " + fmtDataCurta(r.proximaAcao.data);
+      $("#c360ProximaAcaoData").textContent = (r.proximaAcao.atrasado ? "⚠️ Atrasada — " : "📅 ") + fmtDataCurta(r.proximaAcao.data) + horaTxt;
+      $("#c360ProximaAcaoResponsavel").textContent = r.proximaAcao.responsavelNome ? `· ${r.proximaAcao.responsavelNome}` : "";
+      $("#c360FollowupTexto").value = r.proximaAcao.texto;
+      $("#c360FollowupData").value = r.proximaAcao.data;
+      $("#c360FollowupHora").value = r.proximaAcao.hora || "";
     } else {
-      $("#c360FollowupForm").classList.add("hidden");
-      $("#c360FollowupTexto").value = ""; $("#c360FollowupData").value = ""; $("#c360FollowupStatus").textContent = "";
+      $("#c360FollowupTexto").value = ""; $("#c360FollowupData").value = ""; $("#c360FollowupHora").value = "";
     }
 
-    // Vendedor responsável
-    const sel = $("#clientVendedorResponsavel");
+    // Vendedor responsável (do cliente) + responsável da próxima ação (mesma lista de vendedores)
     let vendedores = [];
     if (vendedoresRes && vendedoresRes.ok) vendedores = (await vendedoresRes.json()).vendedores || [];
-    sel.innerHTML = `<option value="">Sem responsável</option>` + vendedores.map((v) => `<option value="${v.id}">${escapeHtml(v.name || v.username)}</option>`).join("");
+    const vendedorOptions = vendedores.map((v) => `<option value="${v.id}">${escapeHtml(v.name || v.username)}</option>`).join("");
+
+    const sel = $("#clientVendedorResponsavel");
+    sel.innerHTML = `<option value="">Sem responsável</option>` + vendedorOptions;
     sel.value = c.vendedorResponsavelId || "";
     sel.onchange = async () => {
       await fetch(`/api/clients/${c.id}`, {
@@ -755,6 +762,10 @@ async function loadClienteDetalhe(c) {
       });
       c.vendedorResponsavelId = sel.value || null;
     };
+
+    const selFollowup = $("#c360FollowupResponsavel");
+    selFollowup.innerHTML = `<option value="">Sem responsável</option>` + vendedorOptions;
+    selFollowup.value = (r.proximaAcao ? r.proximaAcao.responsavelId : c.vendedorResponsavelId) || "";
 
     c360Timeline = data.timeline || [];
     renderTimeline();
@@ -824,19 +835,40 @@ $("#btnSalvarFollowupCliente").addEventListener("click", async (e) => {
   const status = $("#c360FollowupStatus");
   const texto = $("#c360FollowupTexto").value.trim();
   const data = $("#c360FollowupData").value;
+  const hora = $("#c360FollowupHora").value;
+  const responsavelId = $("#c360FollowupResponsavel").value;
+  const adicionarGoogleAgenda = $("#c360FollowupGoogle").checked;
   if (!texto || !data) { status.textContent = "Preencha o que fazer e a data."; status.className = "status err"; return; }
   try {
-    await withLoading(e.currentTarget, "Salvando...", async () => {
+    const resultado = await withLoading(e.currentTarget, "Salvando...", async () => {
       const res = await fetch(`/api/clients/${crmCurrent.id}/proxima-acao`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto, data }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto, data, hora: hora || undefined, responsavelId, adicionarGoogleAgenda }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Não foi possível salvar o follow-up. Tente novamente.");
+      return d;
     });
+    status.textContent = adicionarGoogleAgenda
+      ? (resultado.calendarioCriado ? "Salvo e adicionado ao Google Agenda." : "Salvo (conecte o Google pra também criar na Agenda).")
+      : "";
+    status.className = "status ok";
     loadClienteDetalhe(crmCurrent);
   } catch (err) {
     status.textContent = err.message;
     status.className = "status err";
+  }
+});
+$("#btnConcluirProximaAcao").addEventListener("click", async (e) => {
+  if (!crmCurrent) return;
+  try {
+    await withLoading(e.currentTarget, "Concluindo...", async () => {
+      const res = await fetch(`/api/clients/${crmCurrent.id}/proxima-acao/concluir`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Não foi possível concluir.");
+    });
+    loadClienteDetalhe(crmCurrent);
+  } catch (err) {
+    alert(err.message);
   }
 });
 

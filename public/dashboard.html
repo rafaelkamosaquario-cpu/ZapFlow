@@ -705,21 +705,31 @@
         <div class="mini-card"><span class="mini-label">Campanhas</span><span class="mini-value" id="c360Campanhas">—</span></div>
       </div>
 
-      <div class="visita-next hidden" id="c360ProximaAcao">
-        <div><b id="c360ProximaAcaoTexto"></b><br><span id="c360ProximaAcaoData"></span></div>
-      </div>
-      <div class="c360-section hidden" id="c360SemProximaAcao">
-        <button class="btn ghost sm" id="btnCriarFollowupCliente" type="button">+ Criar follow-up</button>
-        <div class="manual-row hidden" id="c360FollowupForm" style="margin-top:8px;">
+      <div class="c360-section">
+        <h4>Próxima ação</h4>
+        <div class="visita-next hidden" id="c360ProximaAcao">
+          <div>
+            <b id="c360ProximaAcaoTexto"></b><br>
+            <span id="c360ProximaAcaoData"></span> <span id="c360ProximaAcaoResponsavel" class="resp-sub"></span>
+          </div>
+          <button class="btn ghost sm" id="btnConcluirProximaAcao" type="button">Concluir</button>
+        </div>
+        <button class="btn ghost sm" id="btnCriarFollowupCliente" type="button">Editar próxima ação</button>
+        <div class="manual-row hidden" id="c360FollowupForm" style="margin-top:8px; flex-wrap:wrap;">
           <input type="text" id="c360FollowupTexto" placeholder="O que fazer? (ex.: Enviar proposta)" />
           <input type="date" id="c360FollowupData" />
+          <input type="time" id="c360FollowupHora" style="width:110px" />
+          <select id="c360FollowupResponsavel"><option value="">Sem responsável</option></select>
+          <label class="inline" style="font-size:13px;">
+            <input type="checkbox" id="c360FollowupGoogle" /> Adicionar ao Google Agenda
+          </label>
           <button class="btn primary sm" id="btnSalvarFollowupCliente" type="button">Salvar</button>
         </div>
         <span class="status" id="c360FollowupStatus"></span>
       </div>
 
       <div class="c360-section">
-        <h4>Responsável</h4>
+        <h4>Responsável pelo cliente</h4>
         <select id="clientVendedorResponsavel"><option value="">Sem responsável</option></select>
       </div>
 
