@@ -533,6 +533,7 @@ async function loadClients(offset = 0) {
     search: $("#crmSearch").value.trim(),
     stage: $("#crmStage").value,
     tag: $("#crmTag").value,
+    vendedorId: $("#crmVendedor").value,
     offset: String(offset),
   });
   try {
@@ -569,6 +570,15 @@ async function loadCrmMeta() {
     $("#crmStageBar").innerHTML = crmMeta.stages
       .map((s) => `<span class="stage-pill ${STAGE_CLS[s] || ""}">${s}: <b>${crmMeta.stageCount[s] || 0}</b></span>`)
       .join("");
+    // Filtro por vendedor responsável -- populado só 1x (lista de vendedores muda pouco).
+    const vendedorSel = $("#crmVendedor");
+    if (vendedorSel.options.length <= 1) {
+      const vres = await fetch("/api/visitas/vendedores").catch(() => null);
+      const vendedores = vres && vres.ok ? (await vres.json()).vendedores || [] : [];
+      vendedorSel.insertAdjacentHTML("beforeend",
+        `<option value="none">Sem responsável</option>` +
+        vendedores.map((v) => `<option value="${v.id}">${escapeHtml(v.name || v.username)}</option>`).join(""));
+    }
   } catch { /* ignore */ }
 }
 
@@ -912,6 +922,7 @@ let crmTimer = null;
 $("#crmSearch").addEventListener("input", () => { clearTimeout(crmTimer); crmTimer = setTimeout(loadClients, 350); });
 $("#crmStage").addEventListener("change", loadClients);
 $("#crmTag").addEventListener("change", loadClients);
+$("#crmVendedor").addEventListener("change", loadClients);
 
 // ---------------------------------------------------------------------------
 // Conversas (caixa de entrada)
@@ -1807,6 +1818,39 @@ $("#visitasFiltroVendedor").addEventListener("change", loadVisitasOwner);
 let visitasSearchTimer = null;
 $("#visitasSearch")?.addEventListener("input", () => { clearTimeout(visitasSearchTimer); visitasSearchTimer = setTimeout(loadVisitasOwner, 300); });
 
+/** Resumo do vendedor -- reaproveita /api/visitas/equipe (mesmo dado da tela Visitas em Campo), sem duplicar cálculo. */
+async function abrirDetalheVendedor(vendedorId, vendedorNome) {
+  $("#vdNome").textContent = vendedorNome;
+  $("#vdClientes").textContent = "…"; $("#vdVisitas").textContent = "…";
+  $("#vdFollowups").textContent = "…"; $("#vdOportunidades").textContent = "…";
+  $("#vdAtencaoWrap").classList.add("hidden");
+  openModal("vendedorDetalheModal");
+  try {
+    const res = await fetch("/api/visitas/equipe?period=30d");
+    const data = await res.json();
+    const v = (data.vendedores || []).find((x) => x.vendedorId === vendedorId);
+    if (!v) { $("#vdClientes").textContent = "0"; $("#vdVisitas").textContent = "0"; $("#vdFollowups").textContent = "0"; $("#vdOportunidades").textContent = "R$ 0"; return; }
+    $("#vdClientes").textContent = v.clientesResponsaveis;
+    $("#vdVisitas").textContent = v.visitas;
+    $("#vdFollowups").textContent = v.followupsAtrasados;
+    $("#vdOportunidades").textContent = fmtMoney(v.potencial);
+    const atencao = v.clientesAtencao || [];
+    if (atencao.length) {
+      $("#vdAtencaoList").innerHTML = atencao.map((c) => `
+        <div class="dash-card" style="cursor:default;">
+          <div class="dash-card-body">
+            <b>${escapeHtml(c.name)}</b>
+            <span class="resp-sub">${escapeHtml(c.proximaAcaoTexto || "Próxima ação")} · atrasada desde ${fmtDataCurta(c.proximaAcaoData)}</span>
+          </div>
+        </div>`).join("");
+      $("#vdAtencaoWrap").classList.remove("hidden");
+    }
+  } catch {
+    $("#vdClientes").textContent = "—"; $("#vdVisitas").textContent = "—";
+    $("#vdFollowups").textContent = "—"; $("#vdOportunidades").textContent = "—";
+  }
+}
+
 async function loadVendedores() {
   const wrap = $("#vendedoresList");
   wrap.innerHTML = skeletonHtml();
@@ -1822,6 +1866,7 @@ async function loadVendedores() {
     vendedores.forEach((v) => {
       const div = document.createElement("div");
       div.className = "dash-card" + (v.active ? "" : " cancel");
+      div.style.cursor = "pointer";
       div.innerHTML = `
         <div class="dash-card-head">
           <b>${escapeHtml(v.name || v.username)}</b>
@@ -1831,6 +1876,10 @@ async function loadVendedores() {
           <div>Usuário: ${escapeHtml(v.username)}</div>
           ${v.phone ? `<div>Telefone: ${escapeHtml(fmtPhone(v.phone))}</div>` : ""}
         </div>`;
+      div.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return; // não abre o detalhe ao clicar em "Desativar"
+        abrirDetalheVendedor(v.id, v.name || v.username);
+      });
       if (v.active) {
         const btnDel = document.createElement("button");
         btnDel.type = "button";

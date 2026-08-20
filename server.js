@@ -1452,11 +1452,15 @@ app.get("/api/clients", (req, res) => {
   const search = String(req.query.search || "").trim().toLowerCase();
   const tag = String(req.query.tag || "");
   const stage = String(req.query.stage || "");
+  // vendedorId: filtra pela carteira daquele vendedor; "none" filtra só quem não tem responsável.
+  const vendedorId = String(req.query.vendedorId || "");
   let list = tenant.clients.filter((c) => {
     const nome = resolveName(tenant, c.phone, c.name);
     if (stage && c.stage !== stage) return false;
     if (tag && !(c.tags || []).includes(tag)) return false;
     if (search && !`${nome} ${c.phone}`.toLowerCase().includes(search)) return false;
+    if (vendedorId === "none" && c.vendedorResponsavelId) return false;
+    if (vendedorId && vendedorId !== "none" && c.vendedorResponsavelId !== vendedorId) return false;
     return true;
   });
   list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -1629,8 +1633,19 @@ app.patch("/api/clients/:id", async (req, res) => {
   await saveClients(tenant, c);
   if (c.stage !== etapaAnterior) dispararAutomacoes(tenant, "mudanca_etapa", c.stage, c).catch(() => {});
   if (vendedorResponsavelId !== undefined && USE_SUPABASE) {
-    c.vendedorResponsavelId = vendedorResponsavelId || null;
-    await repo.clientesRepo.definirResponsavel(tenant.empresa.id, c.id, c.vendedorResponsavelId);
+    // "Sem responsável" (string vazia/null) sempre é permitido. Um ID não-vazio
+    // só é aceito se for de um vendedor ativo desta MESMA empresa -- nunca
+    // confia no ID cru vindo do navegador (evita apontar cliente da empresa A
+    // pra um "vendedor" da empresa B).
+    let novoResponsavel = null;
+    if (vendedorResponsavelId) {
+      const vendedoresDaEmpresa = await repo.usuariosRepo.listVendedores(tenant.empresa.id);
+      const valido = vendedoresDaEmpresa.some((v) => v.id === vendedorResponsavelId);
+      if (!valido) return res.status(400).json({ error: "Vendedor não encontrado para esta empresa." });
+      novoResponsavel = vendedorResponsavelId;
+    }
+    c.vendedorResponsavelId = novoResponsavel;
+    await repo.clientesRepo.definirResponsavel(tenant.empresa.id, c.id, novoResponsavel);
   }
   res.json({ ok: true, client: c });
 });
@@ -2305,18 +2320,44 @@ async function agregarDesempenhoEquipe(tenant, period) {
   ]);
   const porVendedor = new Map();
   for (const v of vendedores) {
-    porVendedor.set(v.id, { vendedorId: v.id, vendedorNome: v.name || v.username, visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 });
+    porVendedor.set(v.id, {
+      vendedorId: v.id, vendedorNome: v.name || v.username, visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0,
+      clientesResponsaveis: 0, followupsAtrasados: 0, clientesAtencao: [],
+    });
   }
   const total = { visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 };
   const abertos = ["Interessado", "Proposta solicitada", "Em negociação"];
   for (const r of rows) {
     let alvo = porVendedor.get(r.vendedor_id);
-    if (!alvo) { alvo = { vendedorId: r.vendedor_id, vendedorNome: "Ex-vendedor", visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0 }; porVendedor.set(r.vendedor_id, alvo); }
+    if (!alvo) {
+      alvo = {
+        vendedorId: r.vendedor_id, vendedorNome: "Ex-vendedor", visitas: 0, concluidas: 0, pendentes: 0, potencial: 0, followups: 0,
+        clientesResponsaveis: 0, followupsAtrasados: 0, clientesAtencao: [],
+      };
+      porVendedor.set(r.vendedor_id, alvo);
+    }
     alvo.visitas++; total.visitas++;
     if (r.finished_at) { alvo.concluidas++; total.concluidas++; } else { alvo.pendentes++; total.pendentes++; }
     if (r.valor_potencial != null && abertos.includes(r.resultado)) { alvo.potencial += Number(r.valor_potencial) || 0; total.potencial += Number(r.valor_potencial) || 0; }
     if (r.resultado === "Retornar depois") { alvo.followups++; total.followups++; }
   }
+
+  // Carteira de clientes (CRM) por vendedor responsável -- independente do
+  // período de visitas acima, é "estado atual", não histórico.
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  for (const c of tenant.clients) {
+    if (!c.vendedorResponsavelId) continue;
+    const alvo = porVendedor.get(c.vendedorResponsavelId);
+    if (!alvo) continue; // vendedor desativado/removido -- não conta na carteira ativa
+    alvo.clientesResponsaveis++;
+    if (c.proximaAcaoData && c.proximaAcaoData < hojeStr) {
+      alvo.followupsAtrasados++;
+      if (alvo.clientesAtencao.length < 5) {
+        alvo.clientesAtencao.push({ id: c.id, name: resolveName(tenant, c.phone, c.name), proximaAcaoTexto: c.proximaAcaoTexto, proximaAcaoData: c.proximaAcaoData });
+      }
+    }
+  }
+
   return { period, total, vendedores: [...porVendedor.values()].sort((a, b) => b.visitas - a.visitas) };
 }
 

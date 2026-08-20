@@ -276,6 +276,7 @@
         <input type="text" id="crmSearch" placeholder="Buscar nome ou telefone" />
         <select id="crmStage"><option value="">Todas as etapas</option></select>
         <select id="crmTag"><option value="">Todas as tags</option></select>
+        <select id="crmVendedor"><option value="">Todos os vendedores</option></select>
       </div>
       <div class="crm-stagebar" id="crmStageBar"></div>
       <div class="row" style="margin:6px 0 0">
@@ -787,6 +788,27 @@
         <button class="btn primary" id="btnSaveAgConfirm" type="button">Salvar</button>
         <button class="btn ghost" data-close="saveAgendaModal" type="button">Cancelar</button>
         <span id="saveAgStatus" class="status"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detalhe do vendedor (resumo da carteira, a partir de dados já existentes) -->
+  <div class="modal hidden" id="vendedorDetalheModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="vdNome">Vendedor</h3>
+        <button class="modal-close" data-close="vendedorDetalheModal" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <p class="hint" style="margin:0 0 10px;">Visitas dos últimos 30 dias · carteira de clientes atual.</p>
+      <div class="crm-stagebar">
+        <span class="stage-pill">Clientes responsáveis: <b id="vdClientes">0</b></span>
+        <span class="stage-pill">Visitas: <b id="vdVisitas">0</b></span>
+        <span class="stage-pill">Follow-ups atrasados: <b id="vdFollowups">0</b></span>
+        <span class="stage-pill">Oportunidades: <b id="vdOportunidades">0</b></span>
+      </div>
+      <div id="vdAtencaoWrap" class="hidden" style="margin-top:14px;">
+        <p class="manual-title">Clientes que precisam de atenção</p>
+        <div id="vdAtencaoList" class="dash-list"></div>
       </div>
     </div>
   </div>
