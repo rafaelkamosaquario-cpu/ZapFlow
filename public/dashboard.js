@@ -333,7 +333,6 @@ async function loadResumoOwner() {
     const res = await fetch("/api/visitas/resumo");
     const r = await res.json();
     if (!res.ok) return;
-    countUp($("#kpiFollowups"), r.retornos || 0);
     countUp($("#kpiVisitasHoje"), r.visitasHoje || 0);
     countUp($("#kpiAgenda"), r.compromissosHoje || 0);
     $("#kpiConversasHoje").textContent = r.conversasAguardando || 0;
@@ -375,6 +374,12 @@ async function loadRadar() {
     if (!res.ok) { listWrap.innerHTML = `<p class="hint">${escapeHtml(data.error || "Não foi possível calcular o Radar agora.")}</p>`; badge.classList.add("hidden"); return; }
 
     radarItensTodos = data.itens || [];
+    // "Ações pendentes" reaproveita o Radar (já buscado nesta mesma carga da
+    // tela) em vez de fazer nova consulta: conta só a Próxima Ação unificada
+    // (atrasada ou de hoje, de qualquer origem), sem misturar com os outros
+    // tipos de alerta do Radar (sem_resposta, negociacao_parada etc.).
+    const acoesPendentes = radarItensTodos.filter((i) => i.tipo === "acao_atrasada" || i.tipo === "acao_hoje").length;
+    countUp($("#kpiFollowups"), acoesPendentes);
     badge.textContent = data.total;
     badge.classList.toggle("hidden", data.total === 0);
     resumoEl.textContent = data.total
@@ -476,6 +481,9 @@ async function loadOverview() {
 
 // Cliques dos indicadores / estado vazio / repetir (uma vez)
 $$("#kpiGrid .kpi").forEach((b) => b.addEventListener("click", () => b.dataset.go && activateView(b.dataset.go)));
+// "Ações pendentes" não tem tela própria -- os itens já aparecem no bloco
+// Radar, na própria Início. Rola até lá em vez de navegar para outra aba.
+$("#kpiFollowupsBtn")?.addEventListener("click", () => $("#radarBlock")?.scrollIntoView({ behavior: "smooth", block: "start" }));
 $$("#ovEmpty [data-go]").forEach((b) => b.addEventListener("click", () => activateView(b.dataset.go)));
 $$("#ovEquipeBlock [data-go]").forEach((b) => b.addEventListener("click", () => activateView(b.dataset.go)));
 $("#ovRetry")?.addEventListener("click", loadOverview);
