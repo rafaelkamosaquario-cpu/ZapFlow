@@ -765,6 +765,9 @@ td.invalid { color: var(--error); background: rgba(229,72,77,.08); }
 .stage-pill.st-negociando { color: var(--warn); border-color: rgba(245,166,35,.5); }
 .stage-pill.st-fechado { color: var(--accent); border-color: rgba(255,140,66,.5); }
 .stage-pill.st-perdido { color: var(--muted); }
+.stage-pill.reativacao-bucket { font: inherit; }
+.stage-pill.reativacao-bucket.active { background: var(--primary-light); border-color: var(--primary-light); color: #fff; }
+.stage-pill.reativacao-bucket.active b { color: #fff; }
 
 /* ---------- Identidade do contato (Conversas / Respostas / Clientes) ---------- */
 .resp-sub { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }

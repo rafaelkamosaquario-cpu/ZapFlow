@@ -1439,11 +1439,12 @@ app.get("/api/dashboard", (req, res) => {
 // ---------------------------------------------------------------------------
 const RADAR_NEGOCIACAO_PARADA_DIAS = 5; // ajustável -- sem uso real ainda pra calibrar um valor melhor
 
-function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
-  const hojeStr = new Date().toISOString().slice(0, 10);
-  const agora = Date.now();
-  const cincoDiasMs = RADAR_NEGOCIACAO_PARADA_DIAS * 86400000;
-
+/**
+ * Monta os mapas clienteId->visitas e telefone->visitas de uma única
+ * passada -- reaproveitado pelo Radar e pela Reativação de Clientes Parados,
+ * pra nunca duplicar a lógica de "que visitas pertencem a este cliente".
+ */
+function montarMapasVisitas(todasVisitas) {
   const visitasPorCliente = new Map();
   const visitasPorTelefone = new Map();
   for (const v of todasVisitas) {
@@ -1456,6 +1457,27 @@ function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
       visitasPorTelefone.get(k).push(v);
     }
   }
+  return { visitasPorCliente, visitasPorTelefone };
+}
+function visitasDoClienteEm(mapas, c, key) {
+  return (mapas.visitasPorCliente.get(c.id) || []).concat(mapas.visitasPorTelefone.get(key) || []);
+}
+/**
+ * Última interação real do cliente -- mesma definição já usada pelo Radar
+ * pra "negociação parada": a mais recente entre última resposta recebida,
+ * último envio e última visita. Nunca usa updated_at (que muda por qualquer
+ * edição, não só por interação comercial real).
+ */
+function ultimaInteracaoDe(c, visitasDoCliente) {
+  const ultimaVisitaTs = visitasDoCliente.reduce((max, v) => Math.max(max, v.dataHora || 0), 0);
+  return Math.max(c.lastReplyAt || 0, c.lastSentAt || 0, ultimaVisitaTs) || null;
+}
+
+function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const agora = Date.now();
+  const cincoDiasMs = RADAR_NEGOCIACAO_PARADA_DIAS * 86400000;
+  const mapasVisitas = montarMapasVisitas(todasVisitas);
   // Última mensagem recebida por contato (mesma lógica do KPI "Conversas" de /api/visitas/resumo)
   const ultimaMsgPorKey = new Map();
   for (const m of tenant.conversas) {
@@ -1472,7 +1494,7 @@ function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
     const key = c.key || phoneKey(c.phone);
     const nome = resolveName(tenant, c.phone, c.name);
     const clientRef = { id: c.id, name: nome, phone: c.phone, stage: c.stage, vendedorResponsavelId: c.vendedorResponsavelId, origem: c.origem, tags: c.tags, inAgenda: inAgenda(tenant, c.phone) };
-    const visitasDoCliente = (visitasPorCliente.get(c.id) || []).concat(visitasPorTelefone.get(key) || []);
+    const visitasDoCliente = visitasDoClienteEm(mapasVisitas, c, key);
 
     // A) respondeu, sem retorno nosso
     const ultimaMsg = ultimaMsgPorKey.get(key);
@@ -1506,8 +1528,7 @@ function montarRadar(tenant, vendedores, todasVisitas, filtroVendedorId) {
 
     // D) negociação sem movimento
     if (c.stage === "Negociando") {
-      const ultimaVisitaTs = visitasDoCliente.reduce((max, v) => Math.max(max, v.dataHora || 0), 0);
-      const ultimaInteracao = Math.max(c.lastReplyAt || 0, c.lastSentAt || 0, ultimaVisitaTs);
+      const ultimaInteracao = ultimaInteracaoDe(c, visitasDoCliente);
       if (ultimaInteracao && agora - ultimaInteracao >= cincoDiasMs) {
         itens.push({
           prioridade: "atencao", tipo: "negociacao_parada", client: clientRef,
@@ -1593,6 +1614,25 @@ app.post("/api/templates", async (req, res) => {
   res.json({ ok: true, template });
 });
 
+// Editar modelo -- faltava no CRUD (só havia criar/listar/excluir). Reaproveita
+// a mesma validação do POST e o mesmo upsert de saveTemplates (já suportava
+// atualização, só não existia rota HTTP que chamasse com um id existente).
+app.put("/api/templates/:id", async (req, res) => {
+  const tenant = req.tenant;
+  const existente = tenant.templates.find((t) => t.id === req.params.id);
+  if (!existente) return res.status(404).json({ error: "Modelo não encontrado." });
+  const { name, message, imageUrl } = req.body || {};
+  let imageUrls = Array.isArray(req.body?.imageUrls) ? req.body.imageUrls : (imageUrl ? [imageUrl] : []);
+  imageUrls = imageUrls.filter((u) => typeof u === "string" && u.trim()).slice(0, 3).map((u) => u.slice(0, 1000));
+  if (!name || !name.trim()) return res.status(400).json({ error: "Dê um nome ao modelo." });
+  if (!message && imageUrls.length === 0) return res.status(400).json({ error: "O modelo precisa de texto ou imagem." });
+  existente.name = name.trim().slice(0, 40);
+  existente.message = (message || "").slice(0, 5000);
+  existente.imageUrls = imageUrls;
+  await saveTemplates(tenant, existente);
+  res.json({ ok: true, template: existente });
+});
+
 app.delete("/api/templates/:id", async (req, res) => {
   const tenant = req.tenant;
   const before = tenant.templates.length;
@@ -1601,14 +1641,42 @@ app.delete("/api/templates/:id", async (req, res) => {
   res.json({ ok: before !== tenant.templates.length });
 });
 
+// Buckets de "sem interação" oferecidos na Reativação de Clientes Parados.
+const REATIVACAO_BUCKETS_DIAS = [7, 15, 30, 60, 90];
+const FULL_LIST_TETO = 3000; // teto de segurança pra ?full=1 (usado ao "criar campanha para estes clientes")
+
+/**
+ * Cliente com próxima ação já agendada pra hoje/futuro não deve ser tratado
+ * como "parado" mesmo com muitos dias sem interação -- já está sendo
+ * acompanhado ativamente. Ação atrasada NÃO conta como agendamento válido
+ * (nesse caso o cliente pode aparecer tanto aqui quanto no Radar).
+ */
+function temProximaAcaoFutura(c, visitasDoCliente, vendedores, hojeStr) {
+  const pa = montarProximaAcao(c, visitasDoCliente, vendedores);
+  return !!(pa && pa.data >= hojeStr);
+}
+
 // --- CRM-lite: clientes ---
-app.get("/api/clients", (req, res) => {
+app.get("/api/clients", async (req, res) => {
   const tenant = req.tenant;
   const search = String(req.query.search || "").trim().toLowerCase();
   const tag = String(req.query.tag || "");
   const stage = String(req.query.stage || "");
   // vendedorId: filtra pela carteira daquele vendedor; "none" filtra só quem não tem responsável.
   const vendedorId = String(req.query.vendedorId || "");
+  const semInteracaoDias = Number(req.query.semInteracaoDias) || 0;
+  const full = req.query.full === "1";
+
+  // Só monta mapas de visita/vendedores (custo extra) quando o filtro de
+  // inatividade é realmente usado -- não pesa a listagem normal do CRM.
+  let mapasVisitas = null, vendedoresCache = null, hojeStr = null;
+  if (semInteracaoDias > 0) {
+    hojeStr = new Date().toISOString().slice(0, 10);
+    const todasVisitas = USE_SUPABASE ? await repo.visitasRepo.listForEmpresa(tenant.empresa.id) : [];
+    mapasVisitas = montarMapasVisitas(todasVisitas);
+    vendedoresCache = USE_SUPABASE ? await repo.usuariosRepo.listVendedores(tenant.empresa.id) : [];
+  }
+
   let list = tenant.clients.filter((c) => {
     const nome = resolveName(tenant, c.phone, c.name);
     if (stage && c.stage !== stage) return false;
@@ -1616,21 +1684,38 @@ app.get("/api/clients", (req, res) => {
     if (search && !`${nome} ${c.phone}`.toLowerCase().includes(search)) return false;
     if (vendedorId === "none" && c.vendedorResponsavelId) return false;
     if (vendedorId && vendedorId !== "none" && c.vendedorResponsavelId !== vendedorId) return false;
+    if (semInteracaoDias > 0) {
+      const key = c.key || phoneKey(c.phone);
+      const visitasDoCliente = visitasDoClienteEm(mapasVisitas, c, key);
+      const ultimaInteracao = ultimaInteracaoDe(c, visitasDoCliente);
+      const diasParado = ultimaInteracao ? Math.floor((Date.now() - ultimaInteracao) / 86400000) : Infinity;
+      if (diasParado < semInteracaoDias) return false;
+      if (temProximaAcaoFutura(c, visitasDoCliente, vendedoresCache, hojeStr)) return false;
+    }
     return true;
   });
   list = list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   const totalFiltrado = list.length;
-  const offset = Math.max(0, Number(req.query.offset) || 0);
-  list = list.slice(offset, offset + PAGE_SIZE);
-  // Enriquece com nome resolvido (agenda → WhatsApp → campanha), origem e flag de agenda
+  const offset = full ? 0 : Math.max(0, Number(req.query.offset) || 0);
+  const limite = full ? FULL_LIST_TETO : PAGE_SIZE;
+  list = list.slice(offset, offset + limite);
+  // Enriquece com nome resolvido (agenda → WhatsApp → campanha), origem, flag de agenda
+  // e (só quando o filtro de inatividade está ativo) dias sem interação real.
   const enriched = list.map((c) => {
     const id = bestName(tenant, c.phone, c.name);
-    return { ...c, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(tenant, c.phone) };
+    const extra = {};
+    if (semInteracaoDias > 0) {
+      const key = c.key || phoneKey(c.phone);
+      const ultimaInteracao = ultimaInteracaoDe(c, visitasDoClienteEm(mapasVisitas, c, key));
+      extra.ultimaInteracaoEm = ultimaInteracao;
+      extra.diasSemInteracao = ultimaInteracao ? Math.floor((Date.now() - ultimaInteracao) / 86400000) : null;
+    }
+    return { ...c, ...extra, displayName: id.name, nameSource: id.source, inAgenda: inAgenda(tenant, c.phone) };
   });
   res.json({ clients: enriched, total: tenant.clients.length, shown: offset + enriched.length, hasMore: offset + enriched.length < totalFiltrado });
 });
 
-app.get("/api/clients/meta", (req, res) => {
+app.get("/api/clients/meta", async (req, res) => {
   const tenant = req.tenant;
   const tagSet = new Set();
   const stageCount = {};
@@ -1638,7 +1723,32 @@ app.get("/api/clients/meta", (req, res) => {
     (c.tags || []).forEach((t) => tagSet.add(t));
     stageCount[c.stage] = (stageCount[c.stage] || 0) + 1;
   });
-  res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: tenant.clients.length });
+
+  // Contagem por bucket de "sem interação" pros botões da Reativação de
+  // Clientes Parados -- mesma regra de exclusão por próxima ação futura.
+  const semInteracaoBuckets = {};
+  if (USE_SUPABASE) {
+    const hojeStr = new Date().toISOString().slice(0, 10);
+    const [todasVisitas, vendedores] = await Promise.all([
+      repo.visitasRepo.listForEmpresa(tenant.empresa.id),
+      repo.usuariosRepo.listVendedores(tenant.empresa.id),
+    ]);
+    const mapasVisitas = montarMapasVisitas(todasVisitas);
+    const diasPorCliente = tenant.clients.map((c) => {
+      const key = c.key || phoneKey(c.phone);
+      const visitasDoCliente = visitasDoClienteEm(mapasVisitas, c, key);
+      const ultimaInteracao = ultimaInteracaoDe(c, visitasDoCliente);
+      if (temProximaAcaoFutura(c, visitasDoCliente, vendedores, hojeStr)) return null;
+      return ultimaInteracao ? Math.floor((Date.now() - ultimaInteracao) / 86400000) : Infinity;
+    });
+    for (const dias of REATIVACAO_BUCKETS_DIAS) {
+      semInteracaoBuckets[dias] = diasPorCliente.filter((d) => d !== null && d >= dias).length;
+    }
+  } else {
+    for (const dias of REATIVACAO_BUCKETS_DIAS) semInteracaoBuckets[dias] = 0;
+  }
+
+  res.json({ stages: CRM_STAGES, tags: [...tagSet].sort(), stageCount, total: tenant.clients.length, semInteracaoBuckets });
 });
 
 // Cliente 360° (Item 6): agrega conversas, campanhas, visitas e notas num só lugar.

@@ -290,7 +290,13 @@
         <select id="crmVendedor"><option value="">Todos os vendedores</option></select>
       </div>
       <div class="crm-stagebar" id="crmStageBar"></div>
-      <div class="row" style="margin:6px 0 0">
+
+      <div class="ov-block" style="margin-top:10px;">
+        <div class="ov-block-head"><h3>Clientes parados</h3><span>Sem interação real há pelo menos:</span></div>
+        <div class="crm-stagebar" id="reativacaoBuckets"></div>
+      </div>
+
+      <div class="row" style="margin:10px 0 0">
         <button class="btn primary" id="btnCrmDispatch" type="button">Criar campanha para este grupo</button>
         <button class="btn secondary" id="btnExportClients" type="button">Exportar para planilha</button>
         <span class="hint" id="crmShown" style="margin:0"></span>
@@ -412,6 +418,11 @@
       <h2 class="dash-title">Automações</h2>
       <p class="hint">Quando algo acontece no CRM ou nas Visitas, o ZapFlow age sozinho — sem depender de mensagem recebida (isso já é coberto por Respostas automáticas).</p>
 
+      <div class="ov-block">
+        <div class="ov-block-head"><h3>Automações prontas</h3><span>Configuram o motor acima, sem precisar entender os termos técnicos.</span></div>
+        <div id="automacoesProntasList" class="dash-list"></div>
+      </div>
+
       <div id="automacoesList" class="dash-list"></div>
       <button class="btn secondary" id="btnNovaAutomacao" type="button">+ Nova automação</button>
 
@@ -441,6 +452,7 @@
         <label id="autoTextoLabel">Mensagem (use {{nome}})
           <textarea id="autoTexto" rows="3"></textarea>
         </label>
+        <p class="hint delay-warning hidden" id="autoAvisoEnvio">⚠ Esta automação enviará uma mensagem automaticamente pelo WhatsApp quando a condição acontecer, sem confirmação manual.</p>
         <label class="switch-row"><input type="checkbox" id="autoAtiva" checked /> Ativa</label>
         <div class="row">
           <button class="btn primary sm" id="btnSalvarAutomacao" type="button">Salvar</button>
@@ -682,12 +694,41 @@
       <div id="chatMessages" class="chat-messages"></div>
       <div class="row" style="gap:8px;margin:8px 0 0">
         <button class="btn ghost sm" id="btnSugerirResposta" type="button">✨ Sugerir resposta</button>
+        <button class="btn ghost sm" id="btnRespostasRapidas" type="button">💬 Respostas rápidas</button>
       </div>
+      <div id="respostasRapidasList" class="dash-list hidden" style="margin-top:6px;"></div>
       <div class="chat-reply">
-        <input type="text" id="chatInput" placeholder="Digite uma resposta rápida..." />
+        <input type="text" id="chatInput" placeholder="Digite uma resposta rápida... (dica: // mostra seus modelos)" />
         <button class="btn primary" id="chatSend" type="button">Enviar</button>
       </div>
+      <div id="chatAtalhoSugestoes" class="dash-list hidden" style="margin-top:4px;"></div>
       <span id="chatStatus" class="status"></span>
+    </div>
+  </div>
+
+  <!-- Gerenciar Respostas Rápidas (reaproveita modelos_mensagem, mesma tabela do composer) -->
+  <div class="modal hidden" id="templatesModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Respostas rápidas</h3>
+        <button class="modal-close" data-close="templatesModal" type="button">✕</button>
+      </div>
+      <p class="hint">Crie textos prontos pra usar nas conversas sem digitar tudo de novo. Os mesmos modelos também aparecem no composer de campanha.</p>
+      <div id="templatesManageList" class="dash-list"></div>
+      <div class="manual-add">
+        <p class="manual-title" id="templateFormTitle">Novo modelo</p>
+        <label>Nome
+          <input type="text" id="templateName" placeholder="Ex.: Formas de pagamento" maxlength="40" />
+        </label>
+        <label>Mensagem
+          <textarea id="templateMessage" rows="4" placeholder="Texto que vai entrar no campo de resposta"></textarea>
+        </label>
+        <div class="row">
+          <button class="btn primary sm" id="btnSalvarTemplate" type="button">Salvar</button>
+          <button class="btn ghost sm hidden" id="btnCancelarEdicaoTemplate" type="button">Cancelar edição</button>
+          <span class="status" id="templateFormStatus"></span>
+        </div>
+      </div>
     </div>
   </div>
 

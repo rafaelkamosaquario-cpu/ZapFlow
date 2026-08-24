@@ -594,6 +594,7 @@ function renderCarregarMais(wrap, onClick) {
   wrap.appendChild(btn);
 }
 
+let crmSemInteracaoDias = 0; // 0 = filtro de "clientes parados" desativado
 async function loadClients(offset = 0) {
   await loadCrmMeta();
   const wrap = $("#clientsList");
@@ -603,6 +604,7 @@ async function loadClients(offset = 0) {
     stage: $("#crmStage").value,
     tag: $("#crmTag").value,
     vendedorId: $("#crmVendedor").value,
+    semInteracaoDias: String(crmSemInteracaoDias || 0),
     offset: String(offset),
   });
   try {
@@ -639,6 +641,17 @@ async function loadCrmMeta() {
     $("#crmStageBar").innerHTML = crmMeta.stages
       .map((s) => `<span class="stage-pill ${STAGE_CLS[s] || ""}">${s}: <b>${crmMeta.stageCount[s] || 0}</b></span>`)
       .join("");
+    // Clientes parados -- botões clicáveis (toggle), reaproveita o mesmo filtro do CRM.
+    const buckets = crmMeta.semInteracaoBuckets || {};
+    $("#reativacaoBuckets").innerHTML = Object.keys(buckets).map((dias) => `
+      <button type="button" class="stage-pill reativacao-bucket ${Number(dias) === crmSemInteracaoDias ? "active" : ""}" data-dias="${dias}" style="cursor:pointer;">
+        ${dias} dias: <b>${buckets[dias]}</b>
+      </button>`).join("");
+    $$("#reativacaoBuckets .reativacao-bucket").forEach((btn) => btn.addEventListener("click", () => {
+      const dias = Number(btn.dataset.dias);
+      crmSemInteracaoDias = crmSemInteracaoDias === dias ? 0 : dias; // clicar de novo desativa
+      loadClients();
+    }));
     // Filtro por vendedor responsável -- populado só 1x (lista de vendedores muda pouco).
     const vendedorSel = $("#crmVendedor");
     if (vendedorSel.options.length <= 1) {
@@ -734,6 +747,14 @@ function clientCard(c) {
     : c.lastSentAt ? `enviado ${fmtDate(c.lastSentAt)}` : "novo";
   const nome = displayNameOf(c);
   const agenda = c.inAgenda ? ' <span class="badge" title="Na sua agenda">agenda</span>' : "";
+  // "há X dias sem interação" + responsável só aparecem quando o filtro de
+  // Clientes Parados está ativo -- no resto do tempo o card fica enxuto.
+  let paradoInfo = "";
+  if (c.diasSemInteracao != null) {
+    const respOpt = c.vendedorResponsavelId ? $(`#crmVendedor option[value="${c.vendedorResponsavelId}"]`) : null;
+    const respTxt = respOpt ? ` · Responsável: ${escapeHtml(respOpt.textContent)}` : "";
+    paradoInfo = `<span class="resp-sub">⏸ sem interação há ${c.diasSemInteracao} dia(s)${respTxt}</span>`;
+  }
   div.innerHTML = `
     <div class="dash-card-head">
       <span class="resp-phone">${escapeHtml(nome)}${agenda}</span>
@@ -741,6 +762,7 @@ function clientCard(c) {
     </div>
     <div class="dash-card-body">
       <span class="resp-sub">${escapeHtml(fmtPhone(c.phone))} · ${last}</span>
+      ${paradoInfo}
       <span>${sourceBadge(c.nameSource)}${tags}</span>
     </div>`;
   div.addEventListener("click", () => openClient(c));
@@ -992,13 +1014,33 @@ $("#btnDeleteClient").addEventListener("click", async (e) => {
   loadClients();
 });
 
-// Disparar para a lista filtrada
-$("#btnCrmDispatch").addEventListener("click", () => {
+// Criar campanha para o segmento inteiro (não só a página já carregada na tela) --
+// busca de novo com os mesmos filtros e full=1, que ignora a paginação de 100.
+// A lista sempre vem de GET /api/clients, que já filtra por empresa_id no backend --
+// o navegador nunca decide sozinho quais clientes entram, só repassa o que o
+// servidor já validou (mesmo princípio do resto do produto).
+$("#btnCrmDispatch").addEventListener("click", async (e) => {
   if (!crmList.length) { alert("Não há clientes nesse filtro."); return; }
-  const contacts = crmList.map((c) => ({ phone: c.phone, name: c.name || "" }));
-  sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label: "lista do CRM", contacts }));
-  alert(`${contacts.length} cliente(s) preparados.\nVocê será levado à Nova campanha para montar a mensagem.`);
-  window.location.href = "/";
+  try {
+    const contacts = await withLoading(e.currentTarget, "Preparando...", async () => {
+      const params = new URLSearchParams({
+        search: $("#crmSearch").value.trim(), stage: $("#crmStage").value,
+        tag: $("#crmTag").value, vendedorId: $("#crmVendedor").value,
+        semInteracaoDias: String(crmSemInteracaoDias || 0), full: "1",
+      });
+      const res = await fetch("/api/clients?" + params);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível buscar os clientes desse filtro.");
+      return (data.clients || []).map((c) => ({ phone: c.phone, name: c.name || "" }));
+    });
+    if (!contacts.length) { alert("Não há clientes nesse filtro."); return; }
+    const label = crmSemInteracaoDias ? `clientes parados há ${crmSemInteracaoDias}+ dias` : "lista do CRM";
+    sessionStorage.setItem("zapflow_loadlist", JSON.stringify({ label, contacts }));
+    alert(`${contacts.length} cliente(s) preparados.\nVocê será levado à Nova campanha para montar a mensagem.`);
+    window.location.href = "/";
+  } catch (err) {
+    alert(err.message || "Não foi possível preparar a campanha agora.");
+  }
 });
 
 $("#btnExportClients").addEventListener("click", async (e) => {
@@ -1204,6 +1246,128 @@ $("#btnSugerirResposta").addEventListener("click", async (e) => {
   } catch (err) {
     status.textContent = err.message || "Não foi possível gerar uma sugestão agora.";
     status.className = "status err";
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Central de Respostas Rápidas -- reaproveita 100% a tabela modelos_mensagem
+// (mesma usada pelo composer de campanha em "Salvar como modelo"). Só sugere
+// texto pro campo de resposta, nunca envia sozinho -- distinto do botão
+// "Sugerir resposta" (IA), as duas opções convivem sem se misturar.
+// ---------------------------------------------------------------------------
+let templatesCache = null;
+async function carregarTemplatesCache(forcar) {
+  if (templatesCache && !forcar) return templatesCache;
+  try {
+    const res = await fetch("/api/templates");
+    templatesCache = (await res.json()).templates || [];
+  } catch { templatesCache = []; }
+  return templatesCache;
+}
+
+$("#btnRespostasRapidas").addEventListener("click", async () => {
+  const wrap = $("#respostasRapidasList");
+  if (!wrap.classList.contains("hidden")) { wrap.classList.add("hidden"); return; }
+  $("#chatAtalhoSugestoes").classList.add("hidden");
+  const templates = await carregarTemplatesCache();
+  wrap.innerHTML = !templates.length
+    ? `<p class="hint">Nenhuma resposta rápida criada ainda. <a href="#" id="linkCriarTemplate">Criar a primeira</a>.</p>`
+    : templates.map((t) => `
+        <div class="dash-card" style="cursor:pointer;" data-id="${t.id}">
+          <div class="dash-card-body"><b>${escapeHtml(t.name)}</b><span class="resp-sub">${escapeHtml((t.message || "").slice(0, 80))}</span></div>
+        </div>`).join("") + `<button class="btn ghost sm" id="linkGerenciarTemplates" type="button" style="margin-top:6px;">Gerenciar respostas rápidas</button>`;
+  wrap.classList.remove("hidden");
+  $$(".dash-card", wrap).forEach((card) => card.addEventListener("click", () => {
+    const t = templates.find((x) => x.id === card.dataset.id);
+    if (t) { $("#chatInput").value = t.message || ""; $("#chatInput").focus(); }
+    wrap.classList.add("hidden");
+  }));
+  $("#linkGerenciarTemplates")?.addEventListener("click", abrirGerenciarTemplates);
+  $("#linkCriarTemplate")?.addEventListener("click", (e) => { e.preventDefault(); abrirGerenciarTemplates(); });
+});
+
+// Atalho "//": digitar // no campo de resposta sugere os modelos pelo nome.
+// Puramente opcional -- quem não usa nunca vê nada diferente.
+$("#chatInput").addEventListener("input", async () => {
+  const val = $("#chatInput").value;
+  const sug = $("#chatAtalhoSugestoes");
+  if (!val.startsWith("//")) { sug.classList.add("hidden"); return; }
+  const termo = val.slice(2).toLowerCase();
+  const templates = await carregarTemplatesCache();
+  const filtrados = templates.filter((t) => t.name.toLowerCase().includes(termo));
+  if (!filtrados.length) { sug.innerHTML = "<p class='hint'>Nenhum modelo encontrado.</p>"; sug.classList.remove("hidden"); return; }
+  sug.innerHTML = filtrados.map((t) => `<div class="dash-card" style="cursor:pointer;padding:6px 10px;" data-id="${t.id}"><b>//${escapeHtml(t.name)}</b></div>`).join("");
+  $$(".dash-card", sug).forEach((card) => card.addEventListener("click", () => {
+    const t = templates.find((x) => x.id === card.dataset.id);
+    if (t) { $("#chatInput").value = t.message || ""; $("#chatInput").focus(); }
+    sug.classList.add("hidden");
+  }));
+  sug.classList.remove("hidden");
+});
+
+// --- Modal de gestão: criar / editar / excluir ---
+let templateEditandoId = null;
+async function abrirGerenciarTemplates() {
+  $("#respostasRapidasList").classList.add("hidden");
+  templateEditandoId = null;
+  $("#templateFormTitle").textContent = "Novo modelo";
+  $("#templateName").value = ""; $("#templateMessage").value = "";
+  $("#btnCancelarEdicaoTemplate").classList.add("hidden");
+  $("#templateFormStatus").textContent = "";
+  openModal("templatesModal");
+  await renderTemplatesManageList();
+}
+async function renderTemplatesManageList() {
+  const templates = await carregarTemplatesCache(true);
+  const wrap = $("#templatesManageList");
+  wrap.innerHTML = !templates.length ? "<p class='hint'>Nenhum modelo criado ainda.</p>" : templates.map((t) => `
+    <div class="dash-card" style="cursor:default;">
+      <div class="dash-card-body"><b>${escapeHtml(t.name)}</b><span class="resp-sub">${escapeHtml((t.message || "").slice(0, 80))}</span></div>
+      <div class="row" style="gap:6px;margin-top:6px;">
+        <button class="btn ghost sm tpl-editar" data-id="${t.id}" type="button">Editar</button>
+        <button class="btn danger sm tpl-excluir" data-id="${t.id}" type="button">Excluir</button>
+      </div>
+    </div>`).join("");
+  $$(".tpl-editar", wrap).forEach((btn) => btn.addEventListener("click", () => {
+    const t = templates.find((x) => x.id === btn.dataset.id);
+    if (!t) return;
+    templateEditandoId = t.id;
+    $("#templateFormTitle").textContent = "Editar modelo";
+    $("#templateName").value = t.name; $("#templateMessage").value = t.message || "";
+    $("#btnCancelarEdicaoTemplate").classList.remove("hidden");
+  }));
+  $$(".tpl-excluir", wrap).forEach((btn) => btn.addEventListener("click", async () => {
+    if (!(await confirmModal("Excluir modelo?", "Essa resposta rápida deixará de existir."))) return;
+    await fetch("/api/templates/" + btn.dataset.id, { method: "DELETE" });
+    await renderTemplatesManageList();
+  }));
+}
+$("#btnCancelarEdicaoTemplate").addEventListener("click", () => {
+  templateEditandoId = null;
+  $("#templateFormTitle").textContent = "Novo modelo";
+  $("#templateName").value = ""; $("#templateMessage").value = "";
+  $("#btnCancelarEdicaoTemplate").classList.add("hidden");
+});
+$("#btnSalvarTemplate").addEventListener("click", async (e) => {
+  const status = $("#templateFormStatus");
+  const name = $("#templateName").value.trim();
+  const message = $("#templateMessage").value.trim();
+  if (!name || !message) { status.textContent = "Preencha nome e mensagem."; status.className = "status err"; return; }
+  try {
+    await withLoading(e.currentTarget, "Salvando...", async () => {
+      const url = templateEditandoId ? "/api/templates/" + templateEditandoId : "/api/templates";
+      const res = await fetch(url, {
+        method: templateEditandoId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, message }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Não foi possível salvar o modelo.");
+    });
+    $("#btnCancelarEdicaoTemplate").click();
+    status.textContent = "Salvo!"; status.className = "status ok";
+    await renderTemplatesManageList();
+  } catch (err) {
+    status.textContent = err.message; status.className = "status err";
   }
 });
 
@@ -1664,6 +1828,54 @@ async function loadFollowup() {
 let automacaoGatilhos = {};
 let automacaoEditando = null;
 
+// Automações prontas: só configuram o motor automacao_regras já existente
+// (mesmos gatilhos/ações validados pelo backend) -- nenhum conceito técnico
+// novo, nenhum gatilho/ação que o motor não suporte hoje.
+const AUTOMACOES_PRONTAS = [
+  {
+    id: "cliente-respondeu", titulo: "Cliente respondeu",
+    descricao: "Quando um cliente entrar em \"Respondeu\", cria um follow-up pra não deixar esfriar.",
+    modelo: { nome: "Cliente respondeu", gatilhoTipo: "mudanca_etapa", gatilhoValor: "Respondeu", acaoTipo: "criar_followup", acaoTexto: "Dar retorno pro cliente que respondeu", acaoDias: 1 },
+  },
+  {
+    id: "proposta-solicitada", titulo: "Proposta solicitada",
+    descricao: "Quando uma visita terminar com \"Proposta solicitada\", cria um follow-up de acompanhamento.",
+    modelo: { nome: "Proposta solicitada", gatilhoTipo: "resultado_visita", gatilhoValor: "Proposta solicitada", acaoTipo: "criar_followup", acaoTexto: "Acompanhar a proposta enviada", acaoDias: 2 },
+  },
+  {
+    id: "retornar-depois", titulo: "Retornar depois",
+    descricao: "Quando uma visita terminar com \"Retornar depois\", garante um follow-up mesmo se o vendedor esquecer de agendar o retorno manualmente.",
+    modelo: { nome: "Retornar depois (rede de segurança)", gatilhoTipo: "resultado_visita", gatilhoValor: "Retornar depois", acaoTipo: "criar_followup", acaoTexto: "Retornar contato com o cliente", acaoDias: 3 },
+  },
+  {
+    id: "venda-fechada", titulo: "Venda fechada",
+    descricao: "Quando um cliente entrar em \"Fechado\", envia uma mensagem de agradecimento automaticamente.",
+    modelo: { nome: "Agradecimento pós-venda", gatilhoTipo: "mudanca_etapa", gatilhoValor: "Fechado", acaoTipo: "enviar_mensagem", acaoTexto: "Olá {{nome}}! Muito obrigado pela confiança 🙏 Qualquer coisa que precisar, é só chamar.", acaoDias: null },
+  },
+];
+
+function renderAutomacoesProntas() {
+  const wrap = $("#automacoesProntasList");
+  if (!wrap) return;
+  wrap.innerHTML = AUTOMACOES_PRONTAS.map((p) => `
+    <div class="dash-card" style="cursor:default;">
+      <div class="dash-card-head"><b>${escapeHtml(p.titulo)}</b></div>
+      <div class="dash-card-body">
+        <span class="resp-sub">${escapeHtml(p.descricao)}</span>
+        <button class="btn ghost sm" data-id="${p.id}" type="button" style="margin-top:6px;">Usar modelo</button>
+      </div>
+    </div>`).join("");
+  $$("button[data-id]", wrap).forEach((btn) => btn.addEventListener("click", () => {
+    const pronto = AUTOMACOES_PRONTAS.find((p) => p.id === btn.dataset.id);
+    if (!pronto) return;
+    // ativa:false de propósito -- o dono precisa marcar "Ativa" conscientemente
+    // e clicar Salvar, nunca liga a automação sozinho (mesmo padrão de
+    // confirmação humana usado em toda ação automática do produto).
+    abrirFormAutomacao({ ...pronto.modelo, ativa: false });
+    $("#automacaoForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
 async function loadAutomacoes() {
   const wrap = $("#automacoesList");
   wrap.innerHTML = skeletonHtml(2);
@@ -1673,6 +1885,7 @@ async function loadAutomacoes() {
     const sel = $("#autoGatilhoTipo");
     sel.innerHTML = Object.entries(automacaoGatilhos).map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join("");
     atualizarValoresGatilho();
+    renderAutomacoesProntas();
     const regras = data.regras || [];
     if (!regras.length) { wrap.innerHTML = "<p class='hint'>Nenhuma automação criada ainda.</p>"; return; }
     wrap.innerHTML = "";
@@ -1717,6 +1930,7 @@ function atualizarCamposAcao() {
   const criarFollowup = $("#autoAcaoTipo").value === "criar_followup";
   $("#autoDiasWrap").classList.toggle("hidden", !criarFollowup);
   $("#autoTextoLabel").firstChild.textContent = criarFollowup ? "O que fazer no follow-up" : "Mensagem (use {{nome}})";
+  $("#autoAvisoEnvio").classList.toggle("hidden", criarFollowup);
 }
 $("#autoAcaoTipo").addEventListener("change", atualizarCamposAcao);
 
