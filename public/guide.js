@@ -111,19 +111,32 @@
   async function apiGet(url) {
     try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch { return null; }
   }
-  function apiPost(url, body) {
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+  /**
+   * O backend faz leitura-modificação-escrita de guide_state (não é um merge
+   * atômico no banco). Se 2 chamadas partirem quase juntas do mesmo navegador
+   * (ex.: "iniciar" seguido de "ver_etapa" ao abrir o primeiro passo), a
+   * segunda pode ler o estado ANTES da primeira terminar de gravar e
+   * sobrescrever o campo dela -- confirmado ao vivo (startedAt sumia mesmo
+   * com completedSteps populado). Fila garante que cada POST só parte depois
+   * do anterior já ter sido gravado no banco, fechando a corrida.
+   */
+  let filaEstado = Promise.resolve();
+  function apiPostEstado(body) {
+    filaEstado = filaEstado.then(() =>
+      fetch("/api/guide/estado", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {})
+    );
+    return filaEstado;
   }
 
   function marcarEtapa(id) {
-    apiPost("/api/guide/estado", { acao: "ver_etapa", stepId: id });
+    apiPostEstado({ acao: "ver_etapa", stepId: id });
     if (!STATE.completedSteps.includes(id)) STATE.completedSteps.push(id);
   }
-  function marcarIniciado() { apiPost("/api/guide/estado", { acao: "iniciar" }); STATE.startedAt = STATE.startedAt || new Date().toISOString(); }
-  function marcarDispensado() { apiPost("/api/guide/estado", { acao: "dispensar" }); STATE.dismissedAt = new Date().toISOString(); }
-  function marcarConcluido() { apiPost("/api/guide/estado", { acao: "concluir" }); STATE.completedAt = new Date().toISOString(); }
+  function marcarIniciado() { apiPostEstado({ acao: "iniciar" }); STATE.startedAt = STATE.startedAt || new Date().toISOString(); }
+  function marcarDispensado() { apiPostEstado({ acao: "dispensar" }); STATE.dismissedAt = new Date().toISOString(); }
+  function marcarConcluido() { apiPostEstado({ acao: "concluir" }); STATE.completedAt = new Date().toISOString(); }
   function marcarReiniciado() {
-    apiPost("/api/guide/estado", { acao: "reiniciar" });
+    apiPostEstado({ acao: "reiniciar" });
     STATE.completedSteps = []; STATE.completedAt = null; STATE.dismissedAt = null;
   }
 
@@ -160,6 +173,7 @@
   }
 
   function fecharTour() {
+    renderGen++; // invalida qualquer mostrarPasso() ainda em andamento
     if (overlayEl) overlayEl.classList.add("hidden");
     if (tooltipEl) tooltipEl.classList.add("hidden");
     document.removeEventListener("keydown", onKeydownTour);
@@ -171,7 +185,16 @@
     if (resizeTargetSelector) posicionar(primeiroVisivel(resizeTargetSelector));
   }
 
+  // Cada chamada a mostrarPasso() tem várias pausas assíncronas no meio (pra
+  // dar tempo da view trocar / do scroll terminar). Se o usuário clicar
+  // Próximo/Anterior rápido o bastante, uma chamada mais antiga pode
+  // terminar DEPOIS de uma mais nova e sobrescrever o tooltip com o passo
+  // errado -- confirmado ao vivo. Esta "geração" garante que só a chamada
+  // mais recente tem permissão de escrever no DOM no final.
+  let renderGen = 0;
+
   async function mostrarPasso(idx) {
+    const minhaGeracao = ++renderGen;
     ensureOverlay();
     const step = ACTIVE_STEPS[idx];
     if (!step) return fecharTour();
@@ -183,9 +206,11 @@
 
     // dá tempo da view trocar (hidden/visível) antes de medir a posição real
     await new Promise((r) => setTimeout(r, 60));
+    if (minhaGeracao !== renderGen) return; // uma chamada mais nova já assumiu
     resizeTargetSelector = step.selector || null;
     let targetEl = step.selector ? primeiroVisivel(step.selector) : null;
     if (targetEl) { targetEl.scrollIntoView({ behavior: "smooth", block: "center" }); await new Promise((r) => setTimeout(r, 220)); }
+    if (minhaGeracao !== renderGen) return; // idem, checado de novo após o 2º await
 
     overlayEl.classList.remove("hidden");
     tooltipEl.classList.remove("hidden");
