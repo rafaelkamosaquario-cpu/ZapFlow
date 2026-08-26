@@ -197,8 +197,8 @@ const PUBLIC_PATHS = new Set([
   "/theme.js", "/icons.js",
   "/manifest.json", "/sw.js", "/favicon.ico",
 ]);
-const VENDEDOR_ALLOWED_PATHS = new Set(["/vendedor.html", "/visitas.js"]);
-const VENDEDOR_ALLOWED_PREFIXES = ["/api/visitas", "/api/logout", "/api/config"];
+const VENDEDOR_ALLOWED_PATHS = new Set(["/vendedor.html", "/visitas.js", "/guide.js"]);
+const VENDEDOR_ALLOWED_PREFIXES = ["/api/visitas", "/api/logout", "/api/config", "/api/guide"];
 
 app.use(async (req, res, next) => {
   const p = req.path;
@@ -3215,6 +3215,29 @@ function extrairRascunhoEvento(textoFinal) {
   }
 }
 
+// Allowlist da Ajuda Contextual da Zappy (Guia ZapFlow) -- o cliente manda só
+// a CHAVE da tela atual, nunca texto livre; o rótulo que vai pro prompt é
+// sempre um destes valores fixos, nunca o que o navegador mandar. Fecha a
+// superfície de prompt injection que existiria se qualquer string do body
+// virasse parte do [CONTEXTO DA TELA ATUAL].
+const CONTEXTO_TELA_LABELS = {
+  overview: "Início / Dashboard (Radar Comercial, indicadores do dia, desempenho)",
+  ia: "ZapFlow IA (perfil da empresa, base de conhecimento, chat com a Zappy)",
+  conversas: "Conversas (caixa de entrada do WhatsApp)",
+  clients: "Clientes (CRM, funil, clientes parados)",
+  cliente_360: "Cliente 360° (histórico, próxima ação, vendedor responsável de um cliente específico)",
+  agenda: "Agenda de contatos",
+  campaigns: "Campanhas de WhatsApp",
+  followup: "Follow-up de campanhas (contatos que não responderam)",
+  responses: "Respostas rápidas (modelos de mensagem)",
+  vendedores: "Vendedores",
+  visitas: "Visitas em campo",
+  chatbot: "Respostas automáticas (chatbot por regras)",
+  automacoes: "Automações comerciais",
+  calendario: "Calendário (Google Agenda)",
+  configuracoes: "Configurações",
+};
+
 app.post("/api/ia/perguntar", async (req, res) => {
   if (!openaiClient.openaiConfigured) {
     return res.status(400).json({ error: "Integração com IA ainda não foi configurada (OPENAI_API_KEY)." });
@@ -3222,11 +3245,12 @@ app.post("/api/ia/perguntar", async (req, res) => {
   const tenant = req.tenant;
   const mensagem = String(req.body?.mensagem || "").trim();
   const historico = Array.isArray(req.body?.historico) ? req.body.historico.slice(-20) : [];
+  const contextoTela = CONTEXTO_TELA_LABELS[String(req.body?.contextoTela || "")] || null;
   if (!mensagem) return res.status(400).json({ error: "Escreva uma mensagem." });
   try {
     const perfil = await repo.configuracoesIaRepo.get(tenant.empresa.id);
     const baseConhecimento = USE_SUPABASE ? await repo.companyKnowledgeRepo.listar(tenant.empresa.id) : [];
-    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem, baseConhecimento });
+    const input = montarInput({ perfilEmpresa: perfil, empresaNome: tenant.empresa.name, historico, mensagemUsuario: mensagem, baseConhecimento, contextoTela });
     const executores = criarExecutores(tenant, { agregarDesempenhoEquipe, agregarClienteDetalhe, phoneKey, montarRadar });
     const { textoFinal, usage } = await openaiClient.executarComFerramentas({
       model: openaiClient.MODELOS.padrao, input, tools: FERRAMENTAS_DEFINICOES, executores,
@@ -3378,6 +3402,68 @@ app.get("/api/onboarding", async (req, res) => {
   } catch (err) {
     console.error("[onboarding] status:", err.message);
     res.status(500).json({ error: "Não foi possível calcular o progresso da configuração." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Guia ZapFlow (tutorial de uso interno) -- diferente do onboarding acima
+// (que mede CONFIGURAÇÃO da empresa): este mede se um USUÁRIO específico já
+// viu/concluiu o tour de uso. 1 estado por usuário (guide_state, migration
+// 023), nunca por empresa -- owner e vendedor têm o progresso deles, mesmo
+// numa empresa com vários vendedores. Sempre lido/gravado por req.session.uid,
+// nunca por um id vindo do corpo da requisição.
+// ---------------------------------------------------------------------------
+const GUIDE_STEPS_OWNER = ["painel", "contatos", "campanhas", "conversas", "proxima_acao", "zappy", "vendedores_visitas"];
+const GUIDE_STEPS_VENDEDOR = ["tela", "iniciar", "durante", "finalizar"];
+const GUIDE_ACOES = new Set(["iniciar", "ver_etapa", "dispensar", "concluir", "reiniciar"]);
+
+app.get("/api/guide/estado", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  try {
+    const usuario = await repo.usuariosRepo.getById(tenant.empresa.id, req.session.uid);
+    const estado = usuario?.guideState || {};
+    let stepsDisponiveis = req.session.role === "owner" ? GUIDE_STEPS_OWNER.slice() : GUIDE_STEPS_VENDEDOR.slice();
+    if (req.session.role === "owner") {
+      const temVendedores = (await repo.usuariosRepo.countVendedores(tenant.empresa.id)) > 0;
+      if (!temVendedores) stepsDisponiveis = stepsDisponiveis.filter((s) => s !== "vendedores_visitas");
+    }
+    res.json({
+      startedAt: estado.startedAt || null, dismissedAt: estado.dismissedAt || null,
+      completedAt: estado.completedAt || null, completedSteps: estado.completedSteps || [],
+      stepsDisponiveis,
+    });
+  } catch (err) {
+    console.error("[guide] estado:", err.message);
+    res.status(500).json({ error: "Não foi possível carregar o Guia ZapFlow." });
+  }
+});
+
+app.post("/api/guide/estado", async (req, res) => {
+  if (!USE_SUPABASE) return res.status(501).json({ error: "Disponível apenas no modo multi-empresa (Supabase)." });
+  const tenant = req.tenant;
+  const acao = String(req.body?.acao || "");
+  if (!GUIDE_ACOES.has(acao)) return res.status(400).json({ error: "Ação inválida." });
+  const stepId = req.body?.stepId ? String(req.body.stepId).slice(0, 40) : null;
+  try {
+    const usuario = await repo.usuariosRepo.getById(tenant.empresa.id, req.session.uid);
+    const atual = usuario?.guideState || {};
+    const agora = new Date().toISOString();
+    let novo;
+    if (acao === "reiniciar") {
+      novo = { startedAt: agora, dismissedAt: null, completedSteps: [], completedAt: null };
+    } else {
+      novo = { ...atual, completedSteps: atual.completedSteps || [] };
+      if (acao === "iniciar") { novo.startedAt = atual.startedAt || agora; novo.dismissedAt = null; }
+      else if (acao === "ver_etapa" && stepId && !novo.completedSteps.includes(stepId)) novo.completedSteps = [...novo.completedSteps, stepId];
+      else if (acao === "dispensar") novo.dismissedAt = agora;
+      else if (acao === "concluir") novo.completedAt = agora;
+    }
+    await repo.usuariosRepo.updateGuideState(tenant.empresa.id, req.session.uid, novo);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[guide] estado update:", err.message);
+    res.status(500).json({ error: "Não foi possível salvar o progresso do Guia." });
   }
 });
 

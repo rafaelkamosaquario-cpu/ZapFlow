@@ -44,6 +44,7 @@
 
       <span class="side-group-label">Organização</span>
       <button class="side-tab" data-view="calendario"><i data-icon="calendarclock" data-size="20"></i> <span class="side-label">Calendário</span></button>
+      <button class="side-tab" id="btnAbrirGuia" type="button"><i data-icon="help" data-size="20"></i> <span class="side-label">Guia ZapFlow</span></button>
     </nav>
     <div class="side-foot">
       <div class="side-theme">
@@ -935,6 +936,7 @@
       <button class="msheet-item" data-view="calendario"><i data-icon="calendarclock" data-size="22"></i><span>Calendário</span></button>
       <button class="msheet-item" data-view="configuracoes"><i data-icon="settings" data-size="22"></i><span>Configurações</span></button>
       <button class="msheet-item" data-view="ia"><i data-icon="sparkles" data-size="22"></i><span>ZapFlow IA</span></button>
+      <button class="msheet-item" id="btnAbrirGuiaMobile" type="button"><i data-icon="help" data-size="22"></i><span>Guia ZapFlow</span></button>
       <a class="msheet-item" href="/"><i data-icon="megaphone" data-size="22"></i><span>Nova campanha</span></a>
     </div>
     <div class="msheet-theme">
@@ -951,5 +953,7 @@
   <script src="theme.js"></script>
   <script src="icons.js"></script>
   <script src="dashboard.js"></script>
+  <script src="guide.js"></script>
+  <script>ZapFlowGuide.init("owner");</script>
 </body>
 </html>

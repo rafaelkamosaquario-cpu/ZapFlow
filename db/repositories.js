@@ -103,11 +103,27 @@ export const usuariosRepo = {
       .eq("id", usuarioId).eq("empresa_id", empresaId);
     assertOk(error, "usuarios.deactivate");
   },
+  async getById(empresaId, usuarioId) {
+    requireEmpresaId(empresaId, "usuarios.getById");
+    if (!usuarioId) return null;
+    const { data, error } = await supabase.from("usuarios").select("*")
+      .eq("id", usuarioId).eq("empresa_id", empresaId).maybeSingle();
+    assertOk(error, "usuarios.getById");
+    return data ? usuarioFromRow(data) : null;
+  },
+  /** Estado do Guia ZapFlow (Item "Guia de uso") -- 1 JSON por usuário, nunca compartilhado entre empresas/usuários. */
+  async updateGuideState(empresaId, usuarioId, guideState) {
+    requireEmpresaId(empresaId, "usuarios.updateGuideState");
+    const { error } = await supabase.from("usuarios").update({ guide_state: guideState })
+      .eq("id", usuarioId).eq("empresa_id", empresaId);
+    assertOk(error, "usuarios.updateGuideState");
+  },
 };
 function usuarioFromRow(r) {
   return {
     id: r.id, empresaId: r.empresa_id, username: r.username, passwordHash: r.password_hash,
     role: r.role, name: r.name || "", phone: r.phone || "", active: !!r.active,
+    guideState: r.guide_state || {},
   };
 }
 
