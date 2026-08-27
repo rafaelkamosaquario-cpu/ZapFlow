@@ -131,6 +131,11 @@ body {
 }
 .wa-banner span { display: flex; align-items: center; gap: 8px; color: var(--text); }
 .wa-banner .btn { flex: 0 0 auto; }
+/* Ambiente demonstrativo -- nunca deve parecer um erro (empresa demo nunca tem
+   credencial Z-API de propósito, então "desconectado" é sempre esperado ali). */
+.wa-banner.demo {
+  background: var(--soft-blue); border-color: var(--border); font-weight: 500;
+}
 .navbtn {
   background: transparent; border: 1px solid var(--primary-light);
   color: var(--primary-light); font-weight: 600; font-size: 13px;

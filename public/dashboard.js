@@ -133,9 +133,15 @@ $$("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
 syncThemeButtons();
 
 // Logout (mostra se o login estiver ativo)
-fetch("/api/config").then((r) => r.json()).then((cfg) => {
+let ZAPFLOW_EMPRESA_DEMO = false;
+const zapflowConfigPromise = fetch("/api/config").then((r) => r.json()).then((cfg) => {
   if (cfg.authEnabled) { $("#sideLogout")?.classList.remove("hidden"); $("#msheetLogout")?.classList.remove("hidden"); }
-}).catch(() => {});
+  // "Loja Modelo ZapFlow" é a única empresa de demonstração -- nunca tem
+  // credencial Z-API de propósito, então "desconectado" ali é o estado
+  // esperado, não um erro a resolver. Nunca finge conexão real.
+  ZAPFLOW_EMPRESA_DEMO = cfg.empresaName === "Loja Modelo ZapFlow";
+  return cfg;
+}).catch(() => null);
 [$("#sideLogout"), $("#msheetLogout")].forEach((b) => b?.addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" }).catch(() => {});
   window.location.href = "/login";
@@ -148,7 +154,9 @@ fetch("/api/config").then((r) => r.json()).then((cfg) => {
 })();
 
 // Faixa global de "WhatsApp desconectado" -- roda em toda tela, não só no Início.
-checkWaStatus();
+// Espera o /api/config resolver primeiro (sabe se é a empresa demo) antes do
+// primeiro render, pra nunca mostrar a faixa vermelha por um instante.
+zapflowConfigPromise.then(checkWaStatus);
 setInterval(checkWaStatus, 60000);
 
 function loadView(view) {
@@ -269,7 +277,19 @@ function setWa(state, text) {
   const el = $("#waStatus");
   if (el) { el.querySelector(".wa-dot").className = "wa-dot " + state; el.querySelector(".wa-text").textContent = text; }
   const banner = $("#waBanner");
-  if (banner) banner.classList.toggle("hidden", state !== "off");
+  if (!banner) return;
+  if (state === "off" && ZAPFLOW_EMPRESA_DEMO) {
+    banner.classList.remove("hidden");
+    banner.classList.add("demo");
+    banner.innerHTML = `<span><i data-icon="sparkles" data-size="18"></i> Ambiente demonstrativo — envios externos desativados.</span>`;
+    window.ZapIcons?.hydrate?.(banner);
+    return;
+  }
+  banner.classList.remove("demo");
+  banner.innerHTML = `<span><i data-icon="wifioff" data-size="18"></i> WhatsApp desconectado — reconecte para continuar enviando e recebendo mensagens.</span>
+      <a class="btn primary sm" href="/">Reconectar</a>`;
+  window.ZapIcons?.hydrate?.(banner);
+  banner.classList.toggle("hidden", state !== "off");
 }
 async function checkWaStatus() {
   setWa("checking", "Verificando conexão");
@@ -2022,7 +2042,7 @@ function addRuleRow(rule = {}) {
       </select>
     </label>
     <label>Responder com
-      <textarea class="rule-reply" rows="2" placeholder="Olá {{nome}}! Nossa tabela de pneus: ...">${escapeHtml(rule.reply || "")}</textarea>
+      <textarea class="rule-reply" rows="2" placeholder="Olá {{nome}}! Aqui está a informação que você pediu: ...">${escapeHtml(rule.reply || "")}</textarea>
     </label>`;
   div.querySelector(".rule-del").addEventListener("click", () => div.remove());
   $("#rulesList").appendChild(div);
