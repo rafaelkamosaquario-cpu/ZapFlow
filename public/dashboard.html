@@ -599,71 +599,105 @@
       <h2 class="dash-title">✨ ZapFlow IA</h2>
       <p class="hint" id="iaConfigHint"></p>
 
-      <h3 class="dash-subtitle">Perfil da empresa</h3>
-      <p class="hint">Preencha uma vez — a IA usa isso pra personalizar tudo que responde.</p>
-      <label>Segmento
-        <input type="text" id="iaSegmento" placeholder="Ex.: loja de materiais de construção" />
-      </label>
-      <label>Descrição
-        <textarea id="iaDescricao" rows="2"></textarea>
-      </label>
-      <label>Produtos/serviços
-        <textarea id="iaProdutos" rows="2"></textarea>
-      </label>
-      <div class="manual-row">
-        <label class="inline" style="flex:1;">Público-alvo <input type="text" id="iaPublico" /></label>
-        <label class="inline" style="flex:1;">Região <input type="text" id="iaRegiao" /></label>
+      <!-- Perfil da empresa: resumo compacto (visível quando já existe cadastro, total ou parcial) -->
+      <div class="dash-card hidden" id="iaPerfilResumo">
+        <div class="dash-card-head">
+          <h3 class="dash-subtitle" style="margin:0;">Perfil da empresa</h3>
+          <span class="badge ok" id="iaPerfilBadge">✓ Perfil configurado</span>
+        </div>
+        <div class="dash-card-body" id="iaPerfilResumoBody"></div>
+        <div class="row" style="margin-top:10px; align-items:center; gap:10px;">
+          <button class="btn ghost sm" id="btnEditarPerfilIa" type="button">Editar dados da empresa</button>
+          <span class="status" id="iaPerfilResumoStatus"></span>
+        </div>
       </div>
-      <label>Cliente ideal
-        <textarea id="iaClienteIdeal" rows="2" placeholder="Quem é o cliente perfeito pra esse negócio?"></textarea>
-      </label>
-      <label>Diferenciais
-        <textarea id="iaDiferenciais" rows="2"></textarea>
-      </label>
-      <label>Tom de comunicação
-        <input type="text" id="iaTom" placeholder="Ex.: direto, comercial, profissional" />
-      </label>
-      <label>Condições comerciais
-        <textarea id="iaCondicoes" rows="2"></textarea>
-      </label>
-      <div class="manual-row">
-        <label class="inline" style="flex:1;">Prazo de entrega/execução <input type="text" id="iaPrazo" /></label>
-        <label class="inline" style="flex:1;">Garantias <input type="text" id="iaGarantias" /></label>
-      </div>
-      <label>Políticas (trocas, cancelamento, etc.)
-        <textarea id="iaPoliticas" rows="2"></textarea>
-      </label>
-      <label>Palavras/termos a evitar
-        <input type="text" id="iaPalavrasEvitar" placeholder="Separe por vírgula" />
-      </label>
-      <div class="manual-row">
-        <label class="inline" style="flex:1;">Site <input type="text" id="iaSite" placeholder="https://..." /></label>
-        <label class="inline" style="flex:1;">Instagram <input type="text" id="iaInstagram" placeholder="@usuario" /></label>
-      </div>
-      <label>Observações adicionais pra IA
-        <textarea id="iaObservacoes" rows="2" placeholder="Alguma regra que a IA sempre deve considerar?"></textarea>
-      </label>
-      <button class="btn secondary" id="btnSalvarPerfilIa" type="button">Salvar perfil</button>
-      <span class="status" id="perfilIaStatus"></span>
 
-      <h3 class="dash-subtitle" style="margin-top:24px;">Base de conhecimento</h3>
-      <p class="hint">Cole FAQ, políticas, catálogo ou qualquer texto que a IA deva consultar quando fizer sentido pra pergunta.</p>
-      <div id="conhecimentoList" class="dash-list"></div>
-      <button class="btn ghost sm" id="btnNovoConhecimento" type="button" style="margin-top:8px;">+ Adicionar item</button>
-      <div class="manual-add hidden" id="conhecimentoForm" style="margin-top:10px;">
-        <label>Categoria
-          <select id="conhCategoria"></select>
+      <!-- Perfil da empresa: formulário completo (recolhido por padrão quando já existe cadastro) -->
+      <div class="hidden" id="iaPerfilFormWrap">
+        <h3 class="dash-subtitle">Perfil da empresa</h3>
+        <p class="hint">Preencha uma vez — a IA usa isso pra personalizar tudo que responde.</p>
+        <label>Segmento
+          <input type="text" id="iaSegmento" placeholder="Ex.: loja de materiais de construção" />
         </label>
-        <label>Título
-          <input type="text" id="conhTitulo" placeholder="Ex.: Política de troca" />
+        <label>Descrição
+          <textarea id="iaDescricao" rows="2"></textarea>
         </label>
-        <label>Conteúdo
-          <textarea id="conhConteudo" rows="4"></textarea>
+        <label>Produtos/serviços
+          <textarea id="iaProdutos" rows="2"></textarea>
         </label>
-        <div class="row">
-          <button class="btn primary sm" id="btnSalvarConhecimento" type="button">Salvar</button>
-          <button class="btn ghost sm" id="btnCancelarConhecimento" type="button">Cancelar</button>
-          <span class="status" id="conhStatus"></span>
+        <div class="manual-row">
+          <label class="inline" style="flex:1;">Público-alvo <input type="text" id="iaPublico" /></label>
+          <label class="inline" style="flex:1;">Região <input type="text" id="iaRegiao" /></label>
+        </div>
+        <label>Cliente ideal
+          <textarea id="iaClienteIdeal" rows="2" placeholder="Quem é o cliente perfeito pra esse negócio?"></textarea>
+        </label>
+        <label>Diferenciais
+          <textarea id="iaDiferenciais" rows="2"></textarea>
+        </label>
+        <label>Tom de comunicação
+          <input type="text" id="iaTom" placeholder="Ex.: direto, comercial, profissional" />
+        </label>
+        <label>Condições comerciais
+          <textarea id="iaCondicoes" rows="2"></textarea>
+        </label>
+        <div class="manual-row">
+          <label class="inline" style="flex:1;">Prazo de entrega/execução <input type="text" id="iaPrazo" /></label>
+          <label class="inline" style="flex:1;">Garantias <input type="text" id="iaGarantias" /></label>
+        </div>
+        <label>Políticas (trocas, cancelamento, etc.)
+          <textarea id="iaPoliticas" rows="2"></textarea>
+        </label>
+        <label>Palavras/termos a evitar
+          <input type="text" id="iaPalavrasEvitar" placeholder="Separe por vírgula" />
+        </label>
+        <div class="manual-row">
+          <label class="inline" style="flex:1;">Site <input type="text" id="iaSite" placeholder="https://..." /></label>
+          <label class="inline" style="flex:1;">Instagram <input type="text" id="iaInstagram" placeholder="@usuario" /></label>
+        </div>
+        <label>Observações adicionais pra IA
+          <textarea id="iaObservacoes" rows="2" placeholder="Alguma regra que a IA sempre deve considerar?"></textarea>
+        </label>
+        <div class="row" style="gap:8px;">
+          <button class="btn secondary" id="btnSalvarPerfilIa" type="button">Salvar perfil</button>
+          <button class="btn ghost hidden" id="btnCancelarPerfilIa" type="button">Cancelar</button>
+        </div>
+        <span class="status" id="perfilIaStatus"></span>
+      </div>
+
+      <!-- Base de conhecimento: resumo compacto -->
+      <div class="dash-card" id="conhResumo" style="margin-top:24px;">
+        <div class="dash-card-head">
+          <h3 class="dash-subtitle" style="margin:0;">Base de conhecimento</h3>
+        </div>
+        <div class="dash-card-body"><span id="conhResumoTexto">Carregando…</span></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost sm" id="btnGerenciarConhecimento" type="button">Gerenciar</button>
+        </div>
+      </div>
+
+      <div class="hidden" id="conhecimentoWrap" style="margin-top:12px;">
+        <p class="hint">Cole FAQ, políticas, catálogo ou qualquer texto que a IA deva consultar quando fizer sentido pra pergunta.</p>
+        <div id="conhecimentoList" class="dash-list"></div>
+        <button class="btn ghost sm" id="btnNovoConhecimento" type="button" style="margin-top:8px;">+ Adicionar item</button>
+        <div class="manual-add hidden" id="conhecimentoForm" style="margin-top:10px;">
+          <label>Categoria
+            <select id="conhCategoria"></select>
+          </label>
+          <label>Título
+            <input type="text" id="conhTitulo" placeholder="Ex.: Política de troca" />
+          </label>
+          <label>Conteúdo
+            <textarea id="conhConteudo" rows="4"></textarea>
+          </label>
+          <div class="row">
+            <button class="btn primary sm" id="btnSalvarConhecimento" type="button">Salvar</button>
+            <button class="btn ghost sm" id="btnCancelarConhecimento" type="button">Cancelar</button>
+            <span class="status" id="conhStatus"></span>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost sm" id="btnRecolherConhecimento" type="button">Recolher</button>
         </div>
       </div>
 

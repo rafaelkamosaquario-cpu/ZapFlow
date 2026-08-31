@@ -2559,31 +2559,108 @@ $("#btnCriarEvento").addEventListener("click", async (e) => {
 let iaHistorico = [];
 let iaCarregado = false;
 
+// Campos do formulário de perfil, na mesma ordem/nomes já usados pela API
+// (GET/PUT /api/ia/configuracao) -- não inventa campo novo nem muda nome.
+const IA_PERFIL_CAMPOS = [
+  ["iaSegmento", "segmento"], ["iaDescricao", "descricao"], ["iaProdutos", "produtosServicos"],
+  ["iaPublico", "publicoAlvo"], ["iaRegiao", "regiao"], ["iaClienteIdeal", "clienteIdeal"],
+  ["iaDiferenciais", "diferenciais"], ["iaTom", "tomComunicacao"], ["iaCondicoes", "condicoesComerciais"],
+  ["iaPrazo", "prazo"], ["iaGarantias", "garantias"], ["iaPoliticas", "politicas"],
+  ["iaPalavrasEvitar", "palavrasEvitar"], ["iaSite", "site"], ["iaInstagram", "instagram"],
+  ["iaObservacoes", "observacoesIa"],
+];
+function preencherFormPerfil(p) {
+  p = p || {};
+  IA_PERFIL_CAMPOS.forEach(([id, campo]) => { $("#" + id).value = p[campo] || ""; });
+}
+function lerFormPerfil() {
+  const body = {};
+  IA_PERFIL_CAMPOS.forEach(([id, campo]) => { body[campo] = $("#" + id).value.trim(); });
+  return body;
+}
+// "Configurado" usa o mesmo critério já usado no checklist de onboarding
+// (segmento + descrição preenchidos) -- nenhuma regra nova.
+function perfilStatus(p) {
+  p = p || {};
+  if ((p.segmento || "").trim() && (p.descricao || "").trim()) return "completo";
+  const algumDado = IA_PERFIL_CAMPOS.some(([, campo]) => (p[campo] || "").trim());
+  return algumDado ? "parcial" : "vazio";
+}
+
+let iaPerfilAtual = {};
+let iaFormAberto = false;
+let ZAPFLOW_EMPRESA_NOME = "";
+
+function renderIaPerfil() {
+  const status = perfilStatus(iaPerfilAtual);
+  const resumo = $("#iaPerfilResumo");
+  const formWrap = $("#iaPerfilFormWrap");
+  const btnCancelar = $("#btnCancelarPerfilIa");
+  const btnSalvar = $("#btnSalvarPerfilIa");
+
+  // Sem nenhum dado salvo ainda: formulário fica aberto direto, sem resumo
+  // (não faz sentido mostrar um card vazio de "perfil configurado").
+  const deveAbrirForm = iaFormAberto || status === "vazio";
+
+  resumo.classList.toggle("hidden", deveAbrirForm);
+  formWrap.classList.toggle("hidden", !deveAbrirForm);
+
+  if (deveAbrirForm) {
+    btnCancelar.classList.toggle("hidden", status === "vazio");
+    btnSalvar.textContent = status === "vazio" ? "Salvar perfil" : "Salvar alterações";
+    return;
+  }
+
+  const p = iaPerfilAtual;
+  const meta = [];
+  if (p.regiao) meta.push("📍 " + escapeHtml(p.regiao));
+  if (p.site) meta.push("🌐 " + escapeHtml(p.site));
+  if (p.instagram) meta.push("📱 " + escapeHtml(p.instagram.startsWith("@") ? p.instagram : "@" + p.instagram));
+  if (p.publicoAlvo) meta.push("👥 " + escapeHtml(p.publicoAlvo));
+  const descricao = (p.descricao || "").slice(0, 140);
+  $("#iaPerfilResumoBody").innerHTML = `
+    <b style="font-size:15px;">${escapeHtml(ZAPFLOW_EMPRESA_NOME || "Sua empresa")}</b>
+    ${p.segmento ? `<div>${escapeHtml(p.segmento)}</div>` : ""}
+    ${meta.length ? `<div class="hint" style="margin:4px 0 0;">${meta.join(" &nbsp;·&nbsp; ")}</div>` : ""}
+    ${descricao ? `<div style="margin-top:6px;">${escapeHtml(descricao)}${(p.descricao || "").length > 140 ? "…" : ""}</div>` : ""}
+  `;
+  const badge = $("#iaPerfilBadge");
+  const btnEditar = $("#btnEditarPerfilIa");
+  if (status === "completo") {
+    badge.textContent = "✓ Perfil configurado"; badge.className = "badge ok";
+    btnEditar.textContent = "Editar dados da empresa";
+  } else {
+    badge.textContent = "Perfil parcialmente configurado"; badge.className = "badge manual";
+    btnEditar.textContent = "Completar perfil";
+  }
+}
+
+$("#btnEditarPerfilIa").addEventListener("click", () => {
+  iaFormAberto = true;
+  preencherFormPerfil(iaPerfilAtual);
+  $("#perfilIaStatus").textContent = "";
+  renderIaPerfil();
+});
+$("#btnCancelarPerfilIa").addEventListener("click", () => {
+  iaFormAberto = false;
+  preencherFormPerfil(iaPerfilAtual); // descarta qualquer alteração não salva
+  $("#perfilIaStatus").textContent = "";
+  renderIaPerfil();
+});
+
 async function loadZappyIA() {
   if (iaCarregado) return; // perfil + saudação só precisam carregar 1x por sessão de navegação
   iaCarregado = true;
   try {
+    const cfg = await zapflowConfigPromise;
+    ZAPFLOW_EMPRESA_NOME = cfg?.empresaName || "";
     const res = await fetch("/api/ia/configuracao");
     const data = await res.json();
     if (!res.ok) return;
     $("#iaConfigHint").textContent = data.iaConfigurada ? "" : "Integração com IA ainda não foi configurada pelo suporte.";
-    const p = data.perfil || {};
-    $("#iaSegmento").value = p.segmento || "";
-    $("#iaDescricao").value = p.descricao || "";
-    $("#iaProdutos").value = p.produtosServicos || "";
-    $("#iaPublico").value = p.publicoAlvo || "";
-    $("#iaRegiao").value = p.regiao || "";
-    $("#iaClienteIdeal").value = p.clienteIdeal || "";
-    $("#iaDiferenciais").value = p.diferenciais || "";
-    $("#iaTom").value = p.tomComunicacao || "";
-    $("#iaCondicoes").value = p.condicoesComerciais || "";
-    $("#iaPrazo").value = p.prazo || "";
-    $("#iaGarantias").value = p.garantias || "";
-    $("#iaPoliticas").value = p.politicas || "";
-    $("#iaPalavrasEvitar").value = p.palavrasEvitar || "";
-    $("#iaSite").value = p.site || "";
-    $("#iaInstagram").value = p.instagram || "";
-    $("#iaObservacoes").value = p.observacoesIa || "";
+    iaPerfilAtual = data.perfil || {};
+    preencherFormPerfil(iaPerfilAtual);
+    renderIaPerfil();
     if (data.iaConfigurada) iaAddBubble("assistant", "Oi! Sou o Zappy. Posso consultar clientes, visitas, conversas e o desempenho da equipe, propor compromissos na sua agenda e montar rascunhos de campanha. O que você precisa?");
   } catch {
     $("#iaConfigHint").textContent = "Não foi possível carregar as configurações da IA. Recarregue a página e tente novamente.";
@@ -2600,6 +2677,9 @@ async function loadConhecimento() {
     const sel = $("#conhCategoria");
     sel.innerHTML = (data.categorias || []).map((c) => `<option>${escapeHtml(c)}</option>`).join("");
     const itens = data.itens || [];
+    $("#conhResumoTexto").textContent = itens.length
+      ? `${itens.length} informaç${itens.length === 1 ? "ão" : "ões"} cadastrada${itens.length === 1 ? "" : "s"}`
+      : "Nenhuma informação cadastrada ainda";
     if (!itens.length) { wrap.innerHTML = "<p class='hint'>Nenhum item ainda. Adicione FAQ, políticas ou informações que a IA deva saber.</p>"; return; }
     wrap.innerHTML = "";
     itens.forEach((item) => {
@@ -2626,9 +2706,19 @@ async function loadConhecimento() {
       wrap.appendChild(div);
     });
   } catch {
+    $("#conhResumoTexto").textContent = "Não foi possível carregar.";
     wrap.innerHTML = "<p class='hint'>Não foi possível carregar a base de conhecimento. Verifique sua conexão e tente novamente.</p>";
   }
 }
+$("#btnGerenciarConhecimento").addEventListener("click", () => {
+  $("#conhResumo").classList.add("hidden");
+  $("#conhecimentoWrap").classList.remove("hidden");
+});
+$("#btnRecolherConhecimento").addEventListener("click", () => {
+  $("#conhecimentoForm").classList.add("hidden");
+  $("#conhecimentoWrap").classList.add("hidden");
+  $("#conhResumo").classList.remove("hidden");
+});
 function abrirFormConhecimento(item) {
   conhecimentoEditando = item || null;
   $("#conhCategoria").value = item?.categoria || $("#conhCategoria").options[0]?.value || "";
@@ -2667,27 +2757,31 @@ $("#btnSalvarConhecimento").addEventListener("click", async (e) => {
 
 $("#btnSalvarPerfilIa").addEventListener("click", async (e) => {
   const status = $("#perfilIaStatus");
+  const eraEdicao = perfilStatus(iaPerfilAtual) !== "vazio";
+  const body = lerFormPerfil();
   try {
     await withLoading(e.currentTarget, "Salvando...", async () => {
       const res = await fetch("/api/ia/configuracao", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          segmento: $("#iaSegmento").value.trim(), descricao: $("#iaDescricao").value.trim(),
-          produtosServicos: $("#iaProdutos").value.trim(), publicoAlvo: $("#iaPublico").value.trim(),
-          clienteIdeal: $("#iaClienteIdeal").value.trim(),
-          regiao: $("#iaRegiao").value.trim(), diferenciais: $("#iaDiferenciais").value.trim(),
-          tomComunicacao: $("#iaTom").value.trim(), condicoesComerciais: $("#iaCondicoes").value.trim(),
-          prazo: $("#iaPrazo").value.trim(), garantias: $("#iaGarantias").value.trim(),
-          politicas: $("#iaPoliticas").value.trim(), palavrasEvitar: $("#iaPalavrasEvitar").value.trim(),
-          site: $("#iaSite").value.trim(), instagram: $("#iaInstagram").value.trim(),
-          observacoesIa: $("#iaObservacoes").value.trim(),
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Não foi possível salvar o perfil. Tente novamente.");
     });
-    status.textContent = "Perfil da empresa salvo!";
+    iaPerfilAtual = body;
+    const msg = eraEdicao ? "Dados da empresa atualizados com sucesso" : "Perfil da empresa salvo!";
+    status.textContent = msg;
     status.className = "status ok";
+    // Deixa a confirmação visível por um instante antes de recolher, pra não
+    // sumir o feedback junto com o formulário.
+    setTimeout(() => {
+      iaFormAberto = false;
+      renderIaPerfil();
+      const resumoStatus = $("#iaPerfilResumoStatus");
+      resumoStatus.textContent = msg;
+      resumoStatus.className = "status ok";
+      setTimeout(() => { resumoStatus.textContent = ""; }, 4000);
+    }, 900);
   } catch (err) {
     status.textContent = err.message || "Não foi possível salvar o perfil. Verifique sua conexão e tente novamente.";
     status.className = "status err";
